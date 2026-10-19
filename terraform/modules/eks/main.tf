@@ -1,5 +1,5 @@
 resource "aws_iam_role" "cluster" {
-  name = "${var.environment}-eks-cluster-role"
+  name = "${var.environment}-crelan-eks-cluster-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -31,7 +31,7 @@ resource "aws_eks_cluster" "main" {
 }
 
 resource "aws_iam_role" "node" {
-  name = "${var.environment}-eks-node-role"
+  name = "${var.environment}-crelan-eks-node-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
