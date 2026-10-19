@@ -1,0 +1,20 @@
+apiVersion: capsule.clastix.io/v1beta2
+kind: Tenant
+metadata:
+  name: dev-team
+spec:
+  owners:
+  - kind: User
+    name: dev-lead
+  namespacesMetadata:
+    additionalLabels:
+      env: dev
+      managed-by: capsule
+  resourceQuota:
+    scope: Tenant
+    items:
+    - hard:
+        limits.cpu: "4"
+        limits.memory: 8Gi
+        requests.cpu: "2"
+        requests.memory: 4Gi
