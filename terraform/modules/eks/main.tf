@@ -68,7 +68,10 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.environment}-nodegroup"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.subnet_ids
+  
+  # Uses dedicated node subnets if provided, otherwise falls back to general subnet_ids
+  subnet_ids      = var.node_subnet_ids != null && length(var.node_subnet_ids) > 0 ? var.node_subnet_ids : var.subnet_ids
+  
   ami_type        = "AL2_x86_64"
 
   scaling_config {
