@@ -1,5 +1,9 @@
+resource "random_id" "suffix" {
+  byte_length = 3
+}
+
 resource "aws_iam_role" "cluster" {
-  name = "${var.environment}-crelan-eks-cluster-role"
+  name = "${var.environment}-crelan-eks-cluster-role-${random_id.suffix.hex}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -19,7 +23,7 @@ resource "aws_iam_role_policy_attachment" "cluster_AmazonEKSClusterPolicy" {
 }
 
 resource "aws_eks_cluster" "main" {
-  name     = "${var.environment}-cluster"
+  name     = "${var.environment}-cluster-${random_id.suffix.hex}"
   role_arn = aws_iam_role.cluster.arn
   version  = var.cluster_version
 
@@ -31,7 +35,7 @@ resource "aws_eks_cluster" "main" {
 }
 
 resource "aws_iam_role" "node" {
-  name = "${var.environment}-crelan-eks-node-role"
+  name = "${var.environment}-crelan-eks-node-role-${random_id.suffix.hex}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
