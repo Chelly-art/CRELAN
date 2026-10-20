@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            integrations/terraform-provider-crelan/go.sum
+      - run: go test ./...
+      - run: go test ./...
+        working-directory: integrations/terraform-provider-crelan
+      - run: go build ./...
+        working-directory: integrations/terraform-provider-crelan
+
+  pulumi:
+    name: Pulumi package and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/pulumi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrations/pulumi/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm pack --dry-run
+
+  examples:
+    name: IaC and CI example validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive integrations/terraform-provider-crelan/examples
+      - name: Parse GitLab CI YAML
+        run: >-
+          ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0), aliases: true)' examples/ci/gitlab-ci.yml
+      - name: Check whitespace
+        run: git diff --check

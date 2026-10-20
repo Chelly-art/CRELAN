@@ -4,6 +4,21 @@ This provider manages Crelan workspace deployments through the Crelan REST API.
 It supports `crelan_deployment` resources for existing images and GitHub source
 repositories. OpenTofu can use the same provider binary and configuration.
 
+## Registry publishing status
+
+The provider is not published yet. The current application repository is not
+named `terraform-provider-crelan`; the public Terraform Registry only detects
+providers in public GitHub repositories named `terraform-provider-{NAME}`.
+To publish under `crelan/crelan`, move or mirror this provider module to a
+dedicated public repository named `terraform-provider-crelan`, configure an
+RSA or DSA signing key in the Terraform Registry, then release signed platform
+archives. Do not rename the Crelan application repository just to publish this
+provider. See [HashiCorp's provider publishing requirements](https://developer.hashicorp.com/terraform/registry/providers/publishing).
+
+This repository's CI validates the provider and examples. Until the dedicated
+repository and signing key are configured, use the local filesystem mirror
+instructions below.
+
 ## Build locally
 
 ```sh

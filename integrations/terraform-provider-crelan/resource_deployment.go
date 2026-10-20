@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourceDeployment() *schema.Resource {
@@ -25,11 +26,11 @@ func resourceDeployment() *schema.Resource {
 			"repository_url":       {Type: schema.TypeString, Optional: true, ExactlyOneOf: []string{"image", "repository_url"}, ConflictsWith: []string{"image_pull_secret"}, Description: "HTTPS GitHub repository URL. Private repositories require a connected GitHub App."},
 			"branch":               {Type: schema.TypeString, Optional: true, ConflictsWith: []string{"image"}},
 			"dockerfile":           {Type: schema.TypeString, Optional: true, Default: "Dockerfile"},
-			"port":                 {Type: schema.TypeInt, Optional: true, Default: 8080},
-			"cpu_millicores":       {Type: schema.TypeInt, Optional: true, Default: 1000},
-			"memory_mb":            {Type: schema.TypeInt, Optional: true, Default: 512},
+			"port":                 {Type: schema.TypeInt, Optional: true, Default: 8080, ValidateFunc: validation.IntBetween(1, 65535)},
+			"cpu_millicores":       {Type: schema.TypeInt, Optional: true, Default: 1000, ValidateFunc: validation.IntAtLeast(1)},
+			"memory_mb":            {Type: schema.TypeInt, Optional: true, Default: 512, ValidateFunc: validation.IntAtLeast(1)},
 			"wait_for_ready":       {Type: schema.TypeBool, Optional: true, Default: true, Description: "Wait for the deployment to reach running status before apply completes."},
-			"wait_timeout_seconds": {Type: schema.TypeInt, Optional: true, Default: 2700},
+			"wait_timeout_seconds": {Type: schema.TypeInt, Optional: true, Default: 2700, ValidateFunc: validation.IntBetween(1, 86400)},
 			"deployment_id":        {Type: schema.TypeInt, Computed: true},
 			"status":               {Type: schema.TypeString, Computed: true},
 			"url":                  {Type: schema.TypeString, Computed: true},

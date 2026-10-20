@@ -1,7 +1,8 @@
 # Deploying from external CI systems
 
-The Crelan workspace API accepts deployments from any CI provider. A workspace
-token with `deployments:write` is required. Set `CRELAN_API_URL` and
+The Crelan workspace API accepts deployments from any CI provider. The examples
+create deployments and poll their status, so the workspace token needs both
+`deployments:write` and `deployments:read`. Set `CRELAN_API_URL` and
 `CRELAN_TOKEN` as protected CI secrets; do not put the token in the repository.
 
 There are two deployment flows:
@@ -56,5 +57,5 @@ instead. The two source parameters configure that repository and branch.
 
 The image deployed to Crelan must be readable by the cluster. For a private
 registry, create a registry credential in the Crelan workspace and pass its
-name as `CRELAN_IMAGE_PULL_SECRET` (GitLab example) or `IMAGE_PULL_SECRET`
-(Jenkins example). Public images do not need a pull secret.
+name as `CRELAN_IMAGE_PULL_SECRET` in either example. Public images do not need
+a pull secret.

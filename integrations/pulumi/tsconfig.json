@@ -1,14 +1,15 @@
 {
   "compilerOptions": {
     "strict": true,
+    "declaration": true,
     "target": "ES2022",
     "module": "commonjs",
     "moduleResolution": "node",
-    "outDir": "bin",
+    "outDir": "dist",
     "rootDir": ".",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
   },
-  "include": ["index.ts"]
+  "include": ["index.ts", "provider.ts", "test/*.ts"]
 }

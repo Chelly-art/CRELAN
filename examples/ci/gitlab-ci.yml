@@ -43,7 +43,7 @@ deploy:image:
         --data "$payload")
       id=$(printf '%s' "$response" | jq -er '.id')
       attempt=0
-      while [ "$attempt" -lt 2700 ]; do
+      while [ "$attempt" -lt 900 ]; do
         status=$(curl --fail-with-body --silent --show-error \
           -H "Authorization: Bearer $CRELAN_TOKEN" \
           "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
@@ -51,7 +51,7 @@ deploy:image:
           running) exit 0 ;;
           failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
         esac
-        sleep 1
+        sleep 3
         attempt=$((attempt + 1))
       done
       echo "Timed out waiting for deployment $id" >&2
@@ -77,7 +77,7 @@ deploy:source:
         --data "$payload")
       id=$(printf '%s' "$response" | jq -er '.id')
       attempt=0
-      while [ "$attempt" -lt 2700 ]; do
+      while [ "$attempt" -lt 900 ]; do
         status=$(curl --fail-with-body --silent --show-error \
           -H "Authorization: Bearer $CRELAN_TOKEN" \
           "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
@@ -85,7 +85,7 @@ deploy:source:
           running) exit 0 ;;
           failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
         esac
-        sleep 1
+        sleep 3
         attempt=$((attempt + 1))
       done
       echo "Timed out waiting for deployment $id" >&2
