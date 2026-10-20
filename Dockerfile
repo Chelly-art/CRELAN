@@ -24,9 +24,7 @@ WORKDIR /app
 COPY --from=build --chown=10001:10001 /out/crelan /app/crelan
 
 ENV PORT=8080 \
-    DATABASE_PATH=/data/crelan.db
-
-VOLUME ["/data"]
+    DATABASE_PATH=:memory:
 EXPOSE 8080
 USER 10001:10001
 

@@ -95,9 +95,8 @@ func TestLandingPageIsPublic(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("landing page status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if !bytes.Contains(response.Body.Bytes(), []byte(`href="/signup"`)) ||
-		!bytes.Contains(response.Body.Bytes(), []byte(`href="/login"`)) {
-		t.Fatal("landing page must provide sign-up and sign-in links")
+	if !bytes.Contains(response.Body.Bytes(), []byte(`href="/login"`)) {
+		t.Fatal("landing page must provide a workspace link")
 	}
 }
 
@@ -120,7 +119,7 @@ func TestDashboardRequiresSignIn(t *testing.T) {
 	}
 }
 
-func TestDemoLoginRequiresExplicitLocalConfiguration(t *testing.T) {
+func TestLoginAcceptsAnyCredentials(t *testing.T) {
 	t.Setenv("DATABASE_PATH", filepath.Join(t.TempDir(), "crelan.db"))
 	t.Setenv("CRELAN_DEMO_LOGIN", "false")
 	auth, err := newAuthService()
@@ -130,15 +129,15 @@ func TestDemoLoginRequiresExplicitLocalConfiguration(t *testing.T) {
 	defer auth.db.Close()
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(
-		`{"identity":"admin","password":"pass"}`))
-	request.RemoteAddr = "127.0.0.1:54321"
+		`{"identity":"any-user-name","password":"not-a-real-password"}`))
+	request.RemoteAddr = "192.0.2.10:54321"
 	request.Host = "crelan.test"
 	request.Header.Set("Origin", "http://crelan.test")
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	auth.login(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("disabled demo login status = %d, want %d", response.Code, http.StatusUnauthorized)
+	if response.Code != http.StatusOK {
+		t.Fatalf("open demo login status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 
@@ -171,7 +170,7 @@ func TestDemoLoginCreatesLocalAdminWorkspace(t *testing.T) {
 	}
 }
 
-func TestDemoLoginRejectsNonLoopbackRequest(t *testing.T) {
+func TestDemoLoginAcceptsNonLoopbackRequest(t *testing.T) {
 	t.Setenv("DATABASE_PATH", filepath.Join(t.TempDir(), "crelan.db"))
 	t.Setenv("CRELAN_DEMO_LOGIN", "true")
 	auth, err := newAuthService()
@@ -188,7 +187,7 @@ func TestDemoLoginRejectsNonLoopbackRequest(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	auth.login(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("non-loopback demo login status = %d, want %d", response.Code, http.StatusUnauthorized)
+	if response.Code != http.StatusOK {
+		t.Fatalf("demo login status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

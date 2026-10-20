@@ -55,7 +55,7 @@ type authUser struct {
 func newAuthService() (*authService, error) {
 	databasePath := os.Getenv("DATABASE_PATH")
 	if databasePath == "" {
-		databasePath = "crelan.db"
+		databasePath = ":memory:"
 	}
 	db, err := sql.Open("sqlite", databasePath)
 	if err != nil {
@@ -382,32 +382,12 @@ func (a *authService) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Enter a username or email and password")
 		return
 	}
-	identity := strings.TrimSpace(input.Identity)
-	if identity == "" {
-		identity = strings.TrimSpace(input.Email)
-	}
-	if a.demoLoginEnabled && identity == "admin" && input.Password == "pass" && isLoopbackRequest(r) {
-		userID, err := a.ensureDemoAccount(r.Context())
-		if err != nil {
-			log.Printf("create local demo account: %v", err)
-			writeError(w, http.StatusInternalServerError, "Could not sign in")
-			return
-		}
-		a.finishLogin(w, r, userID)
-		return
-	}
-	email := strings.ToLower(identity)
-	if len(email) > 254 || len(input.Password) < 1 || len(input.Password) > 128 {
-		writeError(w, http.StatusUnauthorized, "Email or password is incorrect")
-		return
-	}
-	var userID int64
-	var passwordHash sql.NullString
-	err := a.db.QueryRowContext(r.Context(),
-		`SELECT id, name, password_hash FROM users WHERE email = ? COLLATE NOCASE`, email).
-		Scan(&userID, new(string), &passwordHash)
-	if err != nil || !passwordHash.Valid || !verifyPassword(input.Password, passwordHash.String) {
-		writeError(w, http.StatusUnauthorized, "Email or password is incorrect")
+	// This demo has no account verification. Keep a single workspace identity;
+	// the submitted username and password are deliberately not persisted.
+	userID, err := a.ensureDemoAccount(r.Context())
+	if err != nil {
+		log.Printf("initialize demo workspace: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not sign in")
 		return
 	}
 	a.finishLogin(w, r, userID)
