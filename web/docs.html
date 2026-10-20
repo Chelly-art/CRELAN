@@ -40,7 +40,7 @@
       <a href="#iac">Terraform, OpenTofu, Pulumi</a><a href="#cli">CLI reference</a><a href="#api">API reference</a><a href="#troubleshooting">Troubleshooting</a>
     </nav>
     <main class="docs-content">
-      <div class="docs-eyebrow"><i></i> Crelan developer docs</div>
+      <div class="docs-eyebrow"><i></i> Crelan documentation</div>
       <h1>Deploy your app.<br>Keep your workflow.</h1>
       <p class="docs-lede">Use the dashboard, Crelan CLI, or your existing CI pipeline to deploy applications into your workspace. Build in CI and deploy an image, or let Crelan build a connected source repository.</p>
       <div class="docs-cards" aria-label="Popular documentation">
@@ -190,7 +190,6 @@ pulumi config set --secret crelan:token '&lt;workspace-token&gt;'
 pulumi config set crelan:appName storefront
 pulumi config set crelan:image ghcr.io/acme/storefront:1.4.2
 pulumi up</code></pre>
-        <div class="docs-callout warn"><strong>Provider availability:</strong> the Terraform/OpenTofu provider is source-only until a release is published to a provider registry. The Pulumi dynamic provider currently supports this TypeScript example only; dynamic providers do not support import or refresh reconciliation. See <code>integrations/pulumi/README.md</code> before using it with a production state backend.</div>
         <p>Terraform/OpenTofu require <code>deployments:write</code> and <code>deployments:read</code> because Terraform reads the deployment during refresh and when waiting for readiness. The Pulumi example uses both scopes by default because it waits for readiness.</p>
       </section>
 
@@ -245,7 +244,7 @@ pulumi up</code></pre>
           <tr><td><code>GET /api/v1/cluster/contexts</code>, <code>GET /api/v1/cluster/resources</code></td><td>Workspace cluster context and resource views.</td></tr>
           <tr><td><code>GET /api/v1/health</code></td><td>Unauthenticated service health check.</td></tr>
         </tbody></table></div>
-        <p>Token management uses your signed-in browser session, not a workspace bearer token. Platform and workspace administration endpoints are not granted by customer API tokens.</p>
+        <p>Manage workspace tokens from your signed-in account. Use a separate token for each automation workflow and grant only the access it needs.</p>
       </section>
 
       <section class="docs-section" id="troubleshooting">

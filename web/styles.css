@@ -403,6 +403,8 @@ footer span { color: #aab2bd; }
 .token-submit:disabled { color: #667085; background: #e6e9ee; }
 .token-guidance ul { color: #475467; }
 .token-guidance li::marker { color: #c45100; }
+.docs-main { max-width: 900px; margin: 56px auto; padding: 0 24px; }
+.docs-bottom-cta { margin-top: 40px; }
 .format-icon { color: #a44708; background: #fff0e4; }
 .workflow-icon { color: #2764a5; background: #eaf2fb; }
 .token-row { border-color: #e6e9ee; }

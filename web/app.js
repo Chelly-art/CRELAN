@@ -329,7 +329,7 @@ async function loadDatabaseEngines() {
       const option = [...select.options].find((item) => item.value === engine.id);
       if (option) {
         option.disabled = !engine.available;
-        if (!engine.available) option.textContent = `${engine.name} (operator not installed)`;
+        if (!engine.available) option.textContent = `${engine.name} (not available)`;
       }
     }
   } catch {

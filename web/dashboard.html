@@ -83,7 +83,7 @@
                 <div><label class="form-label" for="database-engine">Engine</label><select class="text-input deployment-input" id="database-engine" name="engine" required><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option></select></div>
               </div>
               <div class="deployment-two-col">
-                <div><label class="form-label" for="database-version">Version <span>(operator default)</span></label><input class="text-input deployment-input" id="database-version" name="version" placeholder="Default version"></div>
+                <div><label class="form-label" for="database-version">Version <span>(optional)</span></label><input class="text-input deployment-input" id="database-version" name="version" placeholder="Default version"></div>
                 <div><label class="form-label" for="database-storage">Storage</label><select class="text-input deployment-input" id="database-storage" name="storage"><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option><option value="100Gi">100 GiB</option></select></div>
               </div>
               <p class="deployment-form-error" id="database-error" role="alert" hidden></p>
@@ -108,7 +108,7 @@
             <div class="token-list" id="workspace-usage"><div class="token-empty">Loading usage…</div></div>
             <h3>Recent activity</h3><div class="resource-table-wrap" id="workspace-audit"></div>
           </section>
-          <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Deployment API connecting</span></footer>
+          <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Loading workspace…</span></footer>
         </section>
       </main>
     </div>
