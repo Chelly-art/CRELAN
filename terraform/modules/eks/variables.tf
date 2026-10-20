@@ -6,7 +6,7 @@ variable "environment" {
 variable "cluster_version" {
   type        = string
   description = "Kubernetes version for the EKS cluster"
-  default     = "1.30"
+  default     = "1.36"
 }
 
 variable "subnet_ids" {
@@ -18,4 +18,19 @@ variable "node_subnet_ids" {
   type        = list(string)
   description = "List of subnet IDs specifically for the EKS worker nodes (optional; defaults to general subnet_ids if left empty)"
   default     = []
+}
+
+variable "cluster_name" {
+  type        = string
+  description = "Name of the EKS cluster"
+}
+
+variable "cluster_role_arn" {
+  type        = string
+  description = "IAM role ARN for the EKS cluster control plane"
+}
+
+variable "node_role_arn" {
+  type        = string
+  description = "IAM role ARN for the EKS worker node groups"
 }

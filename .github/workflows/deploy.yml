@@ -10,7 +10,6 @@ jobs:
     name: "Terraform Infrastructure Automation"
     runs-on: ubuntu-latest
 
-    # Use environment-level working directory
     defaults:
       run:
         working-directory: terraform/environments/dev
