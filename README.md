@@ -4,16 +4,17 @@ Crelan lets users browse Pods, ConfigMaps, and Secret metadata, deploy apps from
 
 ## Kubernetes access
 
-Kubeconfig credentials are configured by the operator and cannot be uploaded through the UI. When Crelan runs outside Kubernetes, it lists contexts from `CRELAN_KUBECONFIG_DATA` (a kubeconfig YAML secret) or, if unset, from the server process's `KUBECONFIG` file. When Crelan runs inside Kubernetes without either setting, it uses its pod's ServiceAccount. Users choose an available context in the dashboard, and each deployment remembers its selected cluster for status checks and deletion.
+Kubeconfig credentials are configured by the operator and cannot be uploaded through the UI. When Crelan runs outside Kubernetes, it lists contexts from `CRELAN_KUBECONFIG_DATA_B64` (a base64-encoded kubeconfig secret), `CRELAN_KUBECONFIG_DATA` (raw kubeconfig YAML), or, if neither is set, the server process's `KUBECONFIG` file. When Crelan runs inside Kubernetes without either setting, it uses its pod's ServiceAccount. Users choose an available context in the dashboard, and each deployment remembers its selected cluster for status checks and deletion.
 
-For a hosted Crelan instance, add `CRELAN_KUBECONFIG_DATA` as a private, multiline environment variable in the hosting provider's runtime settings, using a kubeconfig that contains both cluster contexts. Restart/redeploy Crelan after changing it. Do not put the kubeconfig in the repository or a public build argument. Lens normally uses the same kubeconfig as `kubectl`. Check the context names and create a flattened local copy (which embeds referenced certificate files) without printing credentials into the terminal:
+For a hosted Crelan instance whose environment editor accepts key/value pairs, add `CRELAN_KUBECONFIG_DATA_B64` as the key and a single-line base64 value as the value. This avoids multiline input. Restart/redeploy Crelan after changing it. Do not put the kubeconfig in the repository or a public build argument. Lens normally uses the same kubeconfig as `kubectl`. Check the context names and create a flattened local copy (which embeds referenced certificate files), then encode it as one line:
 
 ```sh
 kubectl config get-contexts
 kubectl config view --raw --flatten > /tmp/crelan-kubeconfig.yaml
+base64 < /tmp/crelan-kubeconfig.yaml | tr -d '\n' > /tmp/crelan-kubeconfig.b64
 ```
 
-Then copy `/tmp/crelan-kubeconfig.yaml` directly into the hosting provider's secret environment variable. The kubeconfig's API servers must be reachable from the hosted Crelan service. Contexts that authenticate through a local `exec` plugin (for example, cloud CLI login helpers) will not work in the standard Crelan container unless that plugin and its credentials are also configured there; use credentials supported directly by kubeconfig or extend the server image for that provider.
+Copy the contents of `/tmp/crelan-kubeconfig.b64` into the environment variable's value field. Base64 is an encoding, not encryption, so treat the value as a credential and keep it private. The kubeconfig's API servers must be reachable from the hosted Crelan service. Contexts that authenticate through a local `exec` plugin (for example, cloud CLI login helpers) will not work in the standard Crelan container unless that plugin and its credentials are also configured there; use credentials supported directly by kubeconfig or extend the server image for that provider.
 
 Crelan expects the workspace namespace `crelan-ws-1` to exist in each cluster and to carry the tenant label used by the deployment policy. Create it in each cluster before connecting Crelan:
 

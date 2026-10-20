@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -155,10 +156,10 @@ func newKubernetesProvisionerWithRESTConfig(config *rest.Config) (*kubernetesPro
 }
 
 func loadKubernetesRESTConfig() (*rest.Config, error) {
-	if strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")) != "" {
+	if hasOperatorKubeconfigData() {
 		loaded, err := loadConfiguredKubeconfig()
 		if err != nil {
-			return nil, fmt.Errorf("load CRELAN_KUBECONFIG_DATA: %w", err)
+			return nil, fmt.Errorf("load operator kubeconfig: %w", err)
 		}
 		if loaded.CurrentContext == "" {
 			return nil, errors.New("CRELAN_KUBECONFIG_DATA must set a current-context")
@@ -201,10 +202,12 @@ func loadKubernetesRESTConfig() (*rest.Config, error) {
 // loadConfiguredKubeconfig loads operator-provided kubeconfig YAML when set,
 // otherwise it uses client-go's normal KUBECONFIG/default-path resolution.
 func loadConfiguredKubeconfig() (*clientcmdapi.Config, error) {
-	if data := strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")); data != "" {
-		loaded, err := clientcmd.Load([]byte(data))
+	if data, err := operatorKubeconfigData(); err != nil {
+		return nil, err
+	} else if data != nil {
+		loaded, err := clientcmd.Load(data)
 		if err != nil {
-			return nil, fmt.Errorf("parse CRELAN_KUBECONFIG_DATA: %w", err)
+			return nil, fmt.Errorf("parse operator kubeconfig data: %w", err)
 		}
 		return loaded, nil
 	}
@@ -214,6 +217,25 @@ func loadConfiguredKubeconfig() (*clientcmdapi.Config, error) {
 		return nil, err
 	}
 	return loaded, nil
+}
+
+func hasOperatorKubeconfigData() bool {
+	return strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA_B64")) != "" ||
+		strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")) != ""
+}
+
+func operatorKubeconfigData() ([]byte, error) {
+	if encoded := strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA_B64")); encoded != "" {
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("decode CRELAN_KUBECONFIG_DATA_B64: %w", err)
+		}
+		return data, nil
+	}
+	if data := strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")); data != "" {
+		return []byte(data), nil
+	}
+	return nil, nil
 }
 
 func loadKubernetesProvisionerConfig() (kubernetesProvisionerConfig, error) {
