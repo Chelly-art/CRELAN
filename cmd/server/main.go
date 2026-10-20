@@ -76,9 +76,14 @@ func main() {
 	}
 	githubApp.deployments = deployments
 	deployments.registerRoutes(mux)
+	(&connectionService{auth: auth, deployments: deployments}).registerRoutes(mux)
 	admin := newAdminService(auth, clusterProvisioner)
+	admin.deployments = deployments
 	admin.registerRoutes(mux)
-	(&databaseService{auth: auth, provisioner: clusterProvisioner}).registerRoutes(mux)
+	databases := &databaseService{auth: auth, provisioner: clusterProvisioner, deployments: deployments}
+	databases.registerRoutes(mux)
+	managedServices := &managedServiceService{auth: auth, provisioner: clusterProvisioner, deployments: deployments}
+	managedServices.registerRoutes(mux)
 	(&registryCredentialService{auth: auth, deployments: deployments}).registerRoutes(mux)
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()

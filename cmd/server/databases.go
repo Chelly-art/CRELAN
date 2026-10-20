@@ -30,6 +30,17 @@ import (
 type databaseService struct {
 	auth        *authService
 	provisioner *kubernetesProvisioner
+	deployments *deploymentService
+}
+
+func (s *databaseService) currentProvisioner() *kubernetesProvisioner {
+	if s.deployments != nil {
+		if provisioner, ok := s.deployments.currentProvisioner().(*kubernetesProvisioner); ok {
+			return provisioner
+		}
+		return nil
+	}
+	return s.provisioner
 }
 
 var databaseNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$`)
@@ -84,10 +95,10 @@ func (s *databaseService) identity(r *http.Request) (int64, string, error) {
 	if err != nil || workspaceID < 1 {
 		return 0, "", errors.New("sign in required")
 	}
-	if s.provisioner == nil {
+	if s.currentProvisioner() == nil {
 		return workspaceID, "", errKubernetesNotConfigured
 	}
-	namespace, err := s.provisioner.workspaceNamespace(r.Context(), workspaceID)
+	namespace, err := s.currentProvisioner().workspaceNamespace(r.Context(), workspaceID)
 	return workspaceID, namespace, err
 }
 
@@ -104,7 +115,7 @@ func (s *databaseService) engines(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	for i := range engines {
 		gvr := databaseGVR(engines[i].ID)
-		_, err := s.provisioner.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{Limit: 1})
+		_, err := s.currentProvisioner().dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{Limit: 1})
 		engines[i].Available = err == nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"engines": engines})
@@ -118,7 +129,7 @@ func (s *databaseService) list(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]databaseRecord, 0)
 	for _, engine := range []string{"postgresql", "mysql"} {
-		list, err := s.provisioner.dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: databaseWorkspaceLabel + "=" + fmt.Sprint(workspaceID)})
+		list, err := s.currentProvisioner().dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: databaseWorkspaceLabel + "=" + fmt.Sprint(workspaceID)})
 		if err != nil && !isDatabaseOperatorMissing(err) {
 			s.writeFailure(w, err)
 			return
@@ -210,44 +221,44 @@ func (s *databaseService) create(w http.ResponseWriter, r *http.Request) {
 		secretData = map[string][]byte{"rootUser": []byte("root"), "rootHost": []byte("%"), "rootPassword": []byte(rootPassword), "appUser": []byte("app"), "appPassword": []byte(password)}
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace, Labels: labels}, Type: corev1.SecretTypeOpaque, Data: secretData}
-	createdSecret, err := s.provisioner.client.CoreV1().Secrets(namespace).Create(r.Context(), secret, metav1.CreateOptions{})
+	createdSecret, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(r.Context(), secret, metav1.CreateOptions{})
 	if err != nil {
 		s.writeFailure(w, err)
 		return
 	}
 	backupSecretName, backupConfigured, backupErr := s.ensureBackupSecret(r.Context(), namespace, input.Name, workspaceID)
 	if backupErr != nil {
-		_ = s.provisioner.client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
 		writeError(w, http.StatusServiceUnavailable, "Could not configure database backup credentials")
 		return
 	}
 	resource := databaseCustomResource(input, version, storage, namespace, secretName, labels)
 	configureDatabaseBackups(resource, input.Engine, backupSecretName, backupConfigured)
-	created, err := s.provisioner.dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Create(r.Context(), resource, metav1.CreateOptions{})
+	created, err := s.currentProvisioner().dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Create(r.Context(), resource, metav1.CreateOptions{})
 	if err != nil {
-		_ = s.provisioner.client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
 		s.writeFailure(w, err)
 		return
 	}
 	if input.Engine == "postgresql" && backupConfigured {
 		if err := s.createPostgresBackupSchedule(r.Context(), namespace, input.Name, workspaceID); err != nil {
 			log.Printf("create PostgreSQL backup schedule: %v", err)
-			_ = s.provisioner.dynamicClient.Resource(cloudNativePGGVR).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
+			_ = s.currentProvisioner().dynamicClient.Resource(cloudNativePGGVR).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
 			writeError(w, http.StatusServiceUnavailable, "Could not configure the PostgreSQL backup schedule")
 			return
 		}
 	}
 	if err := s.ensureDatabaseNetworkPolicy(r.Context(), namespace, input.Name, workspaceID); err != nil {
-		_ = s.provisioner.dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
-		_ = s.provisioner.client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
 		writeError(w, http.StatusServiceUnavailable, "Could not apply database network isolation")
 		return
 	}
 	if input.Engine == "mysql" {
 		if err := s.createMySQLAppUserJob(r.Context(), namespace, input.Name, secretName, labels); err != nil {
 			log.Printf("create MySQL application-user job: %v", err)
-			_ = s.provisioner.dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
-			_ = s.provisioner.client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
+			_ = s.currentProvisioner().dynamicClient.Resource(databaseGVR(input.Engine)).Namespace(namespace).Delete(context.Background(), input.Name, metav1.DeleteOptions{})
+			_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
 			writeError(w, http.StatusServiceUnavailable, "Could not initialize the MySQL application user")
 			return
 		}
@@ -256,12 +267,12 @@ func (s *databaseService) create(w http.ResponseWriter, r *http.Request) {
 	if parseErr == nil {
 		owner := metav1.NewControllerRef(created, gv.WithKind(created.GetKind()))
 		createdSecret.OwnerReferences = []metav1.OwnerReference{*owner}
-		_, _ = s.provisioner.client.CoreV1().Secrets(namespace).Update(r.Context(), createdSecret, metav1.UpdateOptions{})
+		_, _ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Update(r.Context(), createdSecret, metav1.UpdateOptions{})
 		if backupConfigured {
-			backupSecret, getErr := s.provisioner.client.CoreV1().Secrets(namespace).Get(r.Context(), backupSecretName, metav1.GetOptions{})
+			backupSecret, getErr := s.currentProvisioner().client.CoreV1().Secrets(namespace).Get(r.Context(), backupSecretName, metav1.GetOptions{})
 			if getErr == nil {
 				backupSecret.OwnerReferences = []metav1.OwnerReference{*owner}
-				_, _ = s.provisioner.client.CoreV1().Secrets(namespace).Update(r.Context(), backupSecret, metav1.UpdateOptions{})
+				_, _ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Update(r.Context(), backupSecret, metav1.UpdateOptions{})
 			}
 		}
 	}
@@ -284,7 +295,7 @@ func (s *databaseService) checkDatabaseLimits(w http.ResponseWriter, r *http.Req
 	usedStorage := requestedGi
 	count := 0
 	for _, engine := range []string{"postgresql", "mysql"} {
-		list, err := s.provisioner.dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: databaseWorkspaceLabel + "=" + strconv.FormatInt(workspaceID, 10)})
+		list, err := s.currentProvisioner().dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).List(r.Context(), metav1.ListOptions{LabelSelector: databaseWorkspaceLabel + "=" + strconv.FormatInt(workspaceID, 10)})
 		if err != nil && !isDatabaseOperatorMissing(err) {
 			s.writeFailure(w, err)
 			return false
@@ -336,11 +347,13 @@ func resourceGi(value string) int64 {
 func (s *databaseService) ensureDatabaseQuota(ctx context.Context, workspaceID int64, namespace string) error {
 	labels := map[string]string{databaseWorkspaceLabel: strconv.FormatInt(workspaceID, 10)}
 	quota := &corev1.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "crelan-database-limits", Namespace: namespace, Labels: labels}, Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{
-		corev1.ResourceRequestsStorage:                      resource.MustParse("1500Gi"),
-		corev1.ResourceName("count/persistentvolumeclaims"): resource.MustParse("15"),
+		// These namespace-wide counters include app and managed-service PVCs too.
+		// Feature-specific storage budgets are enforced by each provisioning API.
+		corev1.ResourceRequestsStorage:                      resource.MustParse(configuredWorkspaceStorageQuota()),
+		corev1.ResourceName("count/persistentvolumeclaims"): resource.MustParse("50"),
 		corev1.ResourceName("count/pods"):                   resource.MustParse("50"),
 	}}}
-	quotas := s.provisioner.client.CoreV1().ResourceQuotas(namespace)
+	quotas := s.currentProvisioner().client.CoreV1().ResourceQuotas(namespace)
 	current, err := quotas.Get(ctx, quota.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = quotas.Create(ctx, quota, metav1.CreateOptions{})
@@ -377,7 +390,7 @@ func (s *databaseService) ensureBackupSecret(ctx context.Context, namespace, dat
 		data["s3EndpointOverride"] = []byte(endpoint)
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels}, Type: corev1.SecretTypeOpaque, Data: data}
-	_, err := s.provisioner.client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	_, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	return name, err == nil, err
 }
 
@@ -418,13 +431,13 @@ func (s *databaseService) createPostgresBackupSchedule(ctx context.Context, name
 		"metadata": map[string]any{"name": name + "-daily", "namespace": namespace, "labels": map[string]any{databaseWorkspaceLabel: strconv.FormatInt(workspaceID, 10)}},
 		"spec":     map[string]any{"schedule": "0 0 2 * * *", "backupOwnerReference": "cluster", "immediate": true, "cluster": map[string]any{"name": name}},
 	}}
-	_, err := s.provisioner.dynamicClient.Resource(cloudNativePGScheduledBackupGVR).Namespace(namespace).Create(ctx, backup, metav1.CreateOptions{})
+	_, err := s.currentProvisioner().dynamicClient.Resource(cloudNativePGScheduledBackupGVR).Namespace(namespace).Create(ctx, backup, metav1.CreateOptions{})
 	return err
 }
 
 func (s *databaseService) ensureDatabaseNetworkPolicy(ctx context.Context, namespace, name string, workspaceID int64) error {
 	match := map[string]string{"cnpg.io/cluster": name}
-	if _, err := s.provisioner.dynamicClient.Resource(cloudNativePGGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{}); apierrors.IsNotFound(err) {
+	if _, err := s.currentProvisioner().dynamicClient.Resource(cloudNativePGGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{}); apierrors.IsNotFound(err) {
 		match = map[string]string{"mysql.oracle.com/cluster": name}
 	} else if err != nil {
 		return err
@@ -448,7 +461,7 @@ func (s *databaseService) ensureDatabaseNetworkPolicy(ctx context.Context, names
 			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
 		},
 	}
-	policies := s.provisioner.client.NetworkingV1().NetworkPolicies(namespace)
+	policies := s.currentProvisioner().client.NetworkingV1().NetworkPolicies(namespace)
 	current, err := policies.Get(ctx, policy.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = policies.Create(ctx, policy, metav1.CreateOptions{})
@@ -481,7 +494,7 @@ func (s *databaseService) createMySQLAppUserJob(ctx context.Context, namespace, 
 			}}, SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: ptr(true), RunAsUser: ptr(int64(999)), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}},
 		}},
 	}
-	_, err := s.provisioner.client.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
+	_, err := s.currentProvisioner().client.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
 	return err
 }
 
@@ -505,16 +518,16 @@ func (s *databaseService) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := resource.GetUID()
-	err = s.provisioner.dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).Delete(r.Context(), name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}})
+	err = s.currentProvisioner().dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).Delete(r.Context(), name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}})
 	if err != nil {
 		s.writeFailure(w, err)
 		return
 	}
 	if engine == "postgresql" {
-		_ = s.provisioner.dynamicClient.Resource(cloudNativePGScheduledBackupGVR).Namespace(namespace).Delete(r.Context(), name+"-daily", metav1.DeleteOptions{})
+		_ = s.currentProvisioner().dynamicClient.Resource(cloudNativePGScheduledBackupGVR).Namespace(namespace).Delete(r.Context(), name+"-daily", metav1.DeleteOptions{})
 	}
-	_ = s.provisioner.client.NetworkingV1().NetworkPolicies(namespace).Delete(r.Context(), "crelan-db-"+name+"-ingress", metav1.DeleteOptions{})
-	_ = s.provisioner.client.BatchV1().Jobs(namespace).Delete(r.Context(), "db-"+name+"-init-user", metav1.DeleteOptions{})
+	_ = s.currentProvisioner().client.NetworkingV1().NetworkPolicies(namespace).Delete(r.Context(), "crelan-db-"+name+"-ingress", metav1.DeleteOptions{})
+	_ = s.currentProvisioner().client.BatchV1().Jobs(namespace).Delete(r.Context(), "db-"+name+"-init-user", metav1.DeleteOptions{})
 	_, _ = s.auth.db.ExecContext(r.Context(), `INSERT INTO audit_events (workspace_id, action, details, created_at) VALUES (?, 'database.delete', ?, ?)`, workspaceID, name+" ("+engine+")", time.Now().UTC().Format(time.RFC3339Nano))
 	// The operator may still need this Secret during finalization. Remove it
 	// only after the custom resource has disappeared (normally the operator
@@ -549,7 +562,7 @@ func (s *databaseService) findOwned(ctx context.Context, namespace string, works
 		return nil, "", apierrors.NewNotFound(k8sschema.GroupResource{Resource: "databases"}, name)
 	}
 	for _, engine := range []string{"postgresql", "mysql"} {
-		resource, err := s.provisioner.dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		resource, err := s.currentProvisioner().dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 		if (apierrors.IsNotFound(err) && !isDatabaseOperatorMissing(err)) || isDatabaseOperatorMissing(err) {
 			continue
 		}

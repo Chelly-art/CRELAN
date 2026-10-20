@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f7fa">
-    <meta name="description" content="Browse Kubernetes pods, ConfigMaps, and Secret metadata. Deploy and delete apps from public GitHub repositories.">
-    <title>Crelan — Kubernetes workspace</title>
+    <meta name="description" content="Crelan gives teams a shared workspace to deploy applications, manage services, and operate Kubernetes workloads.">
+    <title>Crelan — Your team's application platform</title>
     <link rel="stylesheet" href="/assets/styles.css">
   </head>
   <body class="landing-body">
@@ -15,67 +15,67 @@
         <span>crelan<span class="brand-period">.</span></span>
       </a>
       <nav class="landing-nav" aria-label="Main navigation">
-        <a href="#how-it-works">How it works</a>
-        <a href="#built-for-teams">Cluster tools</a>
+        <a href="#platform">Platform</a>
+        <a href="#workflow">How it works</a>
         <a href="/docs">Docs</a>
       </nav>
       <div class="landing-actions">
         <a class="landing-signin" href="/login">Sign in</a>
-        <a class="primary-button landing-cta" href="/login">Open workspace <span>→</span></a>
+        <a class="primary-button landing-cta" href="/login">Open your workspace <span>→</span></a>
       </div>
     </header>
 
     <main>
       <section class="landing-hero">
         <div class="landing-copy">
-          <div class="landing-eyebrow"><span></span> A SIMPLE KUBERNETES WORKSPACE</div>
-          <h1>Browse your cluster.<br><span>Deploy your code.</span></h1>
-          <p class="landing-intro">Inspect pods, ConfigMaps, and Secret metadata in your workspace. Deploy an app from a public GitHub repository, then delete it when you’re done.</p>
+          <div class="landing-eyebrow"><span></span> THE APPLICATION PLATFORM FOR YOUR TEAM</div>
+          <h1>From source to<br><span>running apps.</span></h1>
+          <p class="landing-intro">Give every team a shared place to deploy applications, manage databases, and see what is running. Crelan connects your workflow to the Kubernetes platform configured for your organization.</p>
           <div class="landing-hero-actions">
-            <a class="primary-button landing-primary" href="/login">Open workspace <span>→</span></a>
-            <a class="landing-secondary" href="#how-it-works">See the features <span>↓</span></a>
+            <a class="primary-button landing-primary" href="/login">Open your workspace <span>→</span></a>
+            <a class="landing-secondary" href="/docs">Read the docs <span>↗</span></a>
           </div>
-          <div class="landing-proof"><span class="proof-icon">✓</span> Your workspace is private to your team <span class="proof-divider">·</span> Built around your team</div>
+          <div class="landing-proof"><span class="proof-icon">✓</span> Team workspaces <span class="proof-divider">·</span> Role-based access <span class="proof-divider">·</span> One control plane</div>
         </div>
 
-        <div class="landing-preview" aria-label="Preview of the Crelan application dashboard">
+        <div class="landing-preview" aria-label="Preview of the Crelan team workspace">
           <div class="preview-window">
-            <div class="preview-topbar"><div class="preview-dots"><i></i><i></i><i></i></div><span>Kubernetes workspace</span><span class="preview-avatar">K</span></div>
+            <div class="preview-topbar"><div class="preview-dots"><i></i><i></i><i></i></div><span>Team workspace</span><span class="preview-avatar">T</span></div>
             <div class="preview-resource-list">
-              <article><span class="preview-resource-icon">◉</span><span><b>Pods</b><small>View workload status</small></span><span class="preview-resource-arrow">→</span></article>
-              <article><span class="preview-resource-icon">▤</span><span><b>ConfigMaps</b><small>Review configuration keys</small></span><span class="preview-resource-arrow">→</span></article>
-              <article><span class="preview-resource-icon">◆</span><span><b>Secrets</b><small>Inspect metadata safely</small></span><span class="preview-resource-arrow">→</span></article>
-              <article><span class="preview-resource-icon">↗</span><span><b>Deployments</b><small>Deploy or delete a public repo</small></span><span class="preview-resource-arrow">→</span></article>
+              <article><span class="preview-resource-icon">↗</span><span><b>Applications</b><small>Deploy a repository or container image</small></span><span class="preview-resource-arrow">→</span></article>
+              <article><span class="preview-resource-icon">▤</span><span><b>Databases</b><small>Manage workspace databases</small></span><span class="preview-resource-arrow">→</span></article>
+              <article><span class="preview-resource-icon">♙</span><span><b>Team access</b><small>Manage workspace members and roles</small></span><span class="preview-resource-arrow">→</span></article>
+              <article><span class="preview-resource-icon">◷</span><span><b>Activity</b><small>Review usage and workspace events</small></span><span class="preview-resource-arrow">→</span></article>
             </div>
           </div>
-          <div class="preview-note"><span>✳</span> Secret values stay hidden.</div>
+          <div class="preview-note"><span>✳</span> Your workspace keeps team resources together.</div>
         </div>
       </section>
 
-      <section class="landing-principles" id="built-for-teams">
-        <div><span class="principle-icon">◫</span><span><b>Inspect the cluster</b><small>See pods, ConfigMaps, and Secret metadata in your workspace.</small></span></div>
-        <div><span class="principle-icon principle-icon-orange">⌘</span><span><b>Deploy public code</b><small>Build and run an app from a public GitHub repository.</small></span></div>
-        <div><span class="principle-icon principle-icon-green">×</span><span><b>Clean up deployments</b><small>Delete an app and its Kubernetes resources from the workspace.</small></span></div>
+      <section class="landing-principles" id="platform">
+        <div><span class="principle-icon">⌘</span><span><b>Deploy your way</b><small>Build from a GitHub repository or run an image you already built.</small></span></div>
+        <div><span class="principle-icon principle-icon-orange">◉</span><span><b>Operate together</b><small>Manage applications, databases, services, and team access in one workspace.</small></span></div>
+        <div><span class="principle-icon principle-icon-green">▤</span><span><b>Keep workloads visible</b><small>Review app status, logs, and Kubernetes resources scoped to your workspace.</small></span></div>
       </section>
 
-      <section class="landing-how" id="how-it-works">
+      <section class="landing-how" id="workflow">
         <div class="landing-section-heading">
-          <div class="landing-eyebrow">YOUR CLUSTER, ONE WORKSPACE</div>
-          <h2>See what’s running.<br>Ship what’s next.</h2>
-          <p>Check your workloads and configuration, launch an app from GitHub, and remove it when you no longer need it.</p>
+          <div class="landing-eyebrow">A CLEAR PATH TO RUNNING SOFTWARE</div>
+          <h2>One workspace for<br>your whole team.</h2>
+          <p>Bring your team into a shared environment. Ship an application, manage its supporting services, and follow its status from the same place.</p>
         </div>
         <div class="landing-steps">
-          <article><span>01</span><h3>Browse resources</h3><p>List pods, ConfigMaps, and Secret metadata in your workspace.</p></article>
-          <article><span>02</span><h3>Deploy a public repo</h3><p>Build and deploy an application from a public GitHub repository.</p></article>
-          <article><span>03</span><h3>Delete the deployment</h3><p>Remove the deployed service and the Kubernetes resources created for it.</p></article>
+          <article><span>01</span><h3>Sign in with your team</h3><p>Open your workspace and invite colleagues with the access they need.</p></article>
+          <article><span>02</span><h3>Deploy an application</h3><p>Choose a repository to build or provide a container image that is ready to run.</p></article>
+          <article><span>03</span><h3>Manage it together</h3><p>Track rollouts, inspect logs, manage services, and remove apps when they are no longer needed.</p></article>
         </div>
       </section>
 
       <section class="landing-bottom-cta">
-        <div><div class="landing-eyebrow">GET STARTED</div><h2>Open the Kubernetes workspace.</h2><p>Sign in to browse resources and deploy a public repository.</p></div>
-        <a class="primary-button landing-primary" href="/login">Open workspace <span>→</span></a>
+        <div><div class="landing-eyebrow">YOUR TEAM'S WORKSPACE</div><h2>Bring your application workflow together.</h2><p>See the customer workflow and deployment options in the Crelan docs.</p></div>
+        <a class="primary-button landing-primary" href="/login">Open your workspace <span>→</span></a>
       </section>
     </main>
-    <footer class="landing-footer"><a class="brand landing-brand" href="/"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a><span>Kubernetes workspace</span><span>© Crelan</span></footer>
+    <footer class="landing-footer"><a class="brand landing-brand" href="/"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a><span>Application platform for teams</span><a href="/docs">Documentation</a><span>© Crelan</span></footer>
   </body>
 </html>

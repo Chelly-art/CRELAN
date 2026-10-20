@@ -161,6 +161,9 @@ CREATE TABLE IF NOT EXISTS deployments (
 	port INTEGER NOT NULL DEFAULT 8080,
 	cpu_millicores INTEGER NOT NULL DEFAULT 1000,
 	memory_mb INTEGER NOT NULL DEFAULT 512,
+	storage_size TEXT NOT NULL DEFAULT '',
+	storage_mount_path TEXT NOT NULL DEFAULT '',
+	storage_class TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL,
 	status_message TEXT NOT NULL DEFAULT '',
 	latest_run_id INTEGER,
@@ -260,6 +263,9 @@ func ensureDeploymentColumns(db *sql.DB) error {
 		{"latest_run_id", `ALTER TABLE deployments ADD COLUMN latest_run_id INTEGER`},
 		{"cpu_millicores", `ALTER TABLE deployments ADD COLUMN cpu_millicores INTEGER NOT NULL DEFAULT 1000`},
 		{"memory_mb", `ALTER TABLE deployments ADD COLUMN memory_mb INTEGER NOT NULL DEFAULT 512`},
+		{"storage_size", `ALTER TABLE deployments ADD COLUMN storage_size TEXT NOT NULL DEFAULT ''`},
+		{"storage_mount_path", `ALTER TABLE deployments ADD COLUMN storage_mount_path TEXT NOT NULL DEFAULT ''`},
+		{"storage_class", `ALTER TABLE deployments ADD COLUMN storage_class TEXT NOT NULL DEFAULT ''`},
 		{"image", `ALTER TABLE deployments ADD COLUMN image TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
@@ -849,6 +855,10 @@ func (a *authService) serveAuthPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authService) landingPage(w http.ResponseWriter, r *http.Request) {
+	if _, err := a.sessionUserID(r); err == nil {
+		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return
+	}
 	page, err := assets.Web.ReadFile("web/index.html")
 	if err != nil {
 		log.Printf("read landing page: %v", err)

@@ -25,6 +25,10 @@ async function loadAdminOverview() {
     output.textContent = JSON.stringify(overview, null, 2);
     output.hidden = false;
     state.textContent = "Platform overview loaded.";
+    const activeContext = overview.cluster?.context;
+    $("#cluster-connect-state").textContent = activeContext
+      ? `Active customer deployment cluster: ${activeContext}`
+      : "No customer deployment cluster is connected.";
     $("#admin-api-status").textContent = "Admin API connected";
     const readiness = await request("/api/v1/admin/readiness");
     const checks = $("#readiness-checks");
@@ -82,6 +86,36 @@ async function initializeAdmin() {
 }
 
 $("#admin-refresh").addEventListener("click", loadAdminOverview);
+$("#cluster-connect-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = $("#cluster-connect-submit");
+  const state = $("#cluster-connect-state");
+  const kubeconfig = $("#cluster-kubeconfig");
+  button.disabled = true;
+  state.textContent = "Checking the kubeconfig and connecting to the cluster…";
+  try {
+    const response = await fetch("/api/v1/admin/clusters/connect", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kubeconfig: kubeconfig.value, context: $("#cluster-context").value.trim() }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      window.location.assign("/login");
+      return;
+    }
+    if (!response.ok) throw new Error(body.error || `Connection failed (${response.status})`);
+    state.textContent = `Connected to “${body.context}”. Customer deployments will use this cluster.`;
+    kubeconfig.value = "";
+    $("#cluster-context").value = "";
+    await loadAdminOverview();
+  } catch (error) {
+    state.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 $("#admin-backup").addEventListener("click", async () => {
   const button = $("#admin-backup");
   button.disabled = true;

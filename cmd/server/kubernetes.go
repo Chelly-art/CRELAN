@@ -603,6 +603,10 @@ func ownsWorkspace(labels map[string]string, workspaceID int64) bool {
 }
 
 func (p *kubernetesProvisioner) Delete(ctx context.Context, workspaceID int64, name string) error {
+	return p.DeleteWithPersistence(ctx, workspaceID, name, false)
+}
+
+func (p *kubernetesProvisioner) DeleteWithPersistence(ctx context.Context, workspaceID int64, name string, deletePersistentStorage bool) error {
 	namespace, err := p.workspaceNamespace(ctx, workspaceID)
 	if err != nil {
 		return err
@@ -618,6 +622,11 @@ func (p *kubernetesProvisioner) Delete(ctx context.Context, workspaceID int64, n
 	}
 	if err := p.client.NetworkingV1().Ingresses(namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		failures = append(failures, fmt.Errorf("delete ingress: %w", err))
+	}
+	if deletePersistentStorage {
+		if err := p.deleteAppPersistentVolume(ctx, workspaceID, name); err != nil {
+			failures = append(failures, err)
+		}
 	}
 	return errors.Join(failures...)
 }
@@ -1141,6 +1150,18 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 			},
 		},
 	}
+	var volumes []corev1.Volume
+	if storage := request.PersistentStorage; storage != nil {
+		if configuredAppReplicas() != 1 {
+			return errors.New("persistent app storage requires one configured replica")
+		}
+		if err := p.ensureAppPersistentVolume(ctx, workspaceID, namespace, name, storage); err != nil {
+			return err
+		}
+		volumeName := "app-data"
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: volumeName, MountPath: storage.MountPath})
+		volumes = append(volumes, corev1.Volume{Name: volumeName, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: appDataPVCName(name)}}})
+	}
 	if probePath := configuredAppHealthPath(); probePath != "" {
 		probe := func() *corev1.Probe {
 			return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: probePath, Port: intstr.FromInt(request.Port), Scheme: corev1.URISchemeHTTP}}, PeriodSeconds: 10, TimeoutSeconds: 3, FailureThreshold: 3}
@@ -1152,6 +1173,7 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 	containers := []corev1.Container{container}
 	podSpec := corev1.PodSpec{
 		Containers: containers,
+		Volumes:    volumes,
 		SecurityContext: &corev1.PodSecurityContext{
 			RunAsNonRoot:   ptr(true),
 			SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
@@ -1185,8 +1207,42 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 	if apierrors.IsNotFound(err) {
 		_, err = p.client.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
 	} else if err == nil {
+		if !ownsWorkspace(current.Labels, workspaceID) || current.Labels[applicationLabel] != name {
+			return errors.New("existing deployment is not owned by this workspace")
+		}
+		// Connection attachments are stored as SecretKeyRef environment entries
+		// on the pod template. Preserve them through image redeploys so customers
+		// do not need to reattach every connection after each release.
+		for _, existingContainer := range current.Spec.Template.Spec.Containers {
+			if existingContainer.Name != name {
+				continue
+			}
+			for _, env := range existingContainer.Env {
+				if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil || env.Name == "" {
+					continue
+				}
+				secretName := env.ValueFrom.SecretKeyRef.Name
+				secret, secretErr := p.client.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
+				if secretErr != nil || !ownsWorkspace(secret.Labels, workspaceID) {
+					continue
+				}
+				found := false
+				for i := range container.Env {
+					if container.Env[i].Name == env.Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					container.Env = append(container.Env, *env.DeepCopy())
+				}
+			}
+			break
+		}
 		deployment.ResourceVersion = current.ResourceVersion
 		_, err = p.client.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	} else {
+		return fmt.Errorf("read existing deployment: %w", err)
 	}
 	if err != nil {
 		return fmt.Errorf("apply deployment: %w", err)
@@ -1245,9 +1301,11 @@ func (p *kubernetesProvisioner) ensureWorkspaceResourceQuota(ctx context.Context
 	quota := &corev1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{Name: "crelan-app-limits", Namespace: namespace, Labels: labels},
 		Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{
-			corev1.ResourceName("count/deployments.apps"): resource.MustParse(strconv.Itoa(maxApps)),
-			corev1.ResourceServices:                       resource.MustParse(strconv.Itoa(maxApps)),
-			corev1.ResourceName("count/pods"):             resource.MustParse("50"),
+			corev1.ResourceName("count/deployments.apps"):       resource.MustParse(strconv.Itoa(maxApps)),
+			corev1.ResourceServices:                             resource.MustParse(strconv.Itoa(maxApps)),
+			corev1.ResourceName("count/pods"):                   resource.MustParse("50"),
+			corev1.ResourceName("count/persistentvolumeclaims"): resource.MustParse("50"),
+			corev1.ResourceRequestsStorage:                      resource.MustParse(configuredWorkspaceStorageQuota()),
 		}},
 	}
 	quotas := p.client.CoreV1().ResourceQuotas(namespace)

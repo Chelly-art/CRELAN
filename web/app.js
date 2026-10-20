@@ -39,7 +39,6 @@ async function loadAccount() {
     window.location.reload();
   });
   $("#invite-form").hidden = user.workspace_role !== "owner";
-  if (user.platform_admin === true) $("#admin-nav-link").hidden = false;
 }
 
 function renderTable(container, columns, rows, emptyMessage) {
@@ -142,7 +141,11 @@ async function loadDeployments() {
 }
 
 async function deleteDeployment(item) {
-  if (!window.confirm(`Delete deployment “${item.name}”?`)) return;
+  const removesVolume = Boolean(item.persistent_storage || item.volume || item.pvc);
+  const prompt = removesVolume
+    ? `Delete deployment “${item.name}” and its persistent volume? Stored data on that volume will be deleted.`
+    : `Delete deployment “${item.name}”?`;
+  if (!window.confirm(prompt)) return;
   try {
     await api(`/api/v1/deployments/${item.id}`, { method: "DELETE" });
     if (activeApplication?.id === item.id) closeApplication();
@@ -189,12 +192,25 @@ $("#deployment-form").addEventListener("submit", async (event) => {
       return;
     }
   }
+  if ($("#app-volume-enabled").checked) {
+    payload.persistent_storage = { size: $("#app-volume-size").value, mount_path: $("#app-volume-mount").value.trim() };
+    if (!payload.persistent_storage.mount_path) {
+      error.textContent = "Enter a mount path for persistent storage.";
+      error.hidden = false;
+      submit.disabled = false;
+      submit.textContent = "Deploy application";
+      return;
+    }
+  } else {
+    delete payload.persistent_storage;
+  }
   try {
     await api("/api/v1/deployments", { method: "POST", body: JSON.stringify(payload) });
     form.reset();
     $("#app-port").value = "8080";
     $("#image-port").value = "8080";
     updateSourceFields();
+    updateVolumeFields();
     $("#deploy-form-panel").hidden = true;
     $("#page-title").textContent = "Applications";
     await loadDeployments();
@@ -214,7 +230,7 @@ async function showApplication(item) {
   $("#app-runtime").hidden = false;
   $("#runtime-app-name").textContent = item.name;
   $("#runtime-app-summary").textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Application runtime details");
-  await Promise.all([loadApplicationResources(), loadApplicationLogs()]);
+  await Promise.all([loadApplicationResources(), loadApplicationLogs(), loadConnections()]);
 }
 
 function closeApplication() {
@@ -329,13 +345,502 @@ async function loadDatabaseEngines() {
       const option = [...select.options].find((item) => item.value === engine.id);
       if (option) {
         option.disabled = !engine.available;
-        if (!engine.available) option.textContent = `${engine.name} (not available)`;
+        if (!engine.available) option.textContent = `${engine.name} (operator not installed)`;
       }
     }
   } catch {
     // Keep the catalog visible; create requests return the specific provisioning issue.
   }
 }
+
+let serviceCatalog = [];
+let editingConnectionId = null;
+let editingConnectionSecretKeys = [];
+let workspaceConnections = [];
+let oneTimeManagedServiceCredentials = null;
+
+async function loadServiceCatalog() {
+  const select = $("#managed-service-type");
+  const versionSelect = $("#managed-service-version");
+  const error = $("#managed-service-error");
+  try {
+    const result = await api("/api/v1/service-catalog");
+    serviceCatalog = result.services || [];
+    select.replaceChildren();
+    const available = serviceCatalog.filter((service) => service.available !== false);
+    if (!available.length) {
+      select.append(new Option("No managed services available", ""));
+      select.disabled = true;
+      $("#managed-service-submit").disabled = true;
+      error.textContent = "No supported service operator is currently available for this cluster.";
+      error.hidden = false;
+      return;
+    }
+    for (const service of serviceCatalog) {
+      const value = service.type || service.id;
+      const label = service.name || value;
+      const displayLabel = value === "valkey" ? `${label} (experimental preview)` : label;
+      const option = new Option(service.available === false ? `${displayLabel} (unavailable)` : displayLabel, value);
+      option.disabled = service.available === false;
+      select.append(option);
+    }
+    select.disabled = false;
+    $("#managed-service-submit").disabled = false;
+    error.hidden = true;
+    const renderVersions = () => {
+      const selected = serviceCatalog.find((item) => (item.type || item.id) === select.value);
+      $("#valkey-preview-note").hidden = select.value !== "valkey";
+      $("#managed-service-description").textContent = selected?.description || "";
+      versionSelect.replaceChildren(new Option("Use catalog default", ""));
+      (selected?.versions || []).forEach((version) => versionSelect.append(new Option(String(version) === "operator-default" ? "Operator default" : String(version), String(version))));
+      if (selected?.default_version) versionSelect.value = String(selected.default_version);
+      const storage = $("#managed-service-storage");
+      storage.replaceChildren(new Option("Use platform default", ""));
+      (selected?.storage_options || []).forEach((size) => storage.append(new Option(`${size} per node`, String(size))));
+      storage.disabled = selected?.persistent_storage === false;
+      if (storage.disabled) storage.value = "";
+    };
+    select.onchange = renderVersions;
+    renderVersions();
+  } catch (cause) {
+    select.replaceChildren(new Option("Service catalog unavailable", ""));
+    select.disabled = true;
+    $("#managed-service-submit").disabled = true;
+    error.textContent = cause.message;
+    error.hidden = false;
+  }
+}
+
+async function loadManagedServices() {
+  const list = $("#managed-service-list");
+  list.replaceChildren();
+  try {
+    const result = await api("/api/v1/services");
+    for (const item of result.services || []) {
+      const row = document.createElement("div");
+      row.className = "token-row service-resource-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = item.name;
+      const endpoint = document.createElement("code");
+      endpoint.textContent = item.endpoint ? `${item.endpoint}${item.port ? `:${item.port}` : ""}` : `${item.type} · ${item.version || "default version"}`;
+      const meta = document.createElement("small");
+      const backupStatus = item.backup?.supported ? `backups ${item.backup.status || "supported"}` : "backups not configured";
+      meta.textContent = `${item.type === "valkey" ? "Experimental preview · " : ""}${item.type}${item.version ? ` ${item.version}` : ""}${item.storage ? ` · ${item.storage}/node` : ""} · ${backupStatus}${item.production_ready ? " · production ready" : " · production readiness not established"}`;
+      details.append(name, endpoint, meta);
+      const status = document.createElement("span");
+      status.className = `token-row-state ${["ready", "healthy", "running"].includes(String(item.status).toLowerCase()) ? "active" : ""}`;
+      status.textContent = item.status || "provisioning";
+      const remove = document.createElement("button");
+      remove.className = "inline-action";
+      remove.type = "button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        const confirmation = item.storage
+          ? `Delete managed service “${item.name}” and its persistent data (${item.storage} per node)?`
+          : `Delete managed service “${item.name}”?`;
+        if (!window.confirm(confirmation)) return;
+        try {
+          await api(`/api/v1/services/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+          await loadManagedServices();
+        } catch (cause) { window.alert(cause.message); }
+      });
+      row.append(details, status, remove);
+      if (item.message) {
+        const message = document.createElement("small");
+        message.className = "deployment-message";
+        message.textContent = item.message;
+        row.append(message);
+      }
+      list.append(row);
+    }
+    if (!list.children.length) list.innerHTML = '<div class="token-empty">No managed services yet.</div>';
+  } catch (cause) {
+    const failure = document.createElement("p");
+    failure.className = "resource-empty";
+    failure.textContent = cause.message;
+    list.append(failure);
+  }
+}
+
+async function loadManagedServiceConnectionSources() {
+  const select = $("#managed-connection-source");
+  const error = $("#managed-connection-error");
+  error.hidden = true;
+  select.replaceChildren(new Option("Loading managed resources…", ""));
+  select.disabled = true;
+  try {
+    const [serviceResult, databaseResult] = await Promise.all([
+      api("/api/v1/services"),
+      api("/api/v1/databases"),
+    ]);
+    const sources = [
+      ...(databaseResult.databases || []).map((item) => ({ ...item, type: item.engine || item.type })),
+      ...(serviceResult.services || []),
+    ].filter((item) => ["postgresql", "mysql", "valkey", "rabbitmq"].includes(item.type || item.engine));
+    select.replaceChildren(new Option(sources.length ? "Choose a managed resource" : "No managed resources found", ""));
+    sources.forEach((item) => {
+      const type = item.type || item.engine;
+      select.append(new Option(`${item.name} · ${type}${item.status ? ` · ${item.status}` : ""}`, `${type}:${item.name}`));
+    });
+    select.disabled = sources.length === 0;
+    $("#managed-connection-submit").disabled = true;
+    if (!sources.length) {
+      error.textContent = "Create a PostgreSQL/MySQL database or Valkey/RabbitMQ service first.";
+      error.hidden = false;
+    }
+  } catch (cause) {
+    select.replaceChildren(new Option("Could not load managed resources", ""));
+    select.disabled = true;
+    $("#managed-connection-submit").disabled = true;
+    $("#managed-connection-error").textContent = cause.message;
+    $("#managed-connection-error").hidden = false;
+  }
+}
+$("#managed-connection-source").addEventListener("change", () => {
+  $("#managed-connection-submit").disabled = !$("#managed-connection-source").value;
+});
+
+$("#managed-connection-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#managed-connection-error");
+  const button = $("#managed-connection-submit");
+  error.hidden = true;
+  button.disabled = true;
+  try {
+    await api("/api/v1/workspace/connections/from-managed-service", {
+      method: "POST",
+      body: JSON.stringify({ name: $("#managed-connection-name").value.trim(), service_id: $("#managed-connection-source").value }),
+    });
+    event.currentTarget.reset();
+    await loadConnections();
+    await loadManagedServiceConnectionSources();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    button.disabled = $("#managed-connection-source").disabled || !$("#managed-connection-source").value;
+  }
+});
+
+$("#managed-service-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#managed-service-error");
+  const submit = $("#managed-service-submit");
+  error.hidden = true;
+  submit.disabled = true;
+  submit.textContent = "Creating service…";
+  const payload = Object.fromEntries(new FormData(event.currentTarget));
+  if (!payload.version) delete payload.version;
+  if (!payload.storage) delete payload.storage;
+  try {
+    const result = await api("/api/v1/services", { method: "POST", body: JSON.stringify(payload) });
+    if (result.credentials) {
+      oneTimeManagedServiceCredentials = result.credentials;
+      $("#managed-service-credential-values").textContent = JSON.stringify(result.credentials, null, 2);
+      $("#managed-service-credentials").hidden = false;
+    }
+    event.currentTarget.reset();
+    await loadManagedServices();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Create service";
+  }
+});
+
+$("#copy-managed-service-credentials").addEventListener("click", async () => {
+  if (!oneTimeManagedServiceCredentials) return;
+  try {
+    await navigator.clipboard.writeText($("#managed-service-credential-values").textContent);
+    $("#copy-managed-service-credentials").textContent = "Copied";
+  } catch {
+    $("#copy-managed-service-credentials").textContent = "Select and copy the credentials above";
+  }
+});
+
+function updateConnectionFields() {
+  const objectStorage = $("#connection-type").value === "object_storage";
+  const hasConnectionURL = !objectStorage && $("#connection-url").value.trim() !== "";
+  const expectsConnectionURL = editingConnectionId && editingConnectionSecretKeys.includes("CONNECTION_URL");
+  $("#connection-standard-fields").hidden = objectStorage;
+  $("#connection-object-storage-fields").hidden = !objectStorage;
+  $("#connection-url").required = Boolean(expectsConnectionURL && !hasConnectionURL);
+  $("#connection-host").required = !objectStorage && !hasConnectionURL && !expectsConnectionURL;
+  $("#connection-port").required = !objectStorage && !hasConnectionURL && !expectsConnectionURL;
+  $("#connection-endpoint").required = objectStorage;
+  $("#connection-bucket").required = objectStorage;
+  $("#connection-access-key").required = objectStorage && (!editingConnectionId || editingConnectionSecretKeys.includes("ACCESS_KEY_ID"));
+  $("#connection-secret-key").required = objectStorage && (!editingConnectionId || editingConnectionSecretKeys.includes("SECRET_ACCESS_KEY"));
+  $("#connection-password").required = !objectStorage && editingConnectionSecretKeys.includes("PASSWORD");
+  $("#connection-username").required = !objectStorage && editingConnectionSecretKeys.includes("USERNAME");
+  $("#connection-password").autocomplete = editingConnectionId ? "off" : "new-password";
+}
+
+function resetConnectionForm() {
+  editingConnectionId = null;
+  editingConnectionSecretKeys = [];
+  $("#connection-form").reset();
+  $("#connection-form-heading").textContent = "Add a connection";
+  $("#connection-submit").textContent = "Save connection";
+  $("#connection-cancel-edit").hidden = true;
+  $("#connection-edit-secret-note").hidden = true;
+  $("#connection-name").disabled = false;
+  $("#connection-type").disabled = false;
+  $("#connection-secret-key").value = "";
+  $("#connection-password").value = "";
+  updateConnectionFields();
+}
+
+async function loadConnections() {
+  const list = $("#connection-list");
+  list.replaceChildren();
+  try {
+    const result = await api("/api/v1/workspace/connections");
+    workspaceConnections = result.connections || [];
+    const attachSelect = $("#app-connection-select");
+    attachSelect.replaceChildren(new Option("Choose a saved connection", ""));
+    workspaceConnections.forEach((item) => attachSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
+    attachSelect.disabled = workspaceConnections.length === 0;
+    $("#app-connection-submit").disabled = true;
+    renderConnectionMappings();
+    for (const item of workspaceConnections) {
+      const row = document.createElement("div");
+      row.className = "token-row service-resource-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = item.name;
+      const endpoint = document.createElement("code");
+      endpoint.textContent = item.type === "object_storage"
+        ? `${item.endpoint || "S3 endpoint unavailable"} · bucket ${item.bucket || "—"}`
+        : `${item.host || "—"}${item.port ? `:${item.port}` : ""}${item.database ? ` · ${item.database}` : ""}`;
+      const meta = document.createElement("small");
+      meta.textContent = item.type === "object_storage" ? `S3-compatible · ${item.region || "region not set"}` : `${item.type} · credentials saved`;
+      details.append(name, endpoint, meta);
+      const edit = document.createElement("button");
+      edit.className = "inline-action";
+      edit.type = "button";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        editingConnectionId = item.id;
+        editingConnectionSecretKeys = item.secret_keys || [];
+        $("#connection-form").reset();
+        $("#connection-name").value = item.name || "";
+        $("#connection-type").value = item.type || "other";
+        $("#connection-url").value = "";
+        $("#connection-host").value = item.host || "";
+        $("#connection-port").value = item.port || "";
+        $("#connection-database").value = item.database || "";
+        $("#connection-username").value = item.username || "";
+        $("#connection-endpoint").value = item.endpoint || "";
+        $("#connection-bucket").value = item.bucket || "";
+        $("#connection-region").value = item.region || "";
+        $("#connection-access-key").value = "";
+        $("#connection-password").value = "";
+        $("#connection-secret-key").value = "";
+        $("#connection-form-heading").textContent = `Edit ${item.name}`;
+        $("#connection-submit").textContent = "Save changes";
+        $("#connection-cancel-edit").hidden = false;
+        $("#connection-name").disabled = true;
+        $("#connection-type").disabled = true;
+        $("#connection-edit-secret-note").hidden = editingConnectionSecretKeys.length === 0;
+        updateConnectionFields();
+        $("#connection-form").scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      const remove = document.createElement("button");
+      remove.className = "inline-action";
+      remove.type = "button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`Delete connection “${item.name}”?`)) return;
+        try {
+          await api(`/api/v1/workspace/connections/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+          if (editingConnectionId === item.id) resetConnectionForm();
+          await loadConnections();
+        } catch (cause) { window.alert(cause.message); }
+      });
+      row.append(details, edit, remove);
+      list.append(row);
+    }
+    if (!list.children.length) list.innerHTML = '<div class="token-empty">No external connections saved yet.</div>';
+  } catch (cause) {
+    const failure = document.createElement("p");
+    failure.className = "resource-empty";
+    failure.textContent = cause.message;
+    list.append(failure);
+    const attachSelect = $("#app-connection-select");
+    attachSelect.replaceChildren(new Option("Could not load saved connections", ""));
+    attachSelect.disabled = true;
+    $("#app-connection-submit").disabled = true;
+  }
+}
+
+function suggestedEnvName(connectionType, secretKey) {
+  const type = String(connectionType || "other").toLowerCase();
+  const key = String(secretKey || "").toUpperCase();
+  const known = {
+    CONNECTION_URL: { postgresql: "DB_CONNECTION_URI", mysql: "DB_CONNECTION_URI", valkey: "REDIS_URL", redis: "REDIS_URL", rabbitmq: "AMQP_URL" },
+    HOST: { postgresql: "DB_HOST", mysql: "DB_HOST", valkey: "REDIS_HOST", redis: "REDIS_HOST", rabbitmq: "AMQP_HOST" },
+    PORT: { postgresql: "DB_PORT", mysql: "DB_PORT", valkey: "REDIS_PORT", redis: "REDIS_PORT", rabbitmq: "AMQP_PORT" },
+    DATABASE: { postgresql: "DB_NAME", mysql: "DB_NAME" },
+    USERNAME: { postgresql: "DB_USERNAME", mysql: "DB_USERNAME" },
+    PASSWORD: { postgresql: "DB_PASSWORD", mysql: "DB_PASSWORD", valkey: "REDIS_PASSWORD", redis: "REDIS_PASSWORD", rabbitmq: "AMQP_PASSWORD" },
+    ENDPOINT: { object_storage: "S3_ENDPOINT" },
+    BUCKET: { object_storage: "S3_BUCKET" },
+    REGION: { object_storage: "AWS_REGION" },
+    ACCESS_KEY_ID: { object_storage: "AWS_ACCESS_KEY_ID" },
+    SECRET_ACCESS_KEY: { object_storage: "AWS_SECRET_ACCESS_KEY" },
+  };
+  return known[key]?.[type] || `${type}_${key}`.replace(/[^A-Z0-9_]/g, "_").toUpperCase();
+}
+
+function renderConnectionMappings() {
+  const container = $("#app-connection-mappings");
+  const connection = workspaceConnections.find((item) => String(item.id) === $("#app-connection-select").value);
+  container.replaceChildren();
+  if (!connection) {
+    $("#app-connection-status").textContent = workspaceConnections.length ? "Choose a connection to configure environment variable mappings." : "Save a connection first, then attach it to this app.";
+    $("#app-connection-submit").disabled = true;
+    return;
+  }
+  const keys = connection.secret_keys || [];
+  if (!keys.length) {
+    $("#app-connection-status").textContent = "This connection has no secret fields available for injection.";
+    $("#app-connection-submit").disabled = true;
+    return;
+  }
+  $("#app-connection-status").textContent = "Choose which secret fields to expose and set the environment variable names expected by your app.";
+  keys.forEach((key) => {
+    const row = document.createElement("div");
+    row.className = "connection-mapping-row";
+    const variableField = document.createElement("div");
+    const variableLabel = document.createElement("label");
+    variableLabel.className = "form-label";
+    variableLabel.textContent = "App environment variable";
+    const variable = document.createElement("input");
+    variable.className = "text-input deployment-input";
+    variable.dataset.connectionEnv = "true";
+    variable.autocapitalize = "characters";
+    variable.value = suggestedEnvName(connection.type, key);
+    variable.maxLength = 128;
+    variable.placeholder = "Optional; clear to skip this field";
+    variableLabel.append(variable);
+    variableField.append(variableLabel);
+    const secretField = document.createElement("div");
+    const secretLabel = document.createElement("label");
+    secretLabel.className = "form-label";
+    secretLabel.textContent = "Stored secret field";
+    const secret = document.createElement("select");
+    secret.className = "text-input deployment-input";
+    secret.dataset.connectionSecret = "true";
+    keys.forEach((name) => secret.append(new Option(name, name)));
+    secret.value = key;
+    secretLabel.append(secret);
+    secretField.append(secretLabel);
+    row.append(variableField, secretField);
+    container.append(row);
+  });
+  $("#app-connection-submit").disabled = false;
+}
+
+$("#app-connection-select").addEventListener("change", renderConnectionMappings);
+$("#app-connection-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!activeApplication) return;
+  const error = $("#app-connection-error");
+  const button = $("#app-connection-submit");
+  error.hidden = true;
+  const envMapping = {};
+  const envInputs = [...document.querySelectorAll("[data-connection-env]")];
+  const secretInputs = [...document.querySelectorAll("[data-connection-secret]")];
+  for (const [index, input] of envInputs.entries()) {
+    const name = input.value.trim();
+    if (!name) continue;
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)) {
+      error.textContent = `“${name}” is not a valid environment variable name.`;
+      error.hidden = false;
+      return;
+    }
+    if (Object.hasOwn(envMapping, name)) {
+      error.textContent = `Environment variable “${name}” is mapped more than once.`;
+      error.hidden = false;
+      return;
+    }
+    envMapping[name] = secretInputs[index].value;
+  }
+  if (!Object.keys(envMapping).length) {
+    error.textContent = "Add at least one environment variable mapping.";
+    error.hidden = false;
+    return;
+  }
+  button.disabled = true;
+  try {
+    const result = await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/connections`, {
+      method: "POST",
+      body: JSON.stringify({ connection_id: $("#app-connection-select").value, env_mapping: envMapping }),
+    });
+    $("#app-connection-status").textContent = `Attached ${result.environment_keys?.length || Object.keys(envMapping).length} environment variable(s). Crelan passes secret references to Kubernetes; values are not returned here.`;
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#connection-type").addEventListener("change", updateConnectionFields);
+$("#connection-url").addEventListener("input", updateConnectionFields);
+updateConnectionFields();
+$("#connection-cancel-edit").addEventListener("click", resetConnectionForm);
+$("#connection-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#connection-error");
+  error.hidden = true;
+  const objectStorage = $("#connection-type").value === "object_storage";
+  const payload = {
+    name: $("#connection-name").value.trim(),
+    type: $("#connection-type").value,
+  };
+  if (objectStorage) {
+    Object.assign(payload, {
+      endpoint: $("#connection-endpoint").value.trim(),
+      bucket: $("#connection-bucket").value.trim(),
+      region: $("#connection-region").value.trim(),
+    });
+    if ($("#connection-access-key").value.trim()) payload.access_key_id = $("#connection-access-key").value.trim();
+    if ($("#connection-secret-key").value) payload.secret_access_key = $("#connection-secret-key").value;
+  } else {
+    const connectionURL = $("#connection-url").value.trim();
+    if (connectionURL) payload.connection_url = connectionURL;
+    else Object.assign(payload, { host: $("#connection-host").value.trim(), port: Number($("#connection-port").value) });
+    Object.assign(payload, { database: $("#connection-database").value.trim(), username: $("#connection-username").value.trim() });
+    if ($("#connection-password").value) payload.password = $("#connection-password").value;
+  }
+  const button = $("#connection-submit");
+  button.disabled = true;
+  try {
+    const path = editingConnectionId ? `/api/v1/workspace/connections/${encodeURIComponent(editingConnectionId)}` : "/api/v1/workspace/connections";
+    await api(path, { method: editingConnectionId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    resetConnectionForm();
+    await loadConnections();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("#open-object-storage-connection").addEventListener("click", () => {
+  $("#connection-type").value = "object_storage";
+  updateConnectionFields();
+  $("#connection-name").focus();
+  $("#connection-form").scrollIntoView({ behavior: "smooth", block: "center" });
+});
 
 async function loadRegistryCredentials() {
   const select = $("#image-pull-secret");
@@ -423,23 +928,28 @@ document.querySelectorAll(".nav-link[href^='#']").forEach((link) => link.addEven
   event.preventDefault();
   const isDeploy = link.hash === "#deploy";
   const isDatabases = link.hash === "#databases";
+  const isServices = link.hash === "#services";
   const isTeam = link.hash === "#team";
   const isUsage = link.hash === "#usage";
-  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications")));
+  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications"))));
   $("#deploy-form-panel").hidden = !isDeploy;
   $("#databases-page").hidden = !isDatabases;
+  $("#services-page").hidden = !isServices;
   $("#team-page").hidden = !isTeam;
   $("#usage-page").hidden = !isUsage;
-  $(".token-layout").hidden = isDatabases || isTeam || isUsage;
-  $("#app-runtime").hidden = isDatabases || isTeam || isUsage || !activeApplication;
+  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isTeam || isUsage;
+  $(".token-layout").hidden = isDatabases || isServices || isTeam || isUsage;
+  $("#app-runtime").hidden = isDatabases || isServices || isTeam || isUsage || !activeApplication;
   document.querySelectorAll(".nav-link[href^='#']").forEach((item) => item.classList.toggle("active", item === link));
   if (isDeploy) $("#app-name").focus();
   if (isDatabases) Promise.all([loadDatabases(), loadDatabaseEngines()]);
+  if (isServices) Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]);
   if (isTeam) loadWorkspaceMembers();
   if (isUsage) loadWorkspaceUsage();
 }));
 $("#show-deploy-form").addEventListener("click", () => {
   $("#databases-page").hidden = true;
+  $("#services-page").hidden = true;
   $(".token-layout").hidden = false;
   $("#deploy-form-panel").hidden = false;
   $("#page-title").textContent = "Deploy an app";
@@ -457,11 +967,43 @@ function updateSourceFields() {
 }
 $("#app-source").addEventListener("change", updateSourceFields);
 updateSourceFields();
+function updateVolumeFields() {
+  $("#app-volume-fields").hidden = !$("#app-volume-enabled").checked;
+}
+$("#app-volume-enabled").addEventListener("change", updateVolumeFields);
+updateVolumeFields();
 $("#close-runtime").addEventListener("click", closeApplication);
 $("#refresh-runtime").addEventListener("click", loadApplicationResources);
 $("#refresh-logs").addEventListener("click", loadApplicationLogs);
 $("#refresh-deployments").addEventListener("click", loadDeployments);
 $("#refresh-databases").addEventListener("click", loadDatabases);
+$("#refresh-services").addEventListener("click", () => Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]));
+document.querySelectorAll(".template-nav-link").forEach((link) => link.addEventListener("click", (event) => {
+  event.preventDefault();
+  document.querySelector(`.nav-link[href="${link.hash}"]`)?.click();
+}));
+$("#generate-infisical-keys").addEventListener("click", () => {
+  const bytesToHex = (bytes) => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (!globalThis.crypto?.getRandomValues) {
+    $("#infisical-generated-keys").textContent = "Secure browser randomness is unavailable. Use the official generation steps in the self-hosting guide.";
+    $("#infisical-generated-keys").hidden = false;
+    return;
+  }
+  const encryptionBytes = crypto.getRandomValues(new Uint8Array(16));
+  const authBytes = crypto.getRandomValues(new Uint8Array(32));
+  const authSecret = btoa(String.fromCharCode(...authBytes));
+  $("#infisical-generated-keys").textContent = `ENCRYPTION_KEY=${bytesToHex(encryptionBytes)}\nAUTH_SECRET=${authSecret}`;
+  $("#infisical-generated-keys").hidden = false;
+  $("#copy-infisical-keys").hidden = false;
+});
+$("#copy-infisical-keys").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("#infisical-generated-keys").textContent);
+    $("#copy-infisical-keys").textContent = "Copied keys";
+  } catch {
+    $("#copy-infisical-keys").textContent = "Select and copy the keys above";
+  }
+});
 $("#signout-button").addEventListener("click", async () => {
   await api("/auth/logout", { method: "POST" });
   window.location.assign("/login");

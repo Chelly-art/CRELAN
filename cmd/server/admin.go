@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	assets "crelan"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // adminService provides platform-only endpoints. Platform access is configured
@@ -21,6 +24,7 @@ import (
 type adminService struct {
 	auth        *authService
 	provisioner *kubernetesProvisioner
+	deployments *deploymentService
 	adminEmails map[string]struct{}
 }
 
@@ -51,9 +55,110 @@ func isPlatformAdminUser(db *sql.DB, userID int64, email string) bool {
 }
 
 func (s *adminService) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /assets/admin.html", s.servePage)
 	mux.HandleFunc("GET /api/v1/admin/overview", s.overview)
 	mux.HandleFunc("GET /api/v1/admin/readiness", s.readiness)
+	mux.HandleFunc("POST /api/v1/admin/clusters/connect", s.connectCluster)
 	mux.HandleFunc("POST /api/v1/admin/control-plane-backup", s.downloadControlPlaneBackup)
+}
+
+func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var input struct {
+		Kubeconfig string `json:"kubeconfig"`
+		Context    string `json:"context"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Paste a valid kubeconfig (maximum 1 MiB)")
+		return
+	}
+	if strings.TrimSpace(input.Kubeconfig) == "" {
+		writeError(w, http.StatusBadRequest, "Paste a kubeconfig to connect a cluster")
+		return
+	}
+	config, err := clientcmd.Load([]byte(input.Kubeconfig))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Could not parse that kubeconfig")
+		return
+	}
+	contextName := strings.TrimSpace(input.Context)
+	if contextName == "" {
+		contextName = config.CurrentContext
+	}
+	if contextName == "" && len(config.Contexts) == 1 {
+		for name := range config.Contexts {
+			contextName = name
+		}
+	}
+	if contextName == "" || config.Contexts[contextName] == nil {
+		writeError(w, http.StatusBadRequest, "Enter a context name that exists in the pasted kubeconfig")
+		return
+	}
+	restConfig, err := clientcmd.NewNonInteractiveClientConfig(*config, contextName, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
+	if err != nil {
+		log.Printf("build Kubernetes client config for context %q: %v", contextName, err)
+		writeError(w, http.StatusBadRequest, "Could not load credentials for that context")
+		return
+	}
+	provisioner, err := newKubernetesProvisionerWithRESTConfig(restConfig)
+	if err != nil {
+		log.Printf("initialize Kubernetes client for context %q: %v", contextName, err)
+		writeError(w, http.StatusBadRequest, "Could not initialize a client for that cluster")
+		return
+	}
+	if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
+		log.Printf("connect Kubernetes context %q: %v", contextName, err)
+		writeError(w, http.StatusBadGateway, "Could not reach that cluster with the pasted credentials")
+		return
+	}
+	if s.deployments == nil {
+		writeError(w, http.StatusServiceUnavailable, "Deployment service is not available")
+		return
+	}
+	s.deployments.setCluster(provisioner, contextName)
+	writeJSON(w, http.StatusOK, map[string]string{"context": contextName, "status": "connected"})
+}
+
+func (s *adminService) currentKubernetesProvisioner() *kubernetesProvisioner {
+	if s.deployments != nil {
+		if provisioner, ok := s.deployments.currentProvisioner().(*kubernetesProvisioner); ok {
+			return provisioner
+		}
+		return nil
+	}
+	return s.provisioner
+}
+
+func (s *adminService) servePage(w http.ResponseWriter, r *http.Request) {
+	userID, err := s.auth.sessionUserID(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	var email string
+	if err := s.auth.db.QueryRowContext(r.Context(), `SELECT email FROM users WHERE id = ?`, userID).Scan(&email); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, ok := s.adminEmails[strings.ToLower(strings.TrimSpace(email))]; !ok || !isPlatformAdminUser(s.auth.db, userID, email) {
+		http.NotFound(w, r)
+		return
+	}
+	page, err := assets.Web.ReadFile("web/admin.html")
+	if err != nil {
+		log.Printf("read platform admin page: %v", err)
+		http.Error(w, "Page unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(page)
 }
 
 func (s *adminService) downloadControlPlaneBackup(w http.ResponseWriter, r *http.Request) {
@@ -110,21 +215,22 @@ func (s *adminService) readiness(w http.ResponseWriter, r *http.Request) {
 	} else {
 		add("Control plane database", true, "Connected; persistence mode is set by DATABASE_PATH")
 	}
-	if s.provisioner == nil {
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil {
 		add("Kubernetes API", false, "No cluster credentials configured")
 	} else {
-		if _, err := s.provisioner.client.Discovery().ServerVersion(); err != nil {
+		if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
 			add("Kubernetes API", false, "Cluster API is unreachable")
 		} else {
 			add("Kubernetes API", true, "Cluster API is reachable")
 		}
 		checks = append(checks,
-			apiGroupCheck(s.provisioner, "Capsule Tenant API", "capsule.clastix.io/v1beta2"),
-			apiGroupCheck(s.provisioner, "CloudNativePG API", "postgresql.cnpg.io/v1"),
-			apiGroupCheck(s.provisioner, "MySQL Operator API", "mysql.oracle.com/v2"),
+			apiGroupCheck(provisioner, "Capsule Tenant API", "capsule.clastix.io/v1beta2"),
+			apiGroupCheck(provisioner, "CloudNativePG API", "postgresql.cnpg.io/v1"),
+			apiGroupCheck(provisioner, "MySQL Operator API", "mysql.oracle.com/v2"),
 		)
-		add("Capsule tenant owner", s.provisioner.config.capsuleOwner != "", map[bool]string{true: "Configured", false: "Set CRELAN_CAPSULE_TENANT_OWNER"}[s.provisioner.config.capsuleOwner != ""])
-		nodes, err := s.provisioner.client.CoreV1().Nodes().List(r.Context(), metav1.ListOptions{})
+		add("Capsule tenant owner", provisioner.config.capsuleOwner != "", map[bool]string{true: "Configured", false: "Set CRELAN_CAPSULE_TENANT_OWNER"}[provisioner.config.capsuleOwner != ""])
+		nodes, err := provisioner.client.CoreV1().Nodes().List(r.Context(), metav1.ListOptions{})
 		if err != nil {
 			add("Ready nodes", false, "Could not list cluster nodes")
 		} else {
@@ -138,7 +244,7 @@ func (s *adminService) readiness(w http.ResponseWriter, r *http.Request) {
 			add("Ready nodes", ready >= 3, fmt.Sprintf("%d ready; three are recommended for three-instance databases", ready))
 			add("Failure zones", len(zones) >= 3, fmt.Sprintf("%d distinct zones; three are recommended for zone-level HA", len(zones)))
 		}
-		classes, err := s.provisioner.client.StorageV1().StorageClasses().List(r.Context(), metav1.ListOptions{})
+		classes, err := provisioner.client.StorageV1().StorageClasses().List(r.Context(), metav1.ListOptions{})
 		defaultClass := false
 		if err == nil {
 			for _, class := range classes.Items {
@@ -200,6 +306,7 @@ type platformOverview struct {
 
 type platformCluster struct {
 	Connected    bool     `json:"connected"`
+	Context      string   `json:"context,omitempty"`
 	Nodes        int      `json:"nodes"`
 	ReadyNodes   int      `json:"ready_nodes"`
 	TenantSpaces int      `json:"tenant_namespaces"`
@@ -222,17 +329,22 @@ func (s *adminService) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *adminService) clusterOverview(r *http.Request) platformCluster {
-	if s.provisioner == nil {
-		return platformCluster{Error: "No Kubernetes cluster is configured"}
+	contextName := ""
+	if s.deployments != nil {
+		contextName = s.deployments.activeClusterContext()
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil {
+		return platformCluster{Context: contextName, Error: "No Kubernetes cluster is configured"}
 	}
 	ctx := r.Context()
-	nodes, err := s.provisioner.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	nodes, err := provisioner.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return platformCluster{Error: "Could not list cluster nodes; check platform admin RBAC"}
+		return platformCluster{Context: contextName, Error: "Could not list cluster nodes; check platform admin RBAC"}
 	}
-	spaces, err := s.provisioner.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: capsuleTenantLabel + ""})
+	spaces, err := provisioner.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: capsuleTenantLabel + ""})
 	if err != nil {
-		return platformCluster{Nodes: len(nodes.Items), ReadyNodes: countReadyNodes(nodes.Items), Error: "Could not list Capsule namespaces; check platform admin RBAC"}
+		return platformCluster{Context: contextName, Nodes: len(nodes.Items), ReadyNodes: countReadyNodes(nodes.Items), Error: "Could not list Capsule namespaces; check platform admin RBAC"}
 	}
 	namespaces := make([]string, 0, len(spaces.Items))
 	for _, namespace := range spaces.Items {
@@ -240,7 +352,7 @@ func (s *adminService) clusterOverview(r *http.Request) platformCluster {
 			namespaces = append(namespaces, namespace.Name)
 		}
 	}
-	return platformCluster{Connected: true, Nodes: len(nodes.Items), ReadyNodes: countReadyNodes(nodes.Items), TenantSpaces: len(namespaces), Namespaces: namespaces}
+	return platformCluster{Connected: true, Context: contextName, Nodes: len(nodes.Items), ReadyNodes: countReadyNodes(nodes.Items), TenantSpaces: len(namespaces), Namespaces: namespaces}
 }
 
 func countReadyNodes(nodes []corev1.Node) int {

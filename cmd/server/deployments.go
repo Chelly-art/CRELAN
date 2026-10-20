@@ -36,21 +36,22 @@ var (
 )
 
 type DeploymentRequest struct {
-	Name                      string `json:"name"`
-	Image                     string `json:"image,omitempty"`
-	ImagePullSecret           string `json:"image_pull_secret,omitempty"`
-	RepositoryURL             string `json:"repository_url"`
-	ClusterContext            string `json:"cluster_context,omitempty"`
-	Branch                    string `json:"branch,omitempty"`
-	Dockerfile                string `json:"dockerfile,omitempty"`
-	Port                      int    `json:"port,omitempty"`
-	CPUMillicores             int    `json:"cpu_millicores,omitempty"`
-	MemoryMB                  int    `json:"memory_mb,omitempty"`
-	WorkspaceMaxApps          int    `json:"workspace_max_apps,omitempty"`
-	WorkspaceMaxCPUMillicores int    `json:"workspace_max_cpu_millicores,omitempty"`
-	WorkspaceMaxMemoryMB      int    `json:"workspace_max_memory_mb,omitempty"`
-	GitHubToken               string `json:"-"`
-	PrivateRepo               bool   `json:"-"`
+	Name                      string                `json:"name"`
+	Image                     string                `json:"image,omitempty"`
+	ImagePullSecret           string                `json:"image_pull_secret,omitempty"`
+	RepositoryURL             string                `json:"repository_url"`
+	ClusterContext            string                `json:"cluster_context,omitempty"`
+	Branch                    string                `json:"branch,omitempty"`
+	Dockerfile                string                `json:"dockerfile,omitempty"`
+	Port                      int                   `json:"port,omitempty"`
+	CPUMillicores             int                   `json:"cpu_millicores,omitempty"`
+	MemoryMB                  int                   `json:"memory_mb,omitempty"`
+	WorkspaceMaxApps          int                   `json:"workspace_max_apps,omitempty"`
+	WorkspaceMaxCPUMillicores int                   `json:"workspace_max_cpu_millicores,omitempty"`
+	WorkspaceMaxMemoryMB      int                   `json:"workspace_max_memory_mb,omitempty"`
+	PersistentStorage         *appPersistentStorage `json:"persistent_storage,omitempty"`
+	GitHubToken               string                `json:"-"`
+	PrivateRepo               bool                  `json:"-"`
 }
 
 type ProvisionedDeployment struct {
@@ -86,6 +87,10 @@ type deploymentConfigurator interface {
 type customDomainProvisioner interface {
 	ConfigureCustomDomain(context.Context, int64, string, string, string) error
 	DeleteCustomDomain(context.Context, int64, string, string) error
+}
+
+type persistentDeploymentDeleter interface {
+	DeleteWithPersistence(context.Context, int64, string, bool) error
 }
 
 type applicationResources struct {
@@ -151,22 +156,23 @@ type deploymentService struct {
 }
 
 type deployment struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	RepositoryURL  string    `json:"repository_url"`
-	Image          string    `json:"image,omitempty"`
-	ClusterContext string    `json:"cluster_context,omitempty"`
-	Branch         string    `json:"branch,omitempty"`
-	Dockerfile     string    `json:"dockerfile"`
-	Port           int       `json:"port"`
-	CPUMillicores  int       `json:"cpu_millicores"`
-	MemoryMB       int       `json:"memory_mb"`
-	Status         string    `json:"status"`
-	StatusMessage  string    `json:"status_message,omitempty"`
-	URL            string    `json:"url,omitempty"`
-	LatestRunID    int64     `json:"latest_run_id,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                int64                 `json:"id"`
+	Name              string                `json:"name"`
+	RepositoryURL     string                `json:"repository_url"`
+	Image             string                `json:"image,omitempty"`
+	ClusterContext    string                `json:"cluster_context,omitempty"`
+	Branch            string                `json:"branch,omitempty"`
+	Dockerfile        string                `json:"dockerfile"`
+	Port              int                   `json:"port"`
+	CPUMillicores     int                   `json:"cpu_millicores"`
+	MemoryMB          int                   `json:"memory_mb"`
+	PersistentStorage *appPersistentStorage `json:"persistent_storage,omitempty"`
+	Status            string                `json:"status"`
+	StatusMessage     string                `json:"status_message,omitempty"`
+	URL               string                `json:"url,omitempty"`
+	LatestRunID       int64                 `json:"latest_run_id,omitempty"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
 }
 
 func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
@@ -201,6 +207,12 @@ func (s *deploymentService) currentProvisioner() DeploymentProvisioner {
 		}
 	}
 	return s.provisioner
+}
+
+func (s *deploymentService) activeClusterContext() string {
+	s.providerMu.RLock()
+	defer s.providerMu.RUnlock()
+	return s.activeContext
 }
 
 func (s *deploymentService) currentRuntime() deploymentRuntime {
@@ -1046,6 +1058,18 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 	input.ClusterContext = strings.TrimSpace(input.ClusterContext)
 	input.Branch = strings.TrimSpace(input.Branch)
 	input.Dockerfile = strings.TrimSpace(input.Dockerfile)
+	if err := resolveAppStorageClass(input.PersistentStorage); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateAppPersistentStorage(input.PersistentStorage); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if input.PersistentStorage != nil && configuredAppReplicas() != 1 {
+		writeError(w, http.StatusBadRequest, "Persistent app storage requires CRELAN_APP_REPLICAS=1")
+		return
+	}
 	if !deploymentNamePattern.MatchString(input.Name) {
 		writeError(w, http.StatusBadRequest, "App name must be a lowercase DNS label of 1 to 63 characters")
 		return
@@ -1131,6 +1155,17 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if input.PersistentStorage != nil {
+		cluster, ok := provider.(*kubernetesProvisioner)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "Persistent storage is unavailable for the selected deployment provider")
+			return
+		}
+		if err := validateStorageClass(r.Context(), cluster, input.PersistentStorage.StorageClass); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	id, runID, now, err := s.queueDeployment(r.Context(), principal.workspaceID, input)
 	if err != nil {
@@ -1151,7 +1186,8 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		ID: id, Name: input.Name, RepositoryURL: input.RepositoryURL, Image: input.Image, ClusterContext: input.ClusterContext, Branch: input.Branch,
 		Dockerfile: input.Dockerfile, Port: input.Port, Status: "queued",
 		CPUMillicores: input.CPUMillicores, MemoryMB: input.MemoryMB,
-		StatusMessage: "Waiting for a build worker", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
+		PersistentStorage: input.PersistentStorage,
+		StatusMessage:     "Waiting for a build worker", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
 	})
 }
 
@@ -1218,10 +1254,16 @@ WHERE workspace_id = ? AND status IN ('building', 'deploying')`,
 		return 0, 0, time.Time{}, errWorkspaceConcurrencyLimit
 	}
 
+	storageSize, storageMountPath, storageClass := "", "", ""
+	if input.PersistentStorage != nil {
+		storageSize = input.PersistentStorage.Size
+		storageMountPath = input.PersistentStorage.MountPath
+		storageClass = input.PersistentStorage.StorageClass
+	}
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO deployments (workspace_id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
+INSERT INTO deployments (workspace_id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, url, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
 ON CONFLICT(workspace_id, name) DO UPDATE SET
 	repository_url = excluded.repository_url,
 	image = excluded.image,
@@ -1231,12 +1273,15 @@ ON CONFLICT(workspace_id, name) DO UPDATE SET
 	port = excluded.port,
 	cpu_millicores = excluded.cpu_millicores,
 	memory_mb = excluded.memory_mb,
+	storage_size = excluded.storage_size,
+	storage_mount_path = excluded.storage_mount_path,
+	storage_class = excluded.storage_class,
 	status = 'queued',
 	status_message = 'Waiting for a build worker',
 	updated_at = excluded.updated_at
 RETURNING id`,
 		workspaceID, input.Name, input.RepositoryURL, input.Image, input.Branch, input.ClusterContext,
-		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, nowText, nowText).Scan(&id)
+		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, storageSize, storageMountPath, storageClass, nowText, nowText).Scan(&id)
 	if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("persist deployment: %w", err)
 	}
@@ -1621,7 +1666,7 @@ func (s *deploymentService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.QueryContext(r.Context(), `
-SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE workspace_id = ? ORDER BY created_at DESC, id DESC`, principal.workspaceID)
 	if err != nil {
 		log.Printf("list deployments: %v", err)
@@ -1657,8 +1702,9 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 	var appURL sql.NullString
 	var statusMessage sql.NullString
 	var runID sql.NullInt64
+	var storageSize, storageMountPath, storageClass string
 	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Image, &item.Branch, &item.ClusterContext,
-		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &item.Status,
+		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &storageSize, &storageMountPath, &storageClass, &item.Status,
 		&statusMessage, &runID, &appURL, &createdAt, &updatedAt)
 	if err != nil {
 		return deployment{}, err
@@ -1679,6 +1725,9 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 	}
 	if appURL.Valid {
 		item.URL = appURL.String
+	}
+	if storageSize != "" && storageMountPath != "" && storageClass != "" {
+		item.PersistentStorage = &appPersistentStorage{Size: storageSize, MountPath: storageMountPath, StorageClass: storageClass}
 	}
 	return item, nil
 }
@@ -1818,7 +1867,7 @@ func (s *deploymentService) authorizedDeployment(w http.ResponseWriter, r *http.
 
 func (s *deploymentService) loadDeployment(ctx context.Context, id string, workspaceID int64) (deployment, error) {
 	return scanDeployment(s.db.QueryRowContext(ctx, `
-SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE id = ? AND workspace_id = ?`, id, workspaceID))
 }
 
@@ -1894,8 +1943,22 @@ func (s *deploymentService) delete(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if err := provisioner.Delete(r.Context(), principal.workspaceID, name); err != nil {
-		log.Printf("delete deployment for workspace %d: %v", principal.workspaceID, err)
+	deletePersistent := r.URL.Query().Get("delete_persistent_storage")
+	if deletePersistent != "" && deletePersistent != "true" && deletePersistent != "false" {
+		writeError(w, http.StatusBadRequest, "delete_persistent_storage must be true or false")
+		return
+	}
+	var deleteErr error
+	if deleter, ok := provisioner.(persistentDeploymentDeleter); ok {
+		deleteErr = deleter.DeleteWithPersistence(r.Context(), principal.workspaceID, name, deletePersistent == "true")
+	} else if deletePersistent == "true" {
+		writeError(w, http.StatusBadRequest, "Deployment provider does not support persistent volume deletion")
+		return
+	} else {
+		deleteErr = provisioner.Delete(r.Context(), principal.workspaceID, name)
+	}
+	if deleteErr != nil {
+		log.Printf("delete deployment for workspace %d: %v", principal.workspaceID, deleteErr)
 		writeError(w, http.StatusBadGateway, "Deployment provider could not delete this app")
 		return
 	}

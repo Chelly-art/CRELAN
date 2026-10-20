@@ -25,6 +25,18 @@
             <p class="admin-state" id="admin-state" role="status">Checking platform access…</p>
             <pre class="admin-overview-data" id="admin-overview-data" hidden></pre>
           </section>
+          <section class="panel admin-overview-panel" aria-labelledby="cluster-connect-heading">
+            <div class="panel-heading"><div><h2 id="cluster-connect-heading">Customer deployment cluster</h2><p>Connect the Kubernetes cluster that customer workspaces will deploy to.</p></div></div>
+            <form id="cluster-connect-form">
+              <label class="form-label" for="cluster-kubeconfig">Kubeconfig</label>
+              <textarea class="text-input" id="cluster-kubeconfig" rows="9" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste kubeconfig YAML" required></textarea>
+              <label class="form-label" for="cluster-context">Context <span>(optional; defaults to current-context)</span></label>
+              <input class="text-input" id="cluster-context" autocomplete="off" placeholder="Context name from the kubeconfig">
+              <p class="cluster-connect-help">Use a self-contained kubeconfig with certificate data embedded. The API server must be reachable from Crelan. Contexts that rely on local cloud CLI login plugins may not work in the hosted service. The pasted credential is held in server memory and must be reconnected after a Crelan restart.</p>
+              <p class="admin-state" id="cluster-connect-state" role="status">No new connection attempt.</p>
+              <button class="primary-button" id="cluster-connect-submit" type="submit">Validate and connect</button>
+            </form>
+          </section>
           <section class="panel admin-overview-panel" aria-labelledby="readiness-heading">
             <div class="panel-heading"><div><h2 id="readiness-heading">Cluster readiness</h2><p>Checks for the cluster components needed by the current provisioning setup.</p></div></div>
             <p class="admin-state" id="readiness-state">Loading readiness checks…</p>
