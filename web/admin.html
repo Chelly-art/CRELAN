@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fa">
+    <title>Crelan — Platform admin</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/admin.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/dashboard" aria-label="Crelan workspace"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a>
+        <div class="workspace-label">PLATFORM</div>
+        <nav aria-label="Platform navigation"><a class="nav-link active" href="/assets/admin.html"><span class="nav-icon">⚙</span> Overview</a><a class="nav-link" href="/dashboard"><span class="nav-icon">▦</span> Customer workspace</a></nav>
+        <div class="sidebar-bottom"><div class="user-card"><span class="user-avatar" id="admin-avatar">A</span><span class="user-details"><strong id="admin-name">Loading account…</strong><small id="admin-email"></small></span><button class="signout-button" id="admin-signout" type="button">Sign out</button></div></div>
+      </aside>
+      <main class="main">
+        <header class="topbar"><div class="breadcrumbs"><span>Platform</span><span class="crumb-divider">/</span><strong>Admin overview</strong></div><span class="top-avatar" id="admin-top-avatar">A</span></header>
+        <section class="content">
+          <div class="welcome"><div><div class="eyebrow">PLATFORM OPERATIONS</div><h1>Admin overview</h1><p>Platform-wide customer and cluster operations. Access is restricted to platform administrators.</p></div><div class="welcome-actions"><button class="inline-action" id="admin-backup" type="button">Download control-plane backup</button><button class="primary-button" id="admin-refresh" type="button">Refresh overview</button></div></div>
+          <section class="panel admin-overview-panel" aria-labelledby="admin-overview-heading">
+            <div class="panel-heading"><div><h2 id="admin-overview-heading">Live platform overview</h2><p>Values below come directly from the protected admin API.</p></div></div>
+            <p class="admin-state" id="admin-state" role="status">Checking platform access…</p>
+            <pre class="admin-overview-data" id="admin-overview-data" hidden></pre>
+          </section>
+          <section class="panel admin-overview-panel" aria-labelledby="readiness-heading">
+            <div class="panel-heading"><div><h2 id="readiness-heading">Cluster readiness</h2><p>Checks for the cluster components needed by the current provisioning setup.</p></div></div>
+            <p class="admin-state" id="readiness-state">Loading readiness checks…</p>
+            <div class="resource-table-wrap" id="readiness-checks"></div>
+          </section>
+          <footer>Crelan <span>·</span> Platform administration <span class="footer-right" id="admin-api-status">Checking access</span></footer>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

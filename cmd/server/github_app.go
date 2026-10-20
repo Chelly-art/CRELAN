@@ -493,29 +493,6 @@ type githubRepository struct {
 	HTMLURL       string `json:"html_url"`
 }
 
-func (a *authService) sessionWorkspace(r *http.Request) (int64, int64, error) {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil || cookie.Value == "" {
-		return 0, 0, errors.New("session cookie missing")
-	}
-	var userID int64
-	var expiresAt string
-	err = a.db.QueryRowContext(r.Context(), `SELECT user_id, expires_at FROM sessions WHERE token_hash = ?`,
-		hashToken(cookie.Value)).Scan(&userID, &expiresAt)
-	if err != nil {
-		return 0, 0, err
-	}
-	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
-	if err != nil || !expiry.After(time.Now()) {
-		return 0, 0, errors.New("session expired")
-	}
-	var workspaceID int64
-	err = a.db.QueryRowContext(r.Context(), `
-SELECT workspace_id FROM workspace_members WHERE user_id = ?
-ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, workspace_id LIMIT 1`, userID).Scan(&workspaceID)
-	return userID, workspaceID, err
-}
-
 func githubRepositoryKey(raw string) string {
 	parsed, err := url.Parse(raw)
 	if err != nil {

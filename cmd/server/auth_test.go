@@ -54,7 +54,7 @@ func TestSignupCreatesWorkspaceAndSession(t *testing.T) {
 	dashboardResponse := httptest.NewRecorder()
 	mux.ServeHTTP(dashboardResponse, dashboardRequest)
 	if dashboardResponse.Code != http.StatusOK ||
-		!bytes.Contains(dashboardResponse.Body.Bytes(), []byte("CLUSTER BROWSER")) {
+		!bytes.Contains(dashboardResponse.Body.Bytes(), []byte(`id="applications-heading">Applications`)) {
 		t.Fatalf("authenticated dashboard status = %d, body = %s", dashboardResponse.Code, dashboardResponse.Body.String())
 	}
 }

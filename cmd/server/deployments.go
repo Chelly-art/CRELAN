@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 )
 
 var deploymentNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+var containerImagePattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$`)
 var (
 	environmentNamePattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	customDomainLabelPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
@@ -35,6 +37,8 @@ var (
 
 type DeploymentRequest struct {
 	Name                      string `json:"name"`
+	Image                     string `json:"image,omitempty"`
+	ImagePullSecret           string `json:"image_pull_secret,omitempty"`
 	RepositoryURL             string `json:"repository_url"`
 	ClusterContext            string `json:"cluster_context,omitempty"`
 	Branch                    string `json:"branch,omitempty"`
@@ -150,6 +154,7 @@ type deployment struct {
 	ID             int64     `json:"id"`
 	Name           string    `json:"name"`
 	RepositoryURL  string    `json:"repository_url"`
+	Image          string    `json:"image,omitempty"`
 	ClusterContext string    `json:"cluster_context,omitempty"`
 	Branch         string    `json:"branch,omitempty"`
 	Dockerfile     string    `json:"dockerfile"`
@@ -254,8 +259,7 @@ func (s *deploymentService) provisionerForContext(contextName string) (Deploymen
 }
 
 func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.authenticate(r); err != nil {
-		writeError(w, http.StatusUnauthorized, "Sign in to connect a cluster")
+	if !s.requirePlatformAdmin(w, r) {
 		return
 	}
 	contexts, current, err := loadKubeconfigContexts()
@@ -305,12 +309,10 @@ func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *deploymentService) connectCluster(w http.ResponseWriter, r *http.Request) {
-	principal, err := s.authenticate(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Sign in to connect a cluster")
+	if !s.requirePlatformAdmin(w, r) {
 		return
 	}
-	if principal.isSession && !s.auth.sameOrigin(r) {
+	if !s.auth.sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "Request origin is not allowed")
 		return
 	}
@@ -358,6 +360,10 @@ func (s *deploymentService) clusterResources(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusUnauthorized, "Sign in to view cluster resources")
 		return
 	}
+	if !s.isPlatformAdmin(principal) {
+		writeError(w, http.StatusForbidden, "Platform administrator access required")
+		return
+	}
 	if !principal.hasScope("resources:read") {
 		writeError(w, http.StatusForbidden, "Token requires the resources:read scope")
 		return
@@ -374,6 +380,35 @@ func (s *deploymentService) clusterResources(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, resources)
+}
+
+func (s *deploymentService) isPlatformAdmin(principal requestPrincipal) bool {
+	if !principal.isSession || principal.userID < 1 {
+		return false
+	}
+	var email string
+	if err := s.db.QueryRow(`SELECT email FROM users WHERE id = ?`, principal.userID).Scan(&email); err != nil {
+		return false
+	}
+	return isPlatformAdminUser(s.db, principal.userID, email)
+}
+
+func (s *deploymentService) requirePlatformAdmin(w http.ResponseWriter, r *http.Request) bool {
+	userID, err := s.auth.sessionUserID(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Sign in required")
+		return false
+	}
+	var email string
+	if err := s.db.QueryRowContext(r.Context(), `SELECT email FROM users WHERE id = ?`, userID).Scan(&email); err != nil {
+		writeError(w, http.StatusUnauthorized, "Sign in required")
+		return false
+	}
+	if !isPlatformAdminUser(s.db, userID, email) {
+		writeError(w, http.StatusForbidden, "Platform administrator access required")
+		return false
+	}
+	return true
 }
 
 type customDomain struct {
@@ -703,7 +738,7 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ? AND status = 'running'`,
 		log.Printf("audit deployment rollback: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, deployment{
-		ID: id, Name: request.Name, RepositoryURL: request.RepositoryURL, ClusterContext: request.ClusterContext, Branch: request.Branch,
+		ID: id, Name: request.Name, RepositoryURL: request.RepositoryURL, Image: request.Image, ClusterContext: request.ClusterContext, Branch: request.Branch,
 		Dockerfile: request.Dockerfile, Port: request.Port, CPUMillicores: request.CPUMillicores,
 		MemoryMB: request.MemoryMB, Status: "queued",
 		StatusMessage: "Rollback queued", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
@@ -820,9 +855,50 @@ SELECT
 		writeError(w, http.StatusInternalServerError, "Could not load workspace usage")
 		return
 	}
+	var allocatedCPU, allocatedMemory int64
+	if err := s.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(cpu_millicores),0), COALESCE(SUM(memory_mb),0) FROM deployments WHERE workspace_id = ? AND status != 'deleted'`, principal.workspaceID).Scan(&allocatedCPU, &allocatedMemory); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not load workspace usage")
+		return
+	}
+	allocatedCPU *= int64(configuredAppReplicas())
+	allocatedMemory *= int64(configuredAppReplicas())
+	databaseCount, databaseStorageGi, databaseUsageAvailable := s.databaseUsage(r.Context(), principal.workspaceID)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"apps": apps, "completed_deployments": runs, "deployment_seconds": buildSeconds, "limits": limits,
+		"apps": apps, "completed_deployments": runs, "deployment_seconds": buildSeconds,
+		"allocated_cpu_millicores": allocatedCPU, "allocated_memory_mb": allocatedMemory,
+		"databases": databaseCount, "database_storage_gib": databaseStorageGi, "database_usage_available": databaseUsageAvailable,
+		"limits": limits,
 	})
+}
+
+func (s *deploymentService) databaseUsage(ctx context.Context, workspaceID int64) (int, int64, bool) {
+	provider, err := s.provisionerForContext("")
+	cluster, ok := provider.(*kubernetesProvisioner)
+	if err != nil || !ok || cluster == nil {
+		return 0, 0, false
+	}
+	namespace, err := cluster.workspaceNamespace(ctx, workspaceID)
+	if err != nil {
+		return 0, 0, false
+	}
+	count := 0
+	var storage int64
+	for _, engine := range []string{"postgresql", "mysql"} {
+		list, err := cluster.dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: databaseWorkspaceLabel + "=" + strconv.FormatInt(workspaceID, 10)})
+		if err != nil {
+			if isDatabaseOperatorMissing(err) {
+				continue
+			}
+			return 0, 0, false
+		}
+		for i := range list.Items {
+			count++
+			if size := databaseResourceStorage(&list.Items[i], engine); size != "" {
+				storage += resourceGi(size) * 3 // Each managed database currently requests three PVCs.
+			}
+		}
+	}
+	return count, storage, true
 }
 
 func (s *deploymentService) audit(w http.ResponseWriter, r *http.Request) {
@@ -965,6 +1041,8 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Name = strings.TrimSpace(input.Name)
+	input.Image = strings.TrimSpace(input.Image)
+	input.ImagePullSecret = strings.TrimSpace(input.ImagePullSecret)
 	input.ClusterContext = strings.TrimSpace(input.ClusterContext)
 	input.Branch = strings.TrimSpace(input.Branch)
 	input.Dockerfile = strings.TrimSpace(input.Dockerfile)
@@ -972,18 +1050,34 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "App name must be a lowercase DNS label of 1 to 63 characters")
 		return
 	}
-	if !validGitHubRepository(input.RepositoryURL) {
-		writeError(w, http.StatusBadRequest, "Repository URL must be an HTTPS GitHub repository URL")
+	if input.Image != "" {
+		if len(input.Image) > 255 || !containerImagePattern.MatchString(input.Image) || strings.Contains(input.Image, "..") {
+			writeError(w, http.StatusBadRequest, "Enter a valid container image reference, such as ghcr.io/acme/api:1.0")
+			return
+		}
+		input.RepositoryURL = ""
+		input.Branch = ""
+		input.Dockerfile = ""
+		if input.ImagePullSecret != "" && !deploymentNamePattern.MatchString(input.ImagePullSecret) {
+			writeError(w, http.StatusBadRequest, "Choose a valid saved registry credential")
+			return
+		}
+	} else if !validGitHubRepository(input.RepositoryURL) {
+		writeError(w, http.StatusBadRequest, "Provide either a container image or an HTTPS GitHub repository URL")
+		return
+	}
+	if input.Image == "" && input.ImagePullSecret != "" {
+		writeError(w, http.StatusBadRequest, "Registry credentials can only be used with a container image")
 		return
 	}
 	if len(input.Branch) > 255 || strings.ContainsAny(input.Branch, "\x00\r\n") {
 		writeError(w, http.StatusBadRequest, "Branch must be 255 characters or fewer")
 		return
 	}
-	if input.Dockerfile == "" {
+	if input.Image == "" && input.Dockerfile == "" {
 		input.Dockerfile = "Dockerfile"
 	}
-	if !validDockerfilePath(input.Dockerfile) {
+	if input.Image == "" && !validDockerfilePath(input.Dockerfile) {
 		writeError(w, http.StatusBadRequest, "Dockerfile path must be relative and cannot traverse directories")
 		return
 	}
@@ -1004,17 +1098,38 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "App resources must be at least 100m CPU and 128 MB memory")
 		return
 	}
+	if !s.isPlatformAdmin(principal) {
+		input.ClusterContext = ""
+	}
 	if input.ClusterContext == "" {
 		s.providerMu.RLock()
 		input.ClusterContext = s.activeContext
 		s.providerMu.RUnlock()
 	}
-	if _, err := s.provisionerForContext(input.ClusterContext); err != nil {
+	provider, err := s.provisionerForContext(input.ClusterContext)
+	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "Selected Kubernetes cluster is not connected or unavailable",
 			"code":  "provisioner_unavailable",
 		})
 		return
+	}
+	if input.ImagePullSecret != "" {
+		cluster, ok := provider.(*kubernetesProvisioner)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "Registry credential validation is unavailable for the selected cluster")
+			return
+		}
+		namespace, namespaceErr := cluster.workspaceNamespace(r.Context(), principal.workspaceID)
+		if namespaceErr != nil {
+			writeError(w, http.StatusConflict, namespaceErr.Error())
+			return
+		}
+		secret, secretErr := cluster.client.CoreV1().Secrets(namespace).Get(r.Context(), input.ImagePullSecret, metav1.GetOptions{})
+		if secretErr != nil || secret.Labels["crelan.io/registry-credential"] != "true" || !ownsWorkspace(secret.Labels, principal.workspaceID) {
+			writeError(w, http.StatusBadRequest, "Saved registry credential was not found in this workspace")
+			return
+		}
 	}
 
 	id, runID, now, err := s.queueDeployment(r.Context(), principal.workspaceID, input)
@@ -1033,7 +1148,7 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, deployment{
-		ID: id, Name: input.Name, RepositoryURL: input.RepositoryURL, ClusterContext: input.ClusterContext, Branch: input.Branch,
+		ID: id, Name: input.Name, RepositoryURL: input.RepositoryURL, Image: input.Image, ClusterContext: input.ClusterContext, Branch: input.Branch,
 		Dockerfile: input.Dockerfile, Port: input.Port, Status: "queued",
 		CPUMillicores: input.CPUMillicores, MemoryMB: input.MemoryMB,
 		StatusMessage: "Waiting for a build worker", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
@@ -1105,10 +1220,11 @@ WHERE workspace_id = ? AND status IN ('building', 'deploying')`,
 
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO deployments (workspace_id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
+INSERT INTO deployments (workspace_id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, url, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
 ON CONFLICT(workspace_id, name) DO UPDATE SET
 	repository_url = excluded.repository_url,
+	image = excluded.image,
 	branch = excluded.branch,
 	cluster_context = excluded.cluster_context,
 	dockerfile = excluded.dockerfile,
@@ -1119,7 +1235,7 @@ ON CONFLICT(workspace_id, name) DO UPDATE SET
 	status_message = 'Waiting for a build worker',
 	updated_at = excluded.updated_at
 RETURNING id`,
-		workspaceID, input.Name, input.RepositoryURL, input.Branch, input.ClusterContext,
+		workspaceID, input.Name, input.RepositoryURL, input.Image, input.Branch, input.ClusterContext,
 		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, nowText, nowText).Scan(&id)
 	if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("persist deployment: %w", err)
@@ -1268,7 +1384,7 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 	if err := json.Unmarshal([]byte(requestJSON), &request); err != nil {
 		return s.finishRun(runID, deploymentID, "failed", "Saved deployment request is invalid")
 	}
-	if s.githubApp != nil {
+	if s.githubApp != nil && request.Image == "" {
 		request.GitHubToken, err = s.githubApp.installationToken(runCtx, workspaceID)
 		if err != nil {
 			log.Printf("create GitHub installation token for workspace %d: %v", workspaceID, err)
@@ -1505,7 +1621,7 @@ func (s *deploymentService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.QueryContext(r.Context(), `
-SELECT id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE workspace_id = ? ORDER BY created_at DESC, id DESC`, principal.workspaceID)
 	if err != nil {
 		log.Printf("list deployments: %v", err)
@@ -1541,7 +1657,7 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 	var appURL sql.NullString
 	var statusMessage sql.NullString
 	var runID sql.NullInt64
-	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Branch, &item.ClusterContext,
+	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Image, &item.Branch, &item.ClusterContext,
 		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &item.Status,
 		&statusMessage, &runID, &appURL, &createdAt, &updatedAt)
 	if err != nil {
@@ -1702,7 +1818,7 @@ func (s *deploymentService) authorizedDeployment(w http.ResponseWriter, r *http.
 
 func (s *deploymentService) loadDeployment(ctx context.Context, id string, workspaceID int64) (deployment, error) {
 	return scanDeployment(s.db.QueryRowContext(ctx, `
-SELECT id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE id = ? AND workspace_id = ?`, id, workspaceID))
 }
 
@@ -1798,15 +1914,23 @@ func (s *deploymentService) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type requestPrincipal struct {
-	userID      int64
-	workspaceID int64
-	scopes      map[string]struct{}
-	isSession   bool
+	userID        int64
+	workspaceID   int64
+	workspaceRole string
+	scopes        map[string]struct{}
+	isSession     bool
 }
 
 func (p requestPrincipal) hasScope(scope string) bool {
 	if p.isSession {
-		return true
+		switch scope {
+		case "deployments:write":
+			return p.workspaceRole == "owner" || p.workspaceRole == "admin" || p.workspaceRole == "developer"
+		case "tokens:write", "domains:write":
+			return p.workspaceRole == "owner" || p.workspaceRole == "admin"
+		default:
+			return p.workspaceRole == "owner" || p.workspaceRole == "admin" || p.workspaceRole == "developer" || p.workspaceRole == "viewer"
+		}
 	}
 	_, ok := p.scopes[scope]
 	return ok
@@ -1855,34 +1979,15 @@ WHERE token_hash = ?`, hashToken(token)).Scan(&workspaceID, &scopesJSON, &expire
 		}
 		return requestPrincipal{}, err
 	}
-	return requestPrincipal{userID: userID, workspaceID: workspaceID, isSession: true}, nil
+	var role string
+	if err := s.db.QueryRowContext(r.Context(), `SELECT role FROM workspace_members WHERE user_id = ? AND workspace_id = ?`, userID, workspaceID).Scan(&role); err != nil {
+		return requestPrincipal{}, err
+	}
+	return requestPrincipal{userID: userID, workspaceID: workspaceID, workspaceRole: role, isSession: true}, nil
 }
 
 func (s *deploymentService) authSessionIdentity(r *http.Request) (int64, int64, error) {
-	var userID int64
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil || cookie.Value == "" {
-		return 0, 0, errors.New("session cookie missing")
-	}
-	var expiresAt string
-	err = s.db.QueryRowContext(r.Context(),
-		`SELECT user_id, expires_at FROM sessions WHERE token_hash = ?`, hashToken(cookie.Value)).
-		Scan(&userID, &expiresAt)
-	if err != nil {
-		return 0, 0, err
-	}
-	expires, err := time.Parse(time.RFC3339Nano, expiresAt)
-	if err != nil || !expires.After(time.Now()) {
-		return 0, 0, errors.New("session expired")
-	}
-	var workspaceID int64
-	err = s.db.QueryRowContext(r.Context(), `
-SELECT workspace_id FROM workspace_members WHERE user_id = ?
-ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, workspace_id LIMIT 1`, userID).Scan(&workspaceID)
-	if err != nil {
-		return 0, 0, err
-	}
-	return userID, workspaceID, nil
+	return s.auth.sessionWorkspace(r)
 }
 
 func validPublicGitHubRepository(raw string) bool {

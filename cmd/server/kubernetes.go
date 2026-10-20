@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -37,10 +38,11 @@ import (
 )
 
 const (
-	capsuleTenantLabel = "capsule.clastix.io/tenant"
-	workspaceLabel     = "crelan.io/workspace-id"
-	applicationLabel   = "crelan.io/application"
-	kpackBuildResource = "builds"
+	capsuleTenantLabel    = "capsule.clastix.io/tenant"
+	workspaceLabel        = "crelan.io/workspace-id"
+	applicationLabel      = "crelan.io/application"
+	kpackBuildResource    = "builds"
+	capsuleTenantResource = "tenants"
 )
 
 var (
@@ -88,6 +90,7 @@ type kubernetesProvisionerConfig struct {
 	tlsSecret         string
 	certManagerIssuer string
 	buildTimeout      time.Duration
+	capsuleOwner      string
 }
 
 func newKubernetesProvisioner() (*kubernetesProvisioner, error) {
@@ -271,6 +274,7 @@ func loadKubernetesProvisionerConfig() (kubernetesProvisionerConfig, error) {
 		tlsSecret:         strings.TrimSpace(getenv("CRELAN_INGRESS_TLS_SECRET")),
 		certManagerIssuer: strings.TrimSpace(getenv("CRELAN_CERT_MANAGER_ISSUER")),
 		buildTimeout:      timeout,
+		capsuleOwner:      strings.TrimSpace(getenv("CRELAN_CAPSULE_TENANT_OWNER")),
 	}, nil
 }
 
@@ -284,15 +288,22 @@ func (p *kubernetesProvisioner) DeployWithProgress(ctx context.Context, workspac
 		return ProvisionedDeployment{}, err
 	}
 	if progress != nil {
-		if err := progress("building"); err != nil {
+		stage := "building"
+		if request.Image != "" {
+			stage = "deploying"
+		}
+		if err := progress(stage); err != nil {
 			return ProvisionedDeployment{}, err
 		}
 	}
 	buildCtx, cancel := context.WithTimeout(ctx, p.config.buildTimeout)
 	defer cancel()
-	image, err := p.buildImage(buildCtx, workspaceID, namespace, request)
-	if err != nil {
-		return ProvisionedDeployment{}, err
+	image := request.Image
+	if image == "" {
+		image, err = p.buildImage(buildCtx, workspaceID, namespace, request)
+		if err != nil {
+			return ProvisionedDeployment{}, err
+		}
 	}
 	if progress != nil {
 		if err := progress("deploying"); err != nil {
@@ -624,14 +635,67 @@ func (p *kubernetesProvisioner) workspaceNamespace(ctx context.Context, workspac
 	space, err := p.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			return "", fmt.Errorf("workspace namespace %q has not been provisioned", namespace)
+			if createErr := p.ensureCapsuleWorkspace(ctx, workspaceID, namespace, tenant); createErr != nil {
+				return "", createErr
+			}
+			space, err = p.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+			if err != nil {
+				return "", fmt.Errorf("get provisioned workspace namespace: %w", err)
+			}
 		}
-		return "", fmt.Errorf("get workspace namespace: %w", err)
+		if err != nil {
+			return "", fmt.Errorf("get workspace namespace: %w", err)
+		}
 	}
 	if space.Labels[capsuleTenantLabel] != tenant {
 		return "", fmt.Errorf("workspace namespace %q is not assigned to its expected Capsule tenant", namespace)
 	}
 	return namespace, nil
+}
+
+func (p *kubernetesProvisioner) ensureCapsuleWorkspace(ctx context.Context, workspaceID int64, namespace, tenant string) error {
+	if p.dynamicClient == nil {
+		return errors.New("Capsule tenant provisioning is unavailable: Kubernetes dynamic client is not configured")
+	}
+	if p.config.capsuleOwner == "" {
+		return errors.New("Capsule tenant provisioning requires CRELAN_CAPSULE_TENANT_OWNER to name a platform Kubernetes user or group")
+	}
+	resource := p.dynamicClient.Resource(k8sschema.GroupVersionResource{
+		Group: "capsule.clastix.io", Version: "v1beta2", Resource: capsuleTenantResource,
+	})
+	_, err := resource.Get(ctx, tenant, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		item := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "capsule.clastix.io/v1beta2",
+			"kind":       "Tenant",
+			"metadata":   map[string]any{"name": tenant, "labels": map[string]any{"crelan.io/workspace-id": strconv.FormatInt(workspaceID, 10)}},
+			"spec": map[string]any{"owners": []any{
+				map[string]any{"name": p.config.capsuleOwner, "kind": "User"},
+			}},
+		}}
+		if _, err := resource.Create(ctx, item, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			if strings.Contains(strings.ToLower(err.Error()), "no matches") || strings.Contains(strings.ToLower(err.Error()), "could not find the requested resource") {
+				return errors.New("Capsule Tenant CRD is not installed in the connected cluster")
+			}
+			return fmt.Errorf("create Capsule tenant %q: %w", tenant, err)
+		}
+	} else if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no matches") || strings.Contains(strings.ToLower(err.Error()), "could not find the requested resource") {
+			return errors.New("Capsule Tenant CRD is not installed in the connected cluster")
+		}
+		return fmt.Errorf("check Capsule tenant %q: %w", tenant, err)
+	}
+	namespaceObject := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: namespace,
+		Labels: map[string]string{
+			capsuleTenantLabel: tenant,
+			workspaceLabel:     strconv.FormatInt(workspaceID, 10),
+		},
+	}}
+	if _, err := p.client.CoreV1().Namespaces().Create(ctx, namespaceObject, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create Capsule workspace namespace %q: %w", namespace, err)
+	}
+	return nil
 }
 
 func (p *kubernetesProvisioner) buildImage(ctx context.Context, workspaceID int64, namespace string, request DeploymentRequest) (string, error) {
@@ -1051,7 +1115,7 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 		workspaceLabel:   strconv.FormatInt(workspaceID, 10),
 		applicationLabel: name,
 	}
-	containers := []corev1.Container{{
+	container := corev1.Container{
 		Name:            name,
 		Image:           image,
 		ImagePullPolicy: corev1.PullAlways,
@@ -1076,7 +1140,16 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 				corev1.ResourceMemory: resourceMustParse(fmt.Sprintf("%dMi", request.MemoryMB)),
 			},
 		},
-	}}
+	}
+	if probePath := configuredAppHealthPath(); probePath != "" {
+		probe := func() *corev1.Probe {
+			return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: probePath, Port: intstr.FromInt(request.Port), Scheme: corev1.URISchemeHTTP}}, PeriodSeconds: 10, TimeoutSeconds: 3, FailureThreshold: 3}
+		}
+		container.ReadinessProbe = probe()
+		container.LivenessProbe = probe()
+		container.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: probePath, Port: intstr.FromInt(request.Port), Scheme: corev1.URISchemeHTTP}}, PeriodSeconds: 5, TimeoutSeconds: 3, FailureThreshold: 30}
+	}
+	containers := []corev1.Container{container}
 	podSpec := corev1.PodSpec{
 		Containers: containers,
 		SecurityContext: &corev1.PodSecurityContext{
@@ -1087,10 +1160,20 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 	if p.config.registrySecret != "" {
 		podSpec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: p.config.registrySecret}}
 	}
+	if request.ImagePullSecret != "" {
+		secret, err := p.client.CoreV1().Secrets(namespace).Get(ctx, request.ImagePullSecret, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("load workspace image-pull credential: %w", err)
+		}
+		if secret.Labels["crelan.io/registry-credential"] != "true" || !ownsWorkspace(secret.Labels, workspaceID) {
+			return errors.New("image-pull credential does not belong to this workspace")
+		}
+		podSpec.ImagePullSecrets = append(podSpec.ImagePullSecrets, corev1.LocalObjectReference{Name: request.ImagePullSecret})
+	}
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr(int32(1)),
+			Replicas: ptr(configuredAppReplicas()),
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -1135,6 +1218,25 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 	return nil
 }
 
+func configuredAppReplicas() int32 {
+	value, err := strconv.Atoi(strings.TrimSpace(os.Getenv("CRELAN_APP_REPLICAS")))
+	if err != nil || value < 1 {
+		return 1
+	}
+	if value > 5 {
+		return 5
+	}
+	return int32(value)
+}
+
+func configuredAppHealthPath() string {
+	value := strings.TrimSpace(os.Getenv("CRELAN_APP_HEALTH_CHECK_PATH"))
+	if value == "" || !strings.HasPrefix(value, "/") || strings.ContainsAny(value, "?#\r\n") || path.Clean(value) != value || len(value) > 256 {
+		return ""
+	}
+	return value
+}
+
 func (p *kubernetesProvisioner) ensureWorkspaceResourceQuota(ctx context.Context, workspaceID int64, namespace string, maxApps int) error {
 	if maxApps < 1 {
 		maxApps = 5
@@ -1145,6 +1247,7 @@ func (p *kubernetesProvisioner) ensureWorkspaceResourceQuota(ctx context.Context
 		Spec: corev1.ResourceQuotaSpec{Hard: corev1.ResourceList{
 			corev1.ResourceName("count/deployments.apps"): resource.MustParse(strconv.Itoa(maxApps)),
 			corev1.ResourceServices:                       resource.MustParse(strconv.Itoa(maxApps)),
+			corev1.ResourceName("count/pods"):             resource.MustParse("50"),
 		}},
 	}
 	quotas := p.client.CoreV1().ResourceQuotas(namespace)

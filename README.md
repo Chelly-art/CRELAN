@@ -63,3 +63,9 @@ Set `CRELAN_API_URL` and `CRELAN_TOKEN` to the Crelan URL and a workspace API to
 ```
 
 The composite GitHub Action at `.github/actions/deploy` runs the CLI in a workflow. Configure `CRELAN_API_URL` as a repository variable and `CRELAN_TOKEN` as a repository secret, then adapt [examples/crelan-deploy.yml](examples/crelan-deploy.yml) to your repository and action release. Private source repositories require a connected GitHub App.
+
+## Other CI systems, IaC, and interactive CLI
+
+GitLab CI and Jenkins can build and push a container image, then deploy it with `crelan deploy --name APP --image IMAGE`. `--repo` asks Crelan to build a GitHub repository; use the image flow for repositories hosted elsewhere. See [CI deployment examples](docs/ci-deployment.md), [GitLab CI](examples/ci/gitlab-ci.yml), and [Jenkins](examples/ci/Jenkinsfile).
+
+Run `crelan tui` for an interactive menu to list, deploy, inspect, and delete applications. For infrastructure as code, see the [Terraform and OpenTofu provider](integrations/terraform-provider-crelan/README.md) and [Pulumi TypeScript example](integrations/pulumi/README.md). The Terraform provider is currently installed from a local build; the Pulumi dynamic resource is TypeScript-only and does not support import or read reconciliation.

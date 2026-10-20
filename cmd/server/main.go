@@ -25,6 +25,10 @@ func main() {
 		log.Fatalf("initialize authentication: %v", err)
 	}
 	defer auth.db.Close()
+	workspaces, err := newWorkspaceService(auth)
+	if err != nil {
+		log.Fatalf("initialize workspace membership: %v", err)
+	}
 
 	staticFiles, err := fs.Sub(assets.Web, "web")
 	if err != nil {
@@ -34,6 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", healthHandler)
 	auth.registerRoutes(mux)
+	workspaces.registerRoutes(mux)
 	githubApp, err := newGitHubAppService(auth.db, auth)
 	if err != nil {
 		log.Fatalf("configure GitHub App integration: %v", err)
@@ -71,6 +76,10 @@ func main() {
 	}
 	githubApp.deployments = deployments
 	deployments.registerRoutes(mux)
+	admin := newAdminService(auth, clusterProvisioner)
+	admin.registerRoutes(mux)
+	(&databaseService{auth: auth, provisioner: clusterProvisioner}).registerRoutes(mux)
+	(&registryCredentialService{auth: auth, deployments: deployments}).registerRoutes(mux)
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
 	go func() {

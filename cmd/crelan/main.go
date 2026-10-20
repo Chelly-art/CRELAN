@@ -72,6 +72,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return deploymentSubresource(client, base, token, commandArgs, "logs", stdout)
 	case "resources":
 		return deploymentSubresource(client, base, token, commandArgs, "resources", stdout)
+	case "tui":
+		if len(commandArgs) != 0 {
+			return errors.New("usage: crelan tui")
+		}
+		return runTUI(client, base, token, os.Stdin, stdout)
 	default:
 		printUsage(stderr)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -104,7 +109,9 @@ func extractAPIURL(args []string, defaultURL string) ([]string, string, error) {
 func deploy(client *http.Client, base, token string, args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("deploy", flag.ContinueOnError)
 	name := flags.String("name", "", "app name (required)")
-	repository := flags.String("repo", "", "public GitHub repository URL (required)")
+	repository := flags.String("repo", "", "public GitHub repository URL")
+	image := flags.String("image", "", "existing container image reference")
+	imagePullSecret := flags.String("image-pull-secret", "", "saved workspace registry credential name (image deployments only)")
 	branch := flags.String("branch", "", "branch to deploy")
 	dockerfile := flags.String("dockerfile", "Dockerfile", "Dockerfile path in repository")
 	port := flags.Int("port", 8080, "application HTTP port")
@@ -116,13 +123,21 @@ func deploy(client *http.Client, base, token string, args []string, stdout io.Wr
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || *name == "" || *repository == "" {
-		return errors.New("usage: crelan deploy --name APP --repo https://github.com/OWNER/REPO [--branch BRANCH] [--dockerfile PATH] [--port PORT]")
+	if flags.NArg() != 0 || *name == "" || ((*repository == "") == (*image == "")) {
+		return errors.New("usage: crelan deploy --name APP (--repo https://github.com/OWNER/REPO | --image registry/owner/app:tag) [--branch BRANCH] [--dockerfile PATH] [--port PORT]")
 	}
-	body, err := json.Marshal(map[string]any{
-		"name": *name, "repository_url": *repository, "branch": *branch, "dockerfile": *dockerfile,
-		"port": *port, "cpu_millicores": *cpu, "memory_mb": *memory,
-	})
+	request := map[string]any{"name": *name, "port": *port, "cpu_millicores": *cpu, "memory_mb": *memory}
+	if *image != "" {
+		request["image"] = *image
+		if *imagePullSecret != "" {
+			request["image_pull_secret"] = *imagePullSecret
+		}
+	} else {
+		request["repository_url"] = *repository
+		request["branch"] = *branch
+		request["dockerfile"] = *dockerfile
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("encode deployment request: %w", err)
 	}
@@ -310,13 +325,14 @@ func printJSON(w io.Writer, value any) error {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, `Usage:
-  crelan deploy --name APP --repo https://github.com/OWNER/REPO [--branch BRANCH] [--dockerfile PATH] [--port PORT]
+  crelan deploy --name APP (--repo https://github.com/OWNER/REPO | --image IMAGE) [--branch BRANCH] [--dockerfile PATH] [--port PORT]
   crelan deployments
   crelan status DEPLOYMENT_ID
   crelan history DEPLOYMENT_ID
   crelan logs DEPLOYMENT_ID
   crelan resources DEPLOYMENT_ID
   crelan delete DEPLOYMENT_ID
+  crelan tui
   crelan version
 
 Set CRELAN_API_URL and CRELAN_TOKEN for API access.`)

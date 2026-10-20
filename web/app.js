@@ -1,4 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
+let currentWorkspaceRole = "viewer";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -17,10 +18,28 @@ async function api(path, options = {}) {
 
 async function loadAccount() {
   const user = await api("/api/v1/me");
-  $("#account-name").textContent = user.name;
-  $("#account-email").textContent = user.email;
-  $("#top-avatar").textContent = user.name.charAt(0).toUpperCase();
-  $(".user-avatar").textContent = user.name.charAt(0).toUpperCase();
+  currentWorkspaceRole = user.workspace_role || "viewer";
+  const displayName = user.name || user.email || "User";
+  $("#account-name").textContent = displayName;
+  $("#account-email").textContent = user.email || "";
+  $("#top-avatar").textContent = displayName.charAt(0).toUpperCase();
+  $(".user-avatar").textContent = displayName.charAt(0).toUpperCase();
+  const workspaceSelect = $("#workspace-select");
+  const membershipResult = await api("/api/v1/workspaces");
+  workspaceSelect.replaceChildren();
+  membershipResult.workspaces.forEach((workspace) => {
+    const option = document.createElement("option");
+    option.value = String(workspace.id);
+    option.textContent = workspace.name;
+    option.selected = workspace.selected;
+    workspaceSelect.append(option);
+  });
+  workspaceSelect.addEventListener("change", async () => {
+    await api("/api/v1/workspaces/switch", { method: "POST", body: JSON.stringify({ workspace_id: Number(workspaceSelect.value) }) });
+    window.location.reload();
+  });
+  $("#invite-form").hidden = user.workspace_role !== "owner";
+  if (user.platform_admin === true) $("#admin-nav-link").hidden = false;
 }
 
 function renderTable(container, columns, rows, emptyMessage) {
@@ -57,119 +76,6 @@ function renderTable(container, columns, rows, emptyMessage) {
   container.append(table);
 }
 
-async function loadClusterResources() {
-  const error = $("#cluster-error");
-  error.hidden = true;
-  $("#cluster-status").textContent = "Loading cluster resources…";
-  try {
-    const result = await api("/api/v1/cluster/resources");
-    $("#namespace-name").textContent = result.namespace;
-    $("#pod-count").textContent = result.pods.length;
-    $("#configmap-count").textContent = result.configmaps.length;
-    $("#secret-count").textContent = result.secrets.length;
-    renderTable($("#pods-list"), [
-      { label: "Name", value: (pod) => pod.name },
-      { label: "Status", value: (pod) => pod.phase || "Pending" },
-      { label: "Ready", value: (pod) => pod.ready ? "Yes" : "No" },
-      { label: "Restarts", value: (pod) => pod.restarts },
-    ], result.pods, "No pods found in this namespace.");
-    renderTable($("#configmaps-list"), [
-      { label: "Name", value: (item) => item.name },
-      { label: "Keys", value: (item) => item.keys },
-    ], result.configmaps, "No ConfigMaps found in this namespace.");
-    renderTable($("#secrets-list"), [
-      { label: "Name", value: (item) => item.name },
-      { label: "Type", value: (item) => item.type },
-      { label: "Keys", value: (item) => item.keys },
-    ], result.secrets, "No Secrets found in this namespace.");
-    $("#cluster-status").textContent = "Cluster connected";
-  } catch (cause) {
-    error.textContent = cause.message;
-    error.hidden = false;
-    $("#cluster-status").textContent = "Cluster unavailable";
-  }
-}
-
-async function loadClusterContexts() {
-  const select = $("#cluster-context");
-  const help = $("#cluster-connect-help");
-  const error = $("#cluster-connect-error");
-  error.hidden = true;
-  try {
-    const result = await api("/api/v1/cluster/contexts");
-    const deploymentSelect = $("#deployment-cluster");
-    deploymentSelect.replaceChildren();
-    if (result.contexts.length) {
-      result.contexts.forEach((contextName) => {
-        const targetOption = document.createElement("option");
-        targetOption.value = contextName;
-        targetOption.textContent = contextName;
-        deploymentSelect.append(targetOption);
-      });
-      if (result.active) deploymentSelect.value = result.active;
-    } else {
-      deploymentSelect.append(new Option("No clusters connected", ""));
-    }
-    select.replaceChildren();
-    if (!result.contexts.length) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = result.in_cluster ? "No cluster choices available" : "No clusters configured";
-      option.disabled = true;
-      option.selected = true;
-      select.append(option);
-      help.textContent = result.in_cluster
-        ? "Crelan is using its Kubernetes ServiceAccount. Ask the operator to configure additional clusters."
-        : "No clusters are configured. Ask the operator to configure a cluster for Crelan.";
-      return;
-    }
-    result.contexts.forEach((contextName) => {
-      const option = document.createElement("option");
-      option.value = contextName;
-      option.textContent = contextName;
-      select.append(option);
-    });
-    if (result.active) select.value = result.active;
-    help.textContent = result.active
-      ? `Active context: ${result.active}. Choose another context to switch clusters.`
-      : "Choose the cluster context Crelan should use.";
-  } catch (cause) {
-    select.replaceChildren(new Option("Could not load kubeconfig contexts", ""));
-    error.textContent = cause.message;
-    error.hidden = false;
-  }
-}
-
-$("#cluster-connect-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const error = $("#cluster-connect-error");
-  const button = $("#connect-cluster");
-  const contextName = $("#cluster-context").value;
-  if (!contextName) {
-    error.textContent = "Choose an available cluster.";
-    error.hidden = false;
-    return;
-  }
-  error.hidden = true;
-  button.disabled = true;
-  button.textContent = "Connecting…";
-  try {
-    const result = await api("/api/v1/cluster/connect", {
-      method: "POST",
-      body: JSON.stringify({ context: contextName }),
-    });
-    $("#cluster-status").textContent = `Connected: ${result.context}`;
-    await loadClusterResources();
-    await loadClusterContexts();
-  } catch (cause) {
-    error.textContent = cause.message;
-    error.hidden = false;
-  } finally {
-    button.disabled = false;
-    button.textContent = "Use cluster";
-  }
-});
-
 async function loadDeployments() {
   const list = $("#deployment-list");
   $("#deployment-status").textContent = "Loading deployments…";
@@ -189,14 +95,11 @@ async function loadDeployments() {
       details.className = "token-row-details";
       const name = document.createElement("strong");
       name.textContent = item.name;
-      const repo = document.createElement("code");
-      repo.textContent = item.repository_url;
-      const cluster = document.createElement("small");
-      cluster.className = "deployment-cluster-name";
-      cluster.textContent = `Cluster: ${item.cluster_context || "unknown"}`;
-      details.append(name, repo, cluster);
+      const source = document.createElement("code");
+      source.textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Container application");
+      details.append(name, source);
       const status = document.createElement("span");
-      status.className = `token-row-state ${item.status === "ready" ? "active" : ""}`;
+      status.className = `token-row-state ${["ready", "running"].includes(item.status) ? "active" : ""}`;
       status.textContent = item.status;
       const remove = document.createElement("button");
       remove.className = "inline-action";
@@ -204,7 +107,12 @@ async function loadDeployments() {
       remove.textContent = "Delete";
       remove.disabled = ["queued", "building", "deploying", "deleting"].includes(item.status);
       remove.addEventListener("click", () => deleteDeployment(item));
-      row.append(details, status, remove);
+      const inspect = document.createElement("button");
+      inspect.className = "inline-action";
+      inspect.type = "button";
+      inspect.textContent = "View app";
+      inspect.addEventListener("click", () => showApplication(item));
+      row.append(details, status, inspect, remove);
       if (item.url) {
         const link = document.createElement("a");
         link.className = "deployment-link";
@@ -222,7 +130,7 @@ async function loadDeployments() {
       }
       list.append(row);
     });
-    $("#deployment-status").textContent = "Deployment API connected";
+    $("#deployment-status").textContent = "Workspace applications loaded";
   } catch (cause) {
     list.replaceChildren();
     const failure = document.createElement("p");
@@ -237,7 +145,8 @@ async function deleteDeployment(item) {
   if (!window.confirm(`Delete deployment “${item.name}”?`)) return;
   try {
     await api(`/api/v1/deployments/${item.id}`, { method: "DELETE" });
-    await Promise.all([loadDeployments(), loadClusterResources()]);
+    if (activeApplication?.id === item.id) closeApplication();
+    await loadDeployments();
   } catch (cause) {
     window.alert(cause.message);
   }
@@ -252,37 +161,307 @@ $("#deployment-form").addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.textContent = "Queueing deployment…";
   const payload = Object.fromEntries(new FormData(form));
-  payload.port = Number(payload.port);
-  if (!payload.branch) delete payload.branch;
+  const sourceType = payload.source_type;
+  delete payload.source_type;
+  if (sourceType === "image") {
+    payload.port = Number(payload.image_port);
+    delete payload.image_port;
+    if ($("#image-pull-secret").value) payload.image_pull_secret = $("#image-pull-secret").value;
+    delete payload.repository_url;
+    delete payload.branch;
+    if (!payload.image) {
+      error.textContent = "Enter a container image reference.";
+      error.hidden = false;
+      submit.disabled = false;
+      submit.textContent = "Deploy application";
+      return;
+    }
+  } else {
+    payload.port = Number(payload.port);
+    delete payload.image;
+    delete payload.image_port;
+    if (!payload.branch) delete payload.branch;
+    if (!payload.repository_url) {
+      error.textContent = "Enter a public GitHub repository URL.";
+      error.hidden = false;
+      submit.disabled = false;
+      submit.textContent = "Deploy application";
+      return;
+    }
+  }
   try {
     await api("/api/v1/deployments", { method: "POST", body: JSON.stringify(payload) });
     form.reset();
     $("#app-port").value = "8080";
+    $("#image-port").value = "8080";
+    updateSourceFields();
+    $("#deploy-form-panel").hidden = true;
+    $("#page-title").textContent = "Applications";
     await loadDeployments();
   } catch (cause) {
     error.textContent = cause.message;
     error.hidden = false;
   } finally {
     submit.disabled = false;
-    submit.textContent = "Deploy to cluster";
+      submit.textContent = "Deploy application";
   }
 });
 
-function navigate(hash) {
-  const deployments = hash === "#deployments";
-  $("#cluster-page").hidden = deployments;
-  $("#deployments-page").hidden = !deployments;
-  $("#page-title").textContent = deployments ? "Deployments" : "Cluster resources";
-  document.querySelectorAll(".nav-link").forEach((link) => link.classList.toggle("active", link.hash === (deployments ? "#deployments" : "#cluster")));
-  if (deployments) loadDeployments();
-  else loadClusterResources();
+let activeApplication = null;
+
+async function showApplication(item) {
+  activeApplication = item;
+  $("#app-runtime").hidden = false;
+  $("#runtime-app-name").textContent = item.name;
+  $("#runtime-app-summary").textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Application runtime details");
+  await Promise.all([loadApplicationResources(), loadApplicationLogs()]);
 }
 
-document.querySelectorAll(".nav-link").forEach((link) => link.addEventListener("click", () => navigate(link.hash)));
-window.addEventListener("hashchange", () => navigate(window.location.hash));
-$("#refresh-cluster").addEventListener("click", loadClusterResources);
-$("#refresh-contexts").addEventListener("click", loadClusterContexts);
+function closeApplication() {
+  activeApplication = null;
+  $("#app-runtime").hidden = true;
+}
+
+async function loadApplicationResources() {
+  if (!activeApplication) return;
+  const error = $("#runtime-error");
+  error.hidden = true;
+  try {
+    const result = await api(`/api/v1/deployments/${activeApplication.id}/resources`);
+    const instances = result.instances || [];
+    const config = result.configuration || [];
+    const secrets = result.secret_metadata || [];
+    $("#app-pod-count").textContent = instances.length;
+    renderTable($("#app-pods-list"), [
+      { label: "Instance", value: (pod) => pod.name },
+      { label: "Status", value: (pod) => pod.phase || "Pending" },
+      { label: "Ready", value: (pod) => pod.ready ? "Yes" : "No" },
+      { label: "Restarts", value: (pod) => pod.restarts },
+    ], instances, "No application instances are available yet.");
+    const configurationRows = [
+      ...config.map((item) => ({ name: item.name, kind: "ConfigMap", keys: item.keys })),
+      ...secrets.map((item) => ({ name: item.name, kind: "Secret metadata", keys: item.keys })),
+    ];
+    renderTable($("#app-config-list"), [
+      { label: "Name", value: (item) => item.name },
+      { label: "Type", value: (item) => item.kind },
+      { label: "Keys", value: (item) => item.keys },
+    ], configurationRows, "No app configuration metadata is available.");
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  }
+}
+
+async function loadApplicationLogs() {
+  if (!activeApplication) return;
+  const output = $("#app-logs");
+  output.textContent = "Loading recent logs…";
+  try {
+    const result = await api(`/api/v1/deployments/${activeApplication.id}/logs?tail=200`);
+    output.textContent = result.logs || "No log output is available.";
+  } catch (cause) {
+    output.textContent = cause.message;
+  }
+}
+
+async function loadDatabases() {
+  const list = $("#database-list");
+  list.replaceChildren();
+  try {
+    const result = await api("/api/v1/databases");
+    for (const item of result.databases || []) {
+      const row = document.createElement("div");
+      row.className = "token-row deployment-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = item.name;
+      const endpoint = document.createElement("code");
+      endpoint.textContent = `${item.endpoint}:${item.port}`;
+      const engine = document.createElement("small");
+      engine.textContent = `${item.engine} ${item.version || ""} · ${item.storage || ""} · backups ${item.backups_enabled ? "enabled" : "not configured"}`;
+      details.append(name, endpoint, engine);
+      const status = document.createElement("span");
+      status.className = `token-row-state ${["healthy", "ready", "online"].includes(String(item.status).toLowerCase()) ? "active" : ""}`;
+      status.textContent = item.status || "provisioning";
+      const remove = document.createElement("button");
+      remove.className = "inline-action";
+      remove.type = "button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`Delete database cluster “${item.name}”? This also deletes its stored data.`)) return;
+        try {
+          await api(`/api/v1/databases/${encodeURIComponent(item.name)}`, { method: "DELETE" });
+          await loadDatabases();
+        } catch (cause) {
+          window.alert(cause.message);
+        }
+      });
+      row.append(details, status, remove);
+      if (item.message) {
+        const message = document.createElement("small");
+        message.className = "deployment-message";
+        message.textContent = item.message;
+        row.append(message);
+      }
+      list.append(row);
+    }
+    if (!list.children.length) {
+      const empty = document.createElement("div");
+      empty.className = "token-empty";
+      empty.textContent = "No databases yet. Create a PostgreSQL or MySQL cluster to get started.";
+      list.append(empty);
+    }
+  } catch (cause) {
+    const failure = document.createElement("p");
+    failure.className = "resource-empty";
+    failure.textContent = cause.message;
+    list.append(failure);
+  }
+}
+
+async function loadDatabaseEngines() {
+  try {
+    const result = await api("/api/v1/database-engines");
+    const select = $("#database-engine");
+    for (const engine of result.engines || []) {
+      const option = [...select.options].find((item) => item.value === engine.id);
+      if (option) {
+        option.disabled = !engine.available;
+        if (!engine.available) option.textContent = `${engine.name} (operator not installed)`;
+      }
+    }
+  } catch {
+    // Keep the catalog visible; create requests return the specific provisioning issue.
+  }
+}
+
+async function loadRegistryCredentials() {
+  const select = $("#image-pull-secret");
+  const selected = select.value;
+  select.replaceChildren(new Option("Use public image or platform registry", ""));
+  try {
+    const result = await api("/api/v1/registry-credentials");
+    for (const credential of result.credentials || []) {
+      const option = new Option(`${credential.name} (${credential.server})`, credential.name);
+      select.append(option);
+    }
+    if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+  } catch {
+    // Public images remain deployable when registry credential management is unavailable.
+  }
+}
+
+$("#show-registry-form").addEventListener("click", () => {
+  $("#registry-form").hidden = !$("#registry-form").hidden;
+});
+$("#registry-submit").addEventListener("click", async () => {
+  const error = $("#registry-error");
+  const submit = $("#registry-submit");
+  error.hidden = true;
+  const payload = {
+    name: $("#registry-name").value.trim(),
+    server: $("#registry-server").value.trim(),
+    username: $("#registry-username").value.trim(),
+    password: $("#registry-password").value,
+  };
+  submit.disabled = true;
+  try {
+    const credential = await api("/api/v1/registry-credentials", { method: "POST", body: JSON.stringify(payload) });
+    await loadRegistryCredentials();
+    $("#image-pull-secret").value = credential.name;
+    $("#registry-password").value = "";
+    $("#registry-form").hidden = true;
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+let oneTimeDatabaseCredentials = null;
+$("#database-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#database-error");
+  const submit = $("#database-submit");
+  error.hidden = true;
+  submit.disabled = true;
+  submit.textContent = "Creating database…";
+  const payload = Object.fromEntries(new FormData(event.currentTarget));
+  if (!payload.version) delete payload.version;
+  try {
+    const result = await api("/api/v1/databases", { method: "POST", body: JSON.stringify(payload) });
+    oneTimeDatabaseCredentials = result.credentials;
+    const initialDatabase = result.credentials.database || "app";
+    $("#database-credential-values").textContent = `Host: ${result.database.endpoint}\nPort: ${result.database.port}\nDatabase: ${initialDatabase}\nUsername: ${result.credentials.username}\nPassword: ${result.credentials.password}`;
+    $("#database-credentials").hidden = false;
+    event.currentTarget.reset();
+    $("#database-storage").value = "10Gi";
+    await loadDatabases();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Create database cluster";
+  }
+});
+
+$("#copy-database-credentials").addEventListener("click", async () => {
+  if (!oneTimeDatabaseCredentials) return;
+  try {
+    await navigator.clipboard.writeText($("#database-credential-values").textContent);
+    $("#copy-database-credentials").textContent = "Copied";
+  } catch {
+    $("#copy-database-credentials").textContent = "Select and copy the credentials above";
+  }
+});
+
+document.querySelectorAll(".nav-link[href^='#']").forEach((link) => link.addEventListener("click", (event) => {
+  event.preventDefault();
+  const isDeploy = link.hash === "#deploy";
+  const isDatabases = link.hash === "#databases";
+  const isTeam = link.hash === "#team";
+  const isUsage = link.hash === "#usage";
+  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications")));
+  $("#deploy-form-panel").hidden = !isDeploy;
+  $("#databases-page").hidden = !isDatabases;
+  $("#team-page").hidden = !isTeam;
+  $("#usage-page").hidden = !isUsage;
+  $(".token-layout").hidden = isDatabases || isTeam || isUsage;
+  $("#app-runtime").hidden = isDatabases || isTeam || isUsage || !activeApplication;
+  document.querySelectorAll(".nav-link[href^='#']").forEach((item) => item.classList.toggle("active", item === link));
+  if (isDeploy) $("#app-name").focus();
+  if (isDatabases) Promise.all([loadDatabases(), loadDatabaseEngines()]);
+  if (isTeam) loadWorkspaceMembers();
+  if (isUsage) loadWorkspaceUsage();
+}));
+$("#show-deploy-form").addEventListener("click", () => {
+  $("#databases-page").hidden = true;
+  $(".token-layout").hidden = false;
+  $("#deploy-form-panel").hidden = false;
+  $("#page-title").textContent = "Deploy an app";
+  $("#app-name").focus();
+});
+function updateSourceFields() {
+  const imageSource = $("#app-source").value === "image";
+  $("#repository-source-fields").hidden = imageSource;
+  $("#image-source-fields").hidden = !imageSource;
+  $("#app-repository").required = !imageSource;
+  $("#app-image").required = imageSource;
+  $("#app-port").required = !imageSource;
+  $("#image-port").required = imageSource;
+  if (imageSource) loadRegistryCredentials();
+}
+$("#app-source").addEventListener("change", updateSourceFields);
+updateSourceFields();
+$("#close-runtime").addEventListener("click", closeApplication);
+$("#refresh-runtime").addEventListener("click", loadApplicationResources);
+$("#refresh-logs").addEventListener("click", loadApplicationLogs);
 $("#refresh-deployments").addEventListener("click", loadDeployments);
+$("#refresh-databases").addEventListener("click", loadDatabases);
 $("#signout-button").addEventListener("click", async () => {
   await api("/auth/logout", { method: "POST" });
   window.location.assign("/login");
@@ -291,5 +470,118 @@ $("#signout-button").addEventListener("click", async () => {
 loadAccount().catch((cause) => {
   if (cause.message !== "Sign in required") window.location.assign("/login");
 });
-loadClusterContexts();
-loadClusterResources();
+loadDeployments();
+
+async function loadWorkspaceMembers() {
+  const container = $("#workspace-members");
+  try {
+    const { members } = await api("/api/v1/workspace/members");
+    container.replaceChildren();
+    members.forEach((member) => {
+      const row = document.createElement("div");
+      row.className = "token-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = member.name;
+      const email = document.createElement("small");
+      email.textContent = member.email;
+      details.append(name, email);
+      const role = document.createElement("span");
+      role.className = "token-row-state";
+      role.textContent = member.role;
+      row.append(details, role);
+      if (currentWorkspaceRole === "owner" && member.role !== "owner") {
+        const roleSelect = document.createElement("select");
+        roleSelect.className = "text-input";
+        ["developer", "viewer"].forEach((value) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          option.selected = value === member.role;
+          roleSelect.append(option);
+        });
+        roleSelect.addEventListener("change", async () => {
+          await api(`/api/v1/workspace/members/${member.user_id}`, { method: "PUT", body: JSON.stringify({ role: roleSelect.value }) });
+          await loadWorkspaceMembers();
+        });
+        const remove = document.createElement("button");
+        remove.className = "inline-action";
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", async () => {
+          await api(`/api/v1/workspace/members/${member.user_id}`, { method: "DELETE" });
+          await loadWorkspaceMembers();
+        });
+        row.append(roleSelect, remove);
+      }
+      container.append(row);
+    });
+    if (!members.length) container.textContent = "No members found.";
+  } catch (cause) {
+    container.textContent = cause.message;
+  }
+}
+
+$("#invite-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#invite-error");
+  error.hidden = true;
+  try {
+    const result = await api("/api/v1/workspace/invites", { method: "POST", body: JSON.stringify({ email: $("#invite-email").value.trim(), role: $("#invite-role").value }) });
+    $("#invite-token").textContent = result.token;
+    $("#invite-result").hidden = false;
+    event.currentTarget.reset();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  }
+});
+
+$("#accept-invite-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#accept-invite-error");
+  error.hidden = true;
+  try {
+    await api("/api/v1/workspace/invites/accept", { method: "POST", body: JSON.stringify({ token: $("#accept-invite-token").value.trim() }) });
+    window.location.reload();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  }
+});
+
+$("#refresh-team").addEventListener("click", loadWorkspaceMembers);
+
+async function loadWorkspaceUsage() {
+  const usageContainer = $("#workspace-usage");
+  const auditContainer = $("#workspace-audit");
+  usageContainer.textContent = "Loading usage…";
+  try {
+    const [usage, events] = await Promise.all([api("/api/v1/usage"), api("/api/v1/audit")]);
+    usageContainer.replaceChildren();
+    const card = document.createElement("div");
+    card.className = "token-row";
+    const detail = document.createElement("div");
+    detail.className = "token-row-details";
+    const title = document.createElement("strong");
+    title.textContent = `${usage.apps} of ${usage.limits.max_apps} apps`;
+    const subtitle = document.createElement("small");
+    const databaseSummary = usage.database_usage_available
+      ? `${usage.databases} databases · ${usage.database_storage_gib}GiB requested storage`
+      : "database usage unavailable";
+    subtitle.textContent = `${usage.completed_deployments} completed deployments · ${usage.deployment_seconds} build seconds · ${usage.allocated_cpu_millicores}m allocated CPU · ${usage.allocated_memory_mb}Mi allocated memory · ${databaseSummary}`;
+    detail.append(title, subtitle);
+    card.append(detail);
+    usageContainer.append(card);
+    renderTable(auditContainer, [
+      { label: "Time", value: (item) => new Date(item.created_at).toLocaleString() },
+      { label: "Action", value: (item) => item.action },
+      { label: "Details", value: (item) => item.details },
+    ], events, "No workspace activity recorded yet.");
+  } catch (cause) {
+    usageContainer.textContent = cause.message;
+  }
+}
+
+$("#refresh-usage").addEventListener("click", loadWorkspaceUsage);

@@ -1,0 +1,18 @@
+{
+  "name": "crelan-pulumi-example",
+  "private": true,
+  "description": "Pulumi TypeScript dynamic resource for Crelan deployments",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  }
+}

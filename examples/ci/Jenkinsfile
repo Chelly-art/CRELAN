@@ -1,0 +1,119 @@
+pipeline {
+  agent any
+
+  parameters {
+    string(name: 'CRELAN_APP_NAME', defaultValue: 'my-app', description: 'Lowercase DNS label for the Crelan application')
+    string(name: 'CRELAN_IMAGE_PULL_SECRET', defaultValue: '', description: 'Optional saved Crelan registry credential name')
+    string(name: 'CONTAINER_IMAGE_REPOSITORY', defaultValue: 'registry.example.com/team/app', description: 'Image repository to push and deploy')
+    string(name: 'CRELAN_SOURCE_REPOSITORY', defaultValue: '', description: 'Optional public GitHub repository URL for Crelan-managed builds')
+    string(name: 'CRELAN_SOURCE_BRANCH', defaultValue: 'main', description: 'Branch to build when using Crelan-managed builds')
+    booleanParam(
+      name: 'BUILD_IN_CRELAN_FROM_GITHUB',
+      defaultValue: false,
+      description: 'Ask Crelan to clone and build CRELAN_SOURCE_REPOSITORY (public GitHub only)'
+    )
+  }
+
+  environment {
+    IMAGE_NAME = "${params.CONTAINER_IMAGE_REPOSITORY}:${env.BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('Build and push image') {
+      when { expression { !params.BUILD_IN_CRELAN_FROM_GITHUB } }
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'container-registry',
+          usernameVariable: 'REGISTRY_USER',
+          passwordVariable: 'REGISTRY_PASSWORD'
+        )]) {
+          sh '''#!/bin/sh
+            set -eu
+            printf '%s' "$REGISTRY_PASSWORD" | docker login "$(echo "$IMAGE_NAME" | cut -d/ -f1)" -u "$REGISTRY_USER" --password-stdin
+            docker build --pull -t "$IMAGE_NAME" .
+            docker push "$IMAGE_NAME"
+          '''
+        }
+      }
+    }
+
+    stage('Deploy image') {
+      when { expression { !params.BUILD_IN_CRELAN_FROM_GITHUB } }
+      steps {
+        withCredentials([
+          string(credentialsId: 'crelan-api-url', variable: 'CRELAN_API_URL'),
+          string(credentialsId: 'crelan-token', variable: 'CRELAN_TOKEN')
+        ]) {
+          sh '''#!/bin/sh
+            set -eu
+            if [ -n "$CRELAN_IMAGE_PULL_SECRET" ]; then
+              payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg image "$IMAGE_NAME" --arg secret "$CRELAN_IMAGE_PULL_SECRET" '{name:$name,image:$image,image_pull_secret:$secret,port:8080}')
+            else
+              payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg image "$IMAGE_NAME" '{name:$name,image:$image,port:8080}')
+            fi
+            response=$(curl --fail-with-body --silent --show-error \\
+              -X POST "$CRELAN_API_URL/api/v1/deployments" \\
+              -H "Authorization: Bearer $CRELAN_TOKEN" \\
+              -H 'Content-Type: application/json' \\
+              --data "$payload")
+            id=$(printf '%s' "$response" | jq -er '.id')
+            attempt=0
+            while [ "$attempt" -lt 2700 ]; do
+              status=$(curl --fail-with-body --silent --show-error \\
+                -H "Authorization: Bearer $CRELAN_TOKEN" \\
+                "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
+              case "$status" in
+                running) exit 0 ;;
+                failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
+              esac
+              sleep 1
+              attempt=$((attempt + 1))
+            done
+            echo "Timed out waiting for deployment $id" >&2
+            exit 1
+          '''
+        }
+      }
+    }
+
+    stage('Deploy GitHub source') {
+      when { expression { params.BUILD_IN_CRELAN_FROM_GITHUB } }
+      steps {
+        script {
+          if (!env.CRELAN_SOURCE_REPOSITORY?.startsWith('https://github.com/')) {
+            error('Set CRELAN_SOURCE_REPOSITORY to a public https://github.com/ URL')
+          }
+        }
+        withCredentials([
+          string(credentialsId: 'crelan-api-url', variable: 'CRELAN_API_URL'),
+          string(credentialsId: 'crelan-token', variable: 'CRELAN_TOKEN')
+        ]) {
+          sh '''#!/bin/sh
+            set -eu
+            payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg repo "$CRELAN_SOURCE_REPOSITORY" --arg branch "$CRELAN_SOURCE_BRANCH" '{name:$name,repository_url:$repo,branch:$branch,dockerfile:"Dockerfile",port:8080}')
+            response=$(curl --fail-with-body --silent --show-error \\
+              -X POST "$CRELAN_API_URL/api/v1/deployments" \\
+              -H "Authorization: Bearer $CRELAN_TOKEN" \\
+              -H 'Content-Type: application/json' \\
+              --data "$payload")
+            id=$(printf '%s' "$response" | jq -er '.id')
+            attempt=0
+            while [ "$attempt" -lt 2700 ]; do
+              status=$(curl --fail-with-body --silent --show-error \\
+                -H "Authorization: Bearer $CRELAN_TOKEN" \\
+                "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
+              case "$status" in
+                running) exit 0 ;;
+                failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
+              esac
+              sleep 1
+              attempt=$((attempt + 1))
+            done
+            echo "Timed out waiting for deployment $id" >&2
+            exit 1
+          '''
+        }
+      }
+    }
+  }
+}

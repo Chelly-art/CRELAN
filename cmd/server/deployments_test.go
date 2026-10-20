@@ -186,6 +186,7 @@ func TestAuthServiceMigratesDeploymentPort(t *testing.T) {
 		workspace_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
 		repository_url TEXT NOT NULL,
+		image TEXT NOT NULL DEFAULT '',
 		branch TEXT NOT NULL DEFAULT '',
 		dockerfile TEXT NOT NULL,
 		status TEXT NOT NULL,

@@ -37,6 +37,7 @@ const (
 
 type authService struct {
 	db               *sql.DB
+	databasePath     string
 	httpClient       *http.Client
 	githubClientID   string
 	githubSecret     string
@@ -45,11 +46,13 @@ type authService struct {
 }
 
 type authUser struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	WorkspaceID int64  `json:"workspace_id"`
-	Workspace   string `json:"workspace"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Email         string `json:"email"`
+	WorkspaceID   int64  `json:"workspace_id"`
+	Workspace     string `json:"workspace"`
+	Role          string `json:"workspace_role"`
+	PlatformAdmin bool   `json:"platform_admin"`
 }
 
 func newAuthService() (*authService, error) {
@@ -66,6 +69,12 @@ func newAuthService() (*authService, error) {
 		db.Close()
 		return nil, fmt.Errorf("enable database foreign keys: %w", err)
 	}
+	if databasePath != ":memory:" {
+		if _, err := db.Exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("configure durable SQLite database: %w", err)
+		}
+	}
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize database schema: %w", err)
@@ -73,6 +82,10 @@ func newAuthService() (*authService, error) {
 	if err := ensureDeploymentColumns(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate deployment port: %w", err)
+	}
+	if err := ensureWorkspaceSessionSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate workspace sessions: %w", err)
 	}
 	if databasePath != ":memory:" {
 		if err := os.Chmod(databasePath, 0o600); err != nil {
@@ -83,6 +96,7 @@ func newAuthService() (*authService, error) {
 
 	return &authService{
 		db:               db,
+		databasePath:     databasePath,
 		httpClient:       &http.Client{Timeout: 10 * time.Second},
 		githubClientID:   os.Getenv("GITHUB_CLIENT_ID"),
 		githubSecret:     os.Getenv("GITHUB_CLIENT_SECRET"),
@@ -139,7 +153,8 @@ CREATE TABLE IF NOT EXISTS deployments (
 	id INTEGER PRIMARY KEY,
 	workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	name TEXT NOT NULL,
-	repository_url TEXT NOT NULL,
+	repository_url TEXT NOT NULL DEFAULT '',
+	image TEXT NOT NULL DEFAULT '',
 	branch TEXT NOT NULL DEFAULT '',
 	cluster_context TEXT NOT NULL DEFAULT '',
 	dockerfile TEXT NOT NULL,
@@ -245,6 +260,7 @@ func ensureDeploymentColumns(db *sql.DB) error {
 		{"latest_run_id", `ALTER TABLE deployments ADD COLUMN latest_run_id INTEGER`},
 		{"cpu_millicores", `ALTER TABLE deployments ADD COLUMN cpu_millicores INTEGER NOT NULL DEFAULT 1000`},
 		{"memory_mb", `ALTER TABLE deployments ADD COLUMN memory_mb INTEGER NOT NULL DEFAULT 512`},
+		{"image", `ALTER TABLE deployments ADD COLUMN image TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
 		if columns[migration.name] {
@@ -270,7 +286,19 @@ func (a *authService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", a.loginPage)
 	mux.HandleFunc("GET /signup", a.signupPage)
 	mux.HandleFunc("GET /", a.landingPage)
+	mux.HandleFunc("GET /docs", a.docsPage)
 	mux.HandleFunc("GET /dashboard", a.dashboardPage)
+}
+
+func (a *authService) docsPage(w http.ResponseWriter, r *http.Request) {
+	page, err := assets.Web.ReadFile("web/docs.html")
+	if err != nil {
+		log.Printf("read customer docs: %v", err)
+		http.Error(w, "Page unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "docs.html", time.Time{}, bytes.NewReader(page))
 }
 
 func (a *authService) signup(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +435,17 @@ func (a *authService) finishLogin(w http.ResponseWriter, r *http.Request, userID
 		writeError(w, http.StatusInternalServerError, "Could not sign in")
 		return
 	}
+	user.PlatformAdmin = isPlatformAdminUser(a.db, user.ID, user.Email)
 	writeJSON(w, http.StatusOK, user)
+}
+
+func isPlatformAdminEmail(email string) bool {
+	for _, configured := range strings.Split(os.Getenv("CRELAN_PLATFORM_ADMIN_EMAILS"), ",") {
+		if strings.EqualFold(strings.TrimSpace(configured), strings.TrimSpace(email)) && strings.TrimSpace(configured) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *authService) ensureDemoAccount(ctx context.Context) (int64, error) {
@@ -472,29 +510,30 @@ func isLoopbackRequest(r *http.Request) bool {
 }
 
 func (a *authService) currentUser(w http.ResponseWriter, r *http.Request) {
-	userID, err := a.sessionUserID(r)
+	userID, workspaceID, err := a.sessionWorkspace(r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "Sign in required")
 		return
 	}
-	user, err := a.userWithWorkspace(r.Context(), userID)
+	user, err := a.userWithSelectedWorkspace(r.Context(), userID, workspaceID)
 	if err != nil {
 		log.Printf("load current user: %v", err)
 		writeError(w, http.StatusInternalServerError, "Could not load account")
 		return
 	}
+	user.PlatformAdmin = isPlatformAdminUser(a.db, userID, user.Email)
 	writeJSON(w, http.StatusOK, user)
 }
 
 func (a *authService) userWithWorkspace(ctx context.Context, userID int64) (authUser, error) {
 	var user authUser
 	err := a.db.QueryRowContext(ctx, `
-SELECT u.id, u.name, u.email, w.id, w.name
+SELECT u.id, u.name, u.email, w.id, w.name, m.role
 FROM users u JOIN workspace_members m ON m.user_id = u.id
 JOIN workspaces w ON w.id = m.workspace_id
 WHERE u.id = ?
 ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, w.id
-LIMIT 1`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.WorkspaceID, &user.Workspace)
+	LIMIT 1`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.WorkspaceID, &user.Workspace, &user.Role)
 	return user, err
 }
 

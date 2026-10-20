@@ -47,6 +47,7 @@ nav { display: grid; gap: 5px; margin-top: 30px; }
 .main { margin-left: 248px; min-height: 100vh; }
 .topbar { display: flex; height: 64px; align-items: center; justify-content: space-between; padding: 0 42px; border-bottom: 1px solid #232c38; }
 .breadcrumbs { display: flex; align-items: center; gap: 11px; color: #8995a5; font-size: 11px; }
+.breadcrumbs #workspace-select { width: auto; max-width: 220px; min-height: 32px; padding: 6px 26px 6px 8px; }
 .breadcrumbs strong { color: #e4e8ef; font-weight: 500; }
 .crumb-divider { color: #515c6b; }
 .topbar-actions { display: flex; align-items: center; gap: 19px; }
@@ -223,6 +224,11 @@ footer span { color: #495464; }
 .deployment-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .deployment-two-col .form-label span { color: #8491a2; font-weight: 400; }
 .deployment-form-error { margin: 4px 0 0; border: 1px solid #70434b; border-radius: 6px; padding: 9px; color: #f0b7bc; background: #38252b; font-size: 9px; }
+.database-create-form { display: grid; gap: 10px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.database-credentials { display: grid; gap: 8px; margin: 18px 0; border: 1px solid #b8d4c2; border-radius: 8px; padding: 14px; background: #f0f8f2; color: #204d32; }
+.database-credentials p { margin: 0; }
+.database-credentials code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.registry-form { display: grid; gap: 9px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .deployment-row { grid-template-columns: minmax(140px, 1.4fr) minmax(90px, .8fr) auto auto auto; }
 .deployment-row .token-row-details code { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployment-runtime { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 20px; }
@@ -565,6 +571,16 @@ dialog::backdrop { background: #26334466; }
 .resource-empty { margin: 15px 0 0; color: #737f90; font-size: 10px; }
 .deployment-list-panel { min-height: 220px; }
 .deployment-row { grid-template-columns: minmax(120px, 1fr) auto auto; }
+.app-runtime-panel { min-height: 0; margin-top: 18px; }
+.runtime-actions { display: flex; justify-content: end; gap: 18px; padding: 12px 0; }
+.app-resource-grid { margin-top: 8px; }
+.app-resource-grid .resource-panel { min-height: 0; }
+.app-resource-grid .resource-panel h3, .logs-panel h3 { margin: 0 0 4px; font: 600 13px Manrope, sans-serif; }
+.logs-panel { min-height: 0; margin-top: 13px; }
+.app-logs, .admin-overview-data { max-height: 440px; overflow: auto; margin: 15px 0 0; border: 1px solid #e5e8ed; border-radius: 7px; padding: 14px; color: #344054; background: #f8fafc; font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-overview-panel { min-height: 0; }
+.admin-state { margin: 18px 0 0; color: #667085; font-size: 12px; }
+.admin-overview-data { max-height: min(65vh, 720px); }
 .deployment-link { color: #a44708; font-size: 9px; }
 .deployment-message { grid-column: 1 / -1; color: #737f90; font-size: 9px; }
 .inline-action:disabled { opacity: .45; cursor: not-allowed; }

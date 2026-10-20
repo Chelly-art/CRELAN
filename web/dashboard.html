@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f7fa">
-    <title>Crelan — Kubernetes workspace</title>
+    <title>Crelan — Applications</title>
     <link rel="stylesheet" href="/assets/styles.css">
     <script src="/assets/app.js" defer></script>
   </head>
@@ -12,10 +12,15 @@
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Crelan home"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a>
-        <div class="workspace-label">KUBERNETES</div>
+        <div class="workspace-label">WORKSPACE</div>
         <nav aria-label="Main navigation">
-          <a class="nav-link active" href="#cluster"><span class="nav-icon">◫</span> Cluster resources</a>
-          <a class="nav-link" href="#deployments"><span class="nav-icon">▦</span> Deployments</a>
+          <a class="nav-link active" href="#applications"><span class="nav-icon">▦</span> Applications</a>
+          <a class="nav-link" href="#deploy"><span class="nav-icon">＋</span> Deploy an app</a>
+          <a class="nav-link" href="/docs"><span class="nav-icon">?</span> Customer docs</a>
+          <a class="nav-link" href="#databases"><span class="nav-icon">◉</span> Databases</a>
+          <a class="nav-link" href="#team"><span class="nav-icon">♙</span> Team</a>
+          <a class="nav-link" href="#usage"><span class="nav-icon">◷</span> Usage & audit</a>
+          <a class="nav-link admin-nav-link" id="admin-nav-link" href="/assets/admin.html" hidden><span class="nav-icon">⚙</span> Platform admin</a>
         </nav>
         <div class="sidebar-bottom">
           <div class="user-card">
@@ -28,61 +33,81 @@
 
       <main class="main">
         <header class="topbar">
-          <div class="breadcrumbs"><span>Kubernetes</span><span class="crumb-divider">/</span><strong id="page-title">Cluster resources</strong></div>
+          <div class="breadcrumbs"><select id="workspace-select" class="text-input" aria-label="Current workspace"></select><span class="crumb-divider">/</span><strong id="page-title">Applications</strong></div>
           <span class="top-avatar" id="top-avatar">U</span>
         </header>
 
-        <section class="content" id="cluster-page">
+        <section class="content" id="deployments-page">
           <div class="welcome">
-            <div><div class="eyebrow">CLUSTER BROWSER</div><h1>Cluster resources</h1><p>Choose an available cluster, then browse pods, ConfigMaps, and Secret metadata.</p></div>
-            <div class="welcome-actions"><button class="inline-action" id="refresh-contexts" type="button">Refresh contexts</button><button class="primary-button" id="refresh-cluster" type="button">Refresh resources</button></div>
-          </div>
-          <section class="panel cluster-connect-panel" aria-labelledby="cluster-connect-title">
-            <div class="panel-heading"><div><h2 id="cluster-connect-title">Available clusters</h2><p>Choose a cluster configured for this workspace.</p></div></div>
-            <form class="cluster-connect-form" id="cluster-connect-form">
-              <div class="cluster-context-field"><label class="form-label" for="cluster-context">Cluster</label><select class="text-input deployment-input" id="cluster-context" name="context"><option value="">Loading clusters…</option></select></div>
-              <button class="primary-button" id="connect-cluster" type="submit">Use cluster</button>
-            </form>
-            <p class="cluster-connect-help" id="cluster-connect-help">Clusters are managed by the Crelan operator.</p>
-            <p class="deployment-form-error" id="cluster-connect-error" role="alert" hidden></p>
-          </section>
-          <p class="deployment-form-error" id="cluster-error" role="alert" hidden></p>
-          <div class="token-notice" role="status" id="cluster-summary"><span class="notice-icon">i</span><div><strong>Workspace namespace</strong><span id="namespace-name">Loading cluster connection…</span></div></div>
-          <div class="resource-grid">
-            <section class="panel resource-panel"><div class="panel-heading"><div><h2>Pods</h2><p>Pod status and restart count</p></div><span class="resource-count" id="pod-count">—</span></div><div class="resource-table-wrap" id="pods-list"></div></section>
-            <section class="panel resource-panel"><div class="panel-heading"><div><h2>ConfigMaps</h2><p>Configuration keys</p></div><span class="resource-count" id="configmap-count">—</span></div><div class="resource-table-wrap" id="configmaps-list"></div></section>
-            <section class="panel resource-panel"><div class="panel-heading"><div><h2>Secrets</h2><p>Metadata only; values are never shown</p></div><span class="resource-count" id="secret-count">—</span></div><div class="resource-table-wrap" id="secrets-list"></div></section>
-          </div>
-          <footer>Crelan <span>·</span> Kubernetes workspace <span class="footer-right" id="cluster-status">Connecting to cluster</span></footer>
-        </section>
-
-        <section class="content" id="deployments-page" hidden>
-          <div class="welcome">
-            <div><div class="eyebrow">PUBLIC GIT REPOSITORIES</div><h1>Deployments</h1><p>Deploy a public GitHub repository to the Kubernetes cluster and remove it when you’re done.</p></div>
+            <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
           </div>
           <div class="token-layout app-deploy-layout">
-            <section class="panel token-builder">
-              <div class="panel-heading"><div><h2>Deploy a repository</h2><p>Enter a public GitHub repository URL.</p></div></div>
+            <section class="panel token-builder" id="deploy-form-panel" hidden>
+              <div class="panel-heading"><div><h2>Deploy an application</h2><p>Deploy a public repository or a container image into your workspace.</p></div></div>
               <form id="deployment-form">
-                <label class="form-label" for="deployment-cluster">Deploy to cluster</label>
-                <select class="text-input deployment-input" id="deployment-cluster" name="cluster_context" required><option value="">Load cluster choices first</option></select>
+                <label class="form-label" for="app-source">Source type</label>
+                <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
                 <label class="form-label" for="app-name">Deployment name</label>
                 <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
-                <label class="form-label" for="app-repository">Public GitHub repository</label>
-                <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository" required>
+                <div id="repository-source-fields"><label class="form-label" for="app-repository">Public GitHub repository</label>
+                <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
                 <div class="deployment-two-col">
                   <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
                   <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
-                </div>
+                </div></div>
+                <div id="image-source-fields" hidden><label class="form-label" for="app-image">Container image</label><input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest"><label class="form-label" for="image-pull-secret">Private registry credential <span>(optional)</span></label><select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select><button class="inline-action" id="show-registry-form" type="button">Add registry credential</button><label class="form-label" for="image-port">Application port</label><input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080"><div id="registry-form" class="registry-form" hidden><label class="form-label" for="registry-name">Credential name</label><input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63"><label class="form-label" for="registry-server">Registry host</label><input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io"><label class="form-label" for="registry-username">Username</label><input class="text-input deployment-input" id="registry-username" autocomplete="username"><label class="form-label" for="registry-password">Access token or password</label><input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password"><p class="deployment-form-error" id="registry-error" role="alert" hidden></p><button class="primary-button" id="registry-submit" type="button">Save credential securely</button></div></div>
                 <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
-                <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy to cluster</button>
+                <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy application</button>
               </form>
             </section>
             <section class="panel issued-tokens deployment-list-panel">
-              <div class="panel-heading"><div><h2>Deployed services</h2><p>Apps created in this workspace.</p></div><button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div>
+              <div class="panel-heading"><div><h2>Your applications</h2><p>Applications in this workspace.</p></div><div><button class="inline-action" id="show-deploy-form" type="button">Deploy an app</button> <button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div></div>
               <div class="token-list" id="deployment-list"><div class="token-empty">Loading deployments…</div></div>
             </section>
           </div>
+          <section class="panel app-runtime-panel" id="app-runtime" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">APPLICATION DETAILS</div><h2 id="runtime-app-name">Application</h2><p id="runtime-app-summary">Resources and logs for this application.</p></div><button class="inline-action" id="close-runtime" type="button">Close details</button></div>
+            <div class="runtime-actions"><button class="inline-action" id="refresh-runtime" type="button">Refresh resources</button><button class="inline-action" id="refresh-logs" type="button">Refresh logs</button></div>
+            <p class="deployment-form-error" id="runtime-error" role="alert" hidden></p>
+            <div class="resource-grid app-resource-grid">
+              <section class="panel resource-panel"><div class="panel-heading"><div><h3>Application pods</h3><p>Pods associated with this app only</p></div><span class="resource-count" id="app-pod-count">—</span></div><div class="resource-table-wrap" id="app-pods-list"></div></section>
+              <section class="panel resource-panel"><div class="panel-heading"><div><h3>App configuration</h3><p>Configuration keys; secret values are never shown</p></div></div><div class="resource-table-wrap" id="app-config-list"></div></section>
+            </div>
+            <section class="panel logs-panel"><div class="panel-heading"><div><h3>Recent logs</h3><p>Latest application output</p></div></div><pre class="app-logs" id="app-logs">Select an application to load its logs.</pre></section>
+          </section>
+          <section class="panel databases-panel" id="databases-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">MANAGED DATABASES</div><h2>Databases</h2><p>Managed PostgreSQL and MySQL clusters in your workspace.</p></div><button class="inline-action" id="refresh-databases" type="button">Refresh</button></div>
+            <form class="database-create-form" id="database-form">
+              <div class="deployment-two-col">
+                <div><label class="form-label" for="database-name">Database name</label><input class="text-input deployment-input" id="database-name" name="name" maxlength="48" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="customer-data" required></div>
+                <div><label class="form-label" for="database-engine">Engine</label><select class="text-input deployment-input" id="database-engine" name="engine" required><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option></select></div>
+              </div>
+              <div class="deployment-two-col">
+                <div><label class="form-label" for="database-version">Version <span>(operator default)</span></label><input class="text-input deployment-input" id="database-version" name="version" placeholder="Default version"></div>
+                <div><label class="form-label" for="database-storage">Storage</label><select class="text-input deployment-input" id="database-storage" name="storage"><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option><option value="100Gi">100 GiB</option></select></div>
+              </div>
+              <p class="deployment-form-error" id="database-error" role="alert" hidden></p>
+              <button class="primary-button" id="database-submit" type="submit">Create database cluster</button>
+            </form>
+            <div class="database-credentials" id="database-credentials" hidden><strong>Save these credentials now</strong><p>The password is shown only once. Store it securely before closing this view.</p><code id="database-credential-values"></code><button class="inline-action" id="copy-database-credentials" type="button">Copy credentials</button></div>
+            <div class="token-list" id="database-list"><div class="token-empty">Loading databases…</div></div>
+          </section>
+          <section class="panel databases-panel" id="team-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">WORKSPACE ACCESS</div><h2>Team</h2><p>Manage who can deploy and view this workspace.</p></div><button class="inline-action" id="refresh-team" type="button">Refresh</button></div>
+            <form id="invite-form" class="database-create-form">
+              <h3>Invite a teammate</h3>
+              <div class="deployment-two-col"><div><label class="form-label" for="invite-email">Email address</label><input class="text-input deployment-input" id="invite-email" type="email" required></div><div><label class="form-label" for="invite-role">Role</label><select class="text-input deployment-input" id="invite-role"><option value="developer">Developer</option><option value="viewer">Viewer</option></select></div></div>
+              <p class="deployment-form-error" id="invite-error" role="alert" hidden></p><button class="primary-button" id="invite-submit" type="submit">Create invite</button>
+              <div class="database-credentials" id="invite-result" hidden><strong>Share this one-time invite token</strong><p>Copy it and send it to the invited person. It expires in seven days.</p><code id="invite-token"></code></div>
+            </form>
+            <div class="token-list" id="workspace-members"><div class="token-empty">Loading workspace members…</div></div>
+            <form id="accept-invite-form" class="database-create-form"><h3>Accept an invite</h3><label class="form-label" for="accept-invite-token">Invite token</label><input class="text-input deployment-input" id="accept-invite-token" required><p class="deployment-form-error" id="accept-invite-error" role="alert" hidden></p><button class="inline-action" type="submit">Accept invite</button></form>
+          </section>
+          <section class="panel databases-panel" id="usage-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">WORKSPACE OPERATIONS</div><h2>Usage & audit</h2><p>Current application limits, deployment activity, and recent workspace changes.</p></div><button class="inline-action" id="refresh-usage" type="button">Refresh</button></div>
+            <div class="token-list" id="workspace-usage"><div class="token-empty">Loading usage…</div></div>
+            <h3>Recent activity</h3><div class="resource-table-wrap" id="workspace-audit"></div>
+          </section>
           <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Deployment API connecting</span></footer>
         </section>
       </main>

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Deploy applications with Crelan from GitHub, GitLab CI, Jenkins, or any CI system. Find token setup, CLI commands, and API reference.">
+  <meta name="theme-color" content="#f6f7fb">
+  <title>Documentation — Crelan</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <style>
+    :root{--docs-ink:#192231;--docs-muted:#536174;--docs-soft:#778397;--docs-line:#e2e7ef;--docs-accent:#a84b08;--docs-wash:#fff7ed;--docs-code:#101923}
+    body.docs-page{background:#f6f7fb;color:var(--docs-ink);font-family:"DM Sans",sans-serif}
+    .docs-site{min-height:100vh}.docs-topbar{height:66px;display:flex;align-items:center;justify-content:space-between;padding:0 max(28px,calc((100vw - 1320px)/2));border-bottom:1px solid var(--docs-line);background:#fff}
+    .docs-brand{display:flex;align-items:center;gap:12px;color:#202b3a;text-decoration:none;font-weight:750;letter-spacing:-.3px}.docs-brand-mark{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#201b31;color:#c0adff;font-weight:800}.docs-brand-label{padding-left:12px;border-left:1px solid var(--docs-line);color:#687487;font-size:13px;font-weight:550;letter-spacing:0}
+    .docs-top-actions{display:flex;align-items:center;gap:20px}.docs-top-actions a{color:#566276;text-decoration:none;font-size:13px}.docs-top-actions a:last-child{color:var(--docs-accent);font-weight:700}
+    .docs-layout{display:grid;grid-template-columns:245px minmax(0,1fr);max-width:1320px;margin:auto;min-height:calc(100vh - 66px)}.docs-sidebar{position:sticky;top:0;align-self:start;max-height:calc(100vh - 20px);overflow:auto;padding:32px 20px 30px 28px;border-right:1px solid var(--docs-line)}.docs-sidebar-label{margin:18px 0 7px;color:#9099a8;font-size:10px;font-weight:750;letter-spacing:1.1px;text-transform:uppercase}.docs-sidebar a{display:block;padding:8px 10px;border-radius:7px;color:#596679;text-decoration:none;font-size:12px;line-height:1.45}.docs-sidebar a:hover,.docs-sidebar a:focus{background:#fff1df;color:#8f3c04;outline:none}
+    .docs-content{min-width:0;max-width:940px;padding:55px clamp(26px,6vw,84px) 90px}.docs-eyebrow{display:flex;align-items:center;gap:8px;color:#8c4a13;font-size:10px;font-weight:750;letter-spacing:1.1px;text-transform:uppercase}.docs-eyebrow i{width:6px;height:6px;border-radius:50%;background:#d98336}.docs-content h1{margin:14px 0 16px;font-size:42px;line-height:1.08;letter-spacing:-1.4px}.docs-lede{max-width:680px;margin:0;color:#536174;font-size:17px;line-height:1.7}.docs-note{margin:27px 0;padding:16px 18px;border:1px solid #f0d5b7;border-left:3px solid #cb681d;border-radius:8px;background:var(--docs-wash);color:#603b20;font-size:13px;line-height:1.7}
+    .docs-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:28px 0 50px}.docs-card{display:block;min-height:125px;padding:17px;border:1px solid var(--docs-line);border-radius:10px;background:#fff;text-decoration:none;transition:border-color .15s,transform .15s}.docs-card:hover{border-color:#d5a47f;transform:translateY(-2px)}.docs-card strong{display:block;margin:0 0 8px;color:#253143;font-size:13px}.docs-card span{color:#687588;font-size:12px;line-height:1.55}.docs-card i{display:block;margin-bottom:12px;color:#a84b08;font-size:17px;font-style:normal}
+    .docs-section{scroll-margin-top:24px;margin-top:54px;padding-top:2px}.docs-content h2{margin:0 0 13px;padding-top:15px;border-top:1px solid var(--docs-line);font-size:25px;line-height:1.25;letter-spacing:-.45px}.docs-content h3{margin:28px 0 8px;font-size:16px;letter-spacing:-.1px}.docs-content p,.docs-content li{color:var(--docs-muted);font-size:13px;line-height:1.75}.docs-content ul,.docs-content ol{padding-left:21px}.docs-content li{padding:2px 0}.docs-content a{color:#9b450d;text-underline-offset:3px}.docs-content code{padding:2px 5px;border:1px solid #e8ebf0;border-radius:4px;background:#f0f2f6;color:#303b4b;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.docs-content pre{overflow:auto;margin:14px 0 18px;padding:17px 18px;border:1px solid #293442;border-radius:9px;background:var(--docs-code);color:#e9edf4;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2}.docs-content pre code{padding:0;border:0;background:transparent;color:inherit;font:inherit;white-space:pre}
+    .docs-table-wrap{overflow-x:auto;margin:14px 0 18px;border:1px solid var(--docs-line);border-radius:9px;background:#fff}.docs-table{width:100%;border-collapse:collapse;font-size:12px}.docs-table th,.docs-table td{padding:11px 13px;border-bottom:1px solid #edf0f4;text-align:left;vertical-align:top}.docs-table th{background:#f8f9fb;color:#394558;font-size:10px;letter-spacing:.45px;text-transform:uppercase}.docs-table td{color:#596679;line-height:1.55}.docs-table tr:last-child td{border-bottom:0}.docs-table code{white-space:nowrap}
+    .docs-callout{margin:16px 0;padding:14px 16px;border:1px solid var(--docs-line);border-radius:8px;background:#fff;color:#596679;font-size:12px;line-height:1.7}.docs-callout strong{color:#29364a}.docs-callout.warn{border-color:#f0d5b7;background:#fff9f2}.docs-inline{display:inline-block;margin:3px 0;padding:7px 10px;border:1px solid #ebc9a6;border-radius:7px;background:#fff7ed;color:#873c09!important;font-size:11px;font-weight:700;text-decoration:none!important}
+    .docs-footer{margin-top:65px;padding-top:18px;border-top:1px solid var(--docs-line);color:#8691a0;font-size:11px}.docs-footer a{color:#7b4b2c}
+    @media(max-width:880px){.docs-layout{grid-template-columns:1fr}.docs-sidebar{position:static;max-height:none;display:flex;flex-wrap:wrap;gap:3px;padding:12px 20px;border-right:0;border-bottom:1px solid var(--docs-line);background:#fff}.docs-sidebar-label{width:100%;margin:7px 0 1px 8px}.docs-sidebar a{padding:7px 9px}.docs-content{max-width:none;padding:38px 24px 70px}.docs-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:560px){.docs-topbar{height:58px;padding:0 16px}.docs-top-actions{gap:12px}.docs-top-actions a{font-size:11px}.docs-brand-label{font-size:11px}.docs-content h1{font-size:34px}.docs-lede{font-size:15px}.docs-cards{grid-template-columns:1fr}.docs-card{min-height:0}.docs-content h2{font-size:22px}}
+  </style>
+</head>
+<body class="docs-page">
+<div class="docs-site">
+  <header class="docs-topbar">
+    <a class="docs-brand" href="/" aria-label="Crelan home"><span class="docs-brand-mark">C</span><span>crelan.</span><span class="docs-brand-label">Documentation</span></a>
+    <nav class="docs-top-actions" aria-label="Site navigation"><a href="/">Home</a><a href="/login">Open workspace →</a></nav>
+  </header>
+  <div class="docs-layout">
+    <nav class="docs-sidebar" aria-label="Documentation sections">
+      <span class="docs-sidebar-label">Start here</span>
+      <a href="#overview">Overview</a><a href="#quickstart">Quickstart</a><a href="#tokens">Workspace tokens</a>
+      <span class="docs-sidebar-label">Deploy</span>
+      <a href="#image-deploy">Deploy an image</a><a href="#source-deploy">Build from source</a><a href="#gitlab">GitLab CI</a><a href="#jenkins">Jenkins</a>
+      <span class="docs-sidebar-label">Reference</span>
+      <a href="#iac">Terraform, OpenTofu, Pulumi</a><a href="#cli">CLI reference</a><a href="#api">API reference</a><a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+    <main class="docs-content">
+      <div class="docs-eyebrow"><i></i> Crelan developer docs</div>
+      <h1>Deploy your app.<br>Keep your workflow.</h1>
+      <p class="docs-lede">Use the dashboard, Crelan CLI, or your existing CI pipeline to deploy applications into your workspace. Build in CI and deploy an image, or let Crelan build a connected source repository.</p>
+      <div class="docs-cards" aria-label="Popular documentation">
+        <a class="docs-card" href="#image-deploy"><i>01</i><strong>Deploy a container image</strong><span>Build and push in any CI system, then roll out the image.</span></a>
+        <a class="docs-card" href="#source-deploy"><i>02</i><strong>Build from a repository</strong><span>Let Crelan clone and build a public or connected GitHub repo.</span></a>
+        <a class="docs-card" href="#tokens"><i>03</i><strong>Connect your CI</strong><span>Create a scoped workspace token and store it as a CI secret.</span></a>
+      </div>
+
+      <section class="docs-section" id="overview">
+        <h2>How deployments work</h2>
+        <p>Crelan accepts a deployment request, builds or pulls the application image, and rolls it out in your workspace. The workspace API is CI-provider neutral. GitHub Actions, GitLab CI, Jenkins, and other runners can all call the CLI or API.</p>
+        <div class="docs-note"><strong>Choose the path that fits your source:</strong> build an image in your CI pipeline for GitLab-hosted or other source repositories. Crelan-managed source builds currently accept GitHub repository URLs; private GitHub repositories need a connected GitHub App.</div>
+        <div class="docs-table-wrap"><table class="docs-table"><thead><tr><th>Flow</th><th>Build happens in</th><th>Source support</th><th>Deploy request</th></tr></thead><tbody>
+          <tr><td>Image deploy</td><td>Your CI pipeline</td><td>Any source checkout your runner can access</td><td><code>--image IMAGE</code></td></tr>
+          <tr><td>Source deploy</td><td>Crelan</td><td>GitHub repository; private access via GitHub App</td><td><code>--repo URL</code></td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="docs-section" id="quickstart">
+        <h2>Quickstart</h2>
+        <ol><li>Sign in to your Crelan workspace and make sure an administrator has configured a Kubernetes cluster.</li><li>Create a workspace API token with deployment write access. Add deployment read access if your pipeline waits for rollout status.</li><li>Set <code>CRELAN_API_URL</code> and <code>CRELAN_TOKEN</code> in your runner's protected secret store.</li><li>Deploy an image your cluster can pull, or choose a GitHub repo for Crelan-managed builds.</li></ol>
+        <pre><code>export CRELAN_API_URL="https://crelan.example.com"
+export CRELAN_TOKEN="&lt;workspace-token&gt;"
+
+# Existing image built and pushed by CI
+crelan deploy --name storefront --image ghcr.io/acme/storefront:$GIT_COMMIT --wait
+
+# Crelan clones and builds a GitHub repository
+crelan deploy --name storefront \
+  --repo https://github.com/acme/storefront --branch main --wait</code></pre>
+        <p>The CLI reads the API URL and token from environment variables. Keep the token in CI's secret manager, not in source control or a build argument.</p>
+      </section>
+
+      <section class="docs-section" id="tokens">
+        <h2>Workspace tokens for CI</h2>
+        <p>Workspace tokens are scoped, revocable credentials. The token secret is returned only when created; Crelan stores a hash and shows only its prefix afterward. Token creation and revocation use your signed-in browser session. A token management form is not available in the dashboard yet, so use the signed-in browser console request below to create one.</p>
+        <h3>Create a deployment token</h3>
+        <ol><li>Sign in to Crelan in the browser that has access to the target workspace.</li><li>Open the browser developer console while on your Crelan site.</li><li>Run the request below, changing the name and expiry as needed. The example expires in 90 days.</li><li>Copy the returned <code>token</code> value immediately into your CI secret store. The full value cannot be retrieved later.</li></ol>
+        <pre><code>const response = await fetch("/api/v1/tokens", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: "GitLab production deploy",
+    scopes: ["deployments:write", "deployments:read"],
+    expires_in_days: 90
+  })
+});
+const result = await response.json();
+if (!response.ok) throw new Error(result.error || "Token creation failed");
+console.log(result.token);</code></pre>
+        <div class="docs-callout warn"><strong>Protect the token.</strong> Anyone holding it can act within its scopes until it expires or is revoked. Use a separate token per CI system, restrict it to protected branches/environments, and do not print it in job logs.</div>
+        <h3>Scopes</h3>
+        <div class="docs-table-wrap"><table class="docs-table"><thead><tr><th>Scope</th><th>Grants</th></tr></thead><tbody>
+          <tr><td><code>deployments:write</code></td><td>Create, cancel, delete, configure, or roll back deployments.</td></tr>
+          <tr><td><code>deployments:read</code></td><td>List deployments and read status or deployment history.</td></tr>
+          <tr><td><code>logs:read</code></td><td>Read application logs.</td></tr>
+          <tr><td><code>resources:read</code></td><td>Read application and workspace resource metadata.</td></tr>
+          <tr><td><code>usage:read</code></td><td>Read workspace usage and limits.</td></tr>
+          <tr><td><code>audit:read</code></td><td>Read workspace audit events.</td></tr>
+        </tbody></table></div>
+        <p>For a CI job that deploys and waits for completion, grant <code>deployments:write</code> and <code>deployments:read</code>. CLI log and resource commands also need their matching read scopes. Expiry can be set from 1 to 365 days. Revoke a token with <code>DELETE /api/v1/tokens/{id}</code>.</p>
+        <h3>Add it to your CI provider</h3>
+        <ul><li><strong>GitLab:</strong> add <code>CRELAN_API_URL</code>, <code>CRELAN_TOKEN</code>, and <code>CRELAN_APP_NAME</code> under Settings → CI/CD → Variables. Mark the token masked and protected.</li><li><strong>Jenkins:</strong> save the API URL and token in Credentials, then expose them to the deploy stage with <code>withCredentials</code>.</li><li><strong>GitHub Actions:</strong> store the token as a repository or environment secret and the API URL as a variable.</li></ul>
+      </section>
+
+      <section class="docs-section" id="image-deploy">
+        <h2>Build in CI and deploy an image</h2>
+        <p>This is the portable option for GitLab, Jenkins, or any runner that can build and push an image. The image must be available to the Kubernetes cluster. For a private registry, first save a registry credential in the Crelan workspace.</p>
+        <h3>Pipeline steps</h3>
+        <ol><li>Check out the application source.</li><li>Build an image and tag it with an immutable commit SHA or release version.</li><li>Push it to a registry your cluster can reach.</li><li>Run <code>crelan deploy --image</code> and wait for the rollout.</li></ol>
+        <pre><code>docker build --pull -t "$IMAGE_TAG" .
+docker push "$IMAGE_TAG"
+crelan deploy --name "$CRELAN_APP_NAME" \
+  --image "$IMAGE_TAG" \
+  --image-pull-secret "$CRELAN_IMAGE_PULL_SECRET" \
+  --port 8080 --wait</code></pre>
+        <p>Omit <code>--image-pull-secret</code> for a public image. The workspace credential name is not the registry password; create the credential in Crelan and select its name when deploying.</p>
+        <h3>GitLab CI</h3>
+        <p>The repository includes a GitLab pipeline example at <code>examples/ci/gitlab-ci.yml</code>. It builds and pushes to the GitLab Container Registry, posts the image deployment to Crelan, and waits for the app to become running. Its Docker-in-Docker runner must allow privileged services.</p>
+        <h3>Jenkins</h3>
+        <p>The example <code>examples/ci/Jenkinsfile</code> builds and pushes the checked-out source. Configure credentials with IDs <code>crelan-api-url</code>, <code>crelan-token</code>, and <code>container-registry</code>, then set an app name and image repository. The Jenkins agent needs Docker, <code>curl</code>, and <code>jq</code>.</p>
+        <h3>Any other CI</h3>
+        <p>Install the Crelan CLI in the runner and use the same environment variables. The underlying API also works directly; see <a href="#api">API reference</a>.</p>
+      </section>
+
+      <section class="docs-section" id="source-deploy">
+        <h2>Let Crelan build from source</h2>
+        <p>Send Crelan an HTTPS GitHub repository URL and branch. Crelan clones the source and builds a Dockerfile with rootless BuildKit. If there is no Dockerfile, Crelan can use the platform's configured Buildpacks builder.</p>
+        <pre><code>crelan deploy --name storefront \
+  --repo https://github.com/acme/storefront \
+  --branch main --dockerfile Dockerfile \
+  --port 8080 --wait</code></pre>
+        <p>Public GitHub repositories can be built directly. Private GitHub repositories require the workspace's connected GitHub App. Crelan-managed source builds do not currently accept GitLab, Bitbucket, or arbitrary Git server URLs. For those repositories, let CI build and push the image, then use <code>--image</code>.</p>
+        <p>GitHub Actions can also deploy the current repository with the composite action at <code>.github/actions/deploy</code>; configure the API URL and workspace token in repository variables and secrets.</p>
+      </section>
+
+      <section class="docs-section" id="gitlab">
+        <h2>GitLab CI</h2>
+        <p>Set <code>CRELAN_API_URL</code>, <code>CRELAN_TOKEN</code>, and <code>CRELAN_APP_NAME</code> as CI/CD variables. Mask and protect the token. The supplied example uses GitLab's registry and builds the current project before deployment.</p>
+        <pre><code>deploy:image:
+  stage: deploy
+  script:
+    - crelan deploy --name "$CRELAN_APP_NAME" \
+        --image "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" --wait</code></pre>
+        <p>If you want Crelan to build the source, use the manual <code>deploy:source</code> job in <code>examples/ci/gitlab-ci.yml</code> and set <code>CRELAN_SOURCE_REPOSITORY</code> to a GitHub URL. That source job cannot build the GitLab project itself yet.</p>
+      </section>
+
+      <section class="docs-section" id="jenkins">
+        <h2>Jenkins</h2>
+        <p>Store the API URL and token in Jenkins Credentials. Build and push the app image in your pipeline, then deploy it with the CLI:</p>
+        <pre><code>withCredentials([
+  string(credentialsId: 'crelan-api-url', variable: 'CRELAN_API_URL'),
+  string(credentialsId: 'crelan-token', variable: 'CRELAN_TOKEN')
+]) {
+  sh 'crelan deploy --name "$CRELAN_APP_NAME" --image "$IMAGE_NAME" --wait'
+}</code></pre>
+        <p>The supplied <code>examples/ci/Jenkinsfile</code> includes both image deployment and an optional Crelan-managed build from a public GitHub repo.</p>
+      </section>
+
+      <section class="docs-section" id="iac">
+        <h2>Terraform, OpenTofu, and Pulumi</h2>
+        <p>Manage a Crelan deployment as an infrastructure resource. The integrations use the same workspace API and token scopes as the CLI. Build and push images in your normal pipeline, or use a supported GitHub repository as the source.</p>
+        <h3>Terraform and OpenTofu</h3>
+        <p>The Go provider exposes a <code>crelan_deployment</code> resource. It supports image and GitHub source deployments, waits for the deployment to become running, reads drift from the API, and deletes the Crelan app when the resource is destroyed.</p>
+        <pre><code>export CRELAN_API_URL="https://crelan.example.com"
+export CRELAN_TOKEN="&lt;workspace-token&gt;"
+cd integrations/terraform-provider-crelan
+go build -o terraform-provider-crelan .</code></pre>
+        <p>Build the provider and install it into a local filesystem mirror as described in the integration README until it is published to a registry. The example configurations are in <code>integrations/terraform-provider-crelan/examples/image</code> and <code>examples/source</code>. OpenTofu uses the same provider protocol and configuration.</p>
+        <pre><code>resource "crelan_deployment" "app" {
+  name           = "storefront"
+  image          = "ghcr.io/acme/storefront:1.4.2"
+  port           = 8080
+  wait_for_ready = true
+}
+
+output "url" {
+  value = crelan_deployment.app.url
+}</code></pre>
+        <h3>Pulumi TypeScript</h3>
+        <p>The starter at <code>integrations/pulumi</code> provides a dynamic <code>Deployment</code> resource and uses Pulumi secret configuration for the workspace token.</p>
+        <pre><code>cd integrations/pulumi
+npm install
+pulumi stack init dev
+pulumi config set crelan:apiUrl https://crelan.example.com
+pulumi config set --secret crelan:token '&lt;workspace-token&gt;'
+pulumi config set crelan:appName storefront
+pulumi config set crelan:image ghcr.io/acme/storefront:1.4.2
+pulumi up</code></pre>
+        <div class="docs-callout warn"><strong>Provider availability:</strong> the Terraform/OpenTofu provider is source-only until a release is published to a provider registry. The Pulumi dynamic provider currently supports this TypeScript example only; dynamic providers do not support import or refresh reconciliation. See <code>integrations/pulumi/README.md</code> before using it with a production state backend.</div>
+        <p>Terraform/OpenTofu require <code>deployments:write</code> and <code>deployments:read</code> because Terraform reads the deployment during refresh and when waiting for readiness. The Pulumi example uses both scopes by default because it waits for readiness.</p>
+      </section>
+
+      <section class="docs-section" id="cli">
+        <h2>CLI reference</h2>
+        <p>Build the CLI from a Crelan source checkout with <code>go build -o crelan ./cmd/crelan</code>. Set <code>CRELAN_API_URL</code> to the base URL of your Crelan instance and <code>CRELAN_TOKEN</code> to a workspace token. Do not include <code>/api/v1</code> in the base URL.</p>
+        <div class="docs-table-wrap"><table class="docs-table"><thead><tr><th>Command</th><th>Purpose</th><th>Required scope</th></tr></thead><tbody>
+          <tr><td><code>crelan deploy --name APP --image IMAGE</code></td><td>Deploy an existing image.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>crelan deploy --name APP --repo URL</code></td><td>Ask Crelan to build a GitHub repository.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>crelan deployments</code></td><td>List workspace deployments.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>crelan status ID</code></td><td>Read current deployment status.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>crelan history ID</code></td><td>Read prior deployment runs.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>crelan logs ID</code></td><td>Read app logs.</td><td><code>logs:read</code></td></tr>
+          <tr><td><code>crelan resources ID</code></td><td>Read app pod/config metadata.</td><td><code>resources:read</code></td></tr>
+          <tr><td><code>crelan delete ID</code></td><td>Delete an application.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>crelan version</code></td><td>Print the CLI version.</td><td>None</td></tr>
+        </tbody></table></div>
+        <p>For an interactive terminal menu, run <code>crelan tui</code>. It can list deployments, deploy an image or GitHub repository, inspect status/logs/resources, and delete an app after confirmation. It uses the same <code>CRELAN_API_URL</code> and <code>CRELAN_TOKEN</code> environment variables and is intended for an interactive terminal, not a CI script.</p>
+        <p>Useful deploy options include <code>--branch</code>, <code>--dockerfile</code>, <code>--port</code>, <code>--cpu-millicores</code>, <code>--memory-mib</code>, <code>--image-pull-secret</code>, <code>--wait</code>, and <code>--wait-timeout</code>. Deployment defaults are 8080 port, 1000m CPU, and 512 MiB memory, subject to workspace limits.</p>
+      </section>
+
+      <section class="docs-section" id="api">
+        <h2>API reference</h2>
+        <p>Send workspace-token requests with <code>Authorization: Bearer $CRELAN_TOKEN</code> and JSON content type. Deployment API routes are prefixed with <code>/api/v1</code>. Requests are scoped to the token's workspace.</p>
+        <h3>Deployments</h3>
+        <div class="docs-table-wrap"><table class="docs-table"><thead><tr><th>Method and path</th><th>Purpose</th><th>Scope</th></tr></thead><tbody>
+          <tr><td><code>POST /api/v1/deployments</code></td><td>Queue a source or image deployment. Returns <code>202</code> with deployment ID and status.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments</code></td><td>List workspace deployments.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments/{id}</code></td><td>Read deployment details and status.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments/{id}/history</code></td><td>Read deployment run history.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments/{id}/resources</code></td><td>Read app resource metadata.</td><td><code>resources:read</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments/{id}/logs</code></td><td>Read app logs; optional <code>?tail=200</code> (max 1000).</td><td><code>logs:read</code></td></tr>
+          <tr><td><code>POST /api/v1/deployments/{id}/cancel</code></td><td>Cancel an active run.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>POST /api/v1/deployments/{id}/rollback</code></td><td>Queue rollback with JSON <code>{"run_id": 12}</code>.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>PUT /api/v1/deployments/{id}/configuration</code></td><td>Set JSON <code>{"environment":{},"secrets":{}}</code>.</td><td><code>deployments:write</code></td></tr>
+          <tr><td><code>DELETE /api/v1/deployments/{id}</code></td><td>Delete the app.</td><td><code>deployments:write</code></td></tr>
+        </tbody></table></div>
+        <h3>Create deployment request</h3>
+        <pre><code>curl --fail-with-body -X POST "$CRELAN_API_URL/api/v1/deployments" \
+  -H "Authorization: Bearer $CRELAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"name":"storefront","image":"ghcr.io/acme/storefront:1.4.2","port":8080}'</code></pre>
+        <p>For a source build, send <code>repository_url</code>, optional <code>branch</code>, and optional <code>dockerfile</code> instead of <code>image</code>. For an image, optional <code>image_pull_secret</code> selects a saved workspace registry credential. The response is asynchronous; poll the returned deployment ID until status is <code>running</code> or a terminal state.</p>
+        <p>Deployment statuses include <code>queued</code>, <code>building</code>, <code>deploying</code>, <code>running</code>, <code>degraded</code>, <code>failed</code>, <code>deleting</code>, <code>deleted</code>, and <code>cancelled</code>. Errors return a JSON <code>error</code> message and an HTTP error status.</p>
+        <h3>Workspace and account routes</h3>
+        <div class="docs-table-wrap"><table class="docs-table"><thead><tr><th>Method and path</th><th>Purpose / authorization</th></tr></thead><tbody>
+          <tr><td><code>GET /api/v1/workspace/limits</code></td><td>Workspace deployment limits (<code>deployments:read</code>).</td></tr>
+          <tr><td><code>GET /api/v1/usage</code>, <code>GET /api/v1/audit</code></td><td>Usage and audit history (<code>usage:read</code>, <code>audit:read</code>).</td></tr>
+          <tr><td><code>GET /api/v1/tokens</code>, <code>POST /api/v1/tokens</code>, <code>DELETE /api/v1/tokens/{id}</code></td><td>Workspace session only; create, list, and revoke tokens.</td></tr>
+          <tr><td><code>GET /api/v1/registry-credentials</code>, <code>POST /api/v1/registry-credentials</code>, <code>DELETE /api/v1/registry-credentials/{name}</code></td><td>Workspace session and write role; registry credential metadata and management.</td></tr>
+          <tr><td><code>/api/v1/databases</code>, <code>/api/v1/database-engines</code></td><td>Managed database engine and database operations; workspace session.</td></tr>
+          <tr><td><code>GET /api/v1/cluster/contexts</code>, <code>GET /api/v1/cluster/resources</code></td><td>Workspace cluster context and resource views.</td></tr>
+          <tr><td><code>GET /api/v1/health</code></td><td>Unauthenticated service health check.</td></tr>
+        </tbody></table></div>
+        <p>Token management uses your signed-in browser session, not a workspace bearer token. Platform and workspace administration endpoints are not granted by customer API tokens.</p>
+      </section>
+
+      <section class="docs-section" id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <h3>401 or 403 from the API</h3><p>Confirm that the token is active, belongs to the intended workspace, and includes the required scope. Use the Crelan base URL without a trailing <code>/api/v1</code>.</p>
+        <h3>ImagePullBackOff</h3><p>Check the image name and tag, confirm the image is pushed before deployment, and select the saved registry credential for private images. Make sure cluster nodes can reach the registry.</p>
+        <h3>Deployment stays queued or building</h3><p>Check workspace concurrency limits, cluster capacity, and the Crelan deployment history/logs. Source builds need a supported GitHub URL and a configured builder and registry.</p>
+        <h3>No public application URL</h3><p>The cluster needs an ingress controller and platform-configured application domain. Contact your platform administrator if the app is running but has no URL.</p>
+        <h3>Revoke a leaked or retired token</h3><p>Use the signed-in token management endpoint to revoke it, then issue a replacement with the minimum required scopes and update your CI secret.</p>
+      </section>
+      <footer class="docs-footer">Crelan documentation · Need help? Contact your workspace administrator or visit the <a href="/">Crelan home page</a>.</footer>
+    </main>
+  </div>
+</div>
+</body>
+</html>
