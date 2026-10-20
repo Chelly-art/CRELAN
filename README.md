@@ -4,8 +4,6 @@ Crelan lets users browse Pods, ConfigMaps, and Secret metadata, deploy apps from
 
 ## Kubernetes access
 
-See [Cluster components for Crelan](docs/cluster-addons.md) for the cluster-side add-ons, security controls, and optional monitoring stack required by this deployment model.
-
 Kubeconfig credentials are configured by the operator and cannot be uploaded through the UI. When Crelan runs outside Kubernetes, it lists contexts from `CRELAN_KUBECONFIG_DATA_B64` (a base64-encoded kubeconfig secret), `CRELAN_KUBECONFIG_DATA` (raw kubeconfig YAML), or, if neither is set, the server process's `KUBECONFIG` file. When Crelan runs inside Kubernetes without either setting, it uses its pod's ServiceAccount. Users choose an available context in the dashboard, and each deployment remembers its selected cluster for status checks and deletion.
 
 For a hosted Crelan instance whose environment editor accepts key/value pairs, add `CRELAN_KUBECONFIG_DATA_B64` as the key and a single-line base64 value as the value. This avoids multiline input. Restart/redeploy Crelan after changing it. Do not put the kubeconfig in the repository or a public build argument. Lens normally uses the same kubeconfig as `kubectl`. Check the context names and create a flattened local copy (which embeds referenced certificate files), then encode it as one line:
