@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -314,43 +315,38 @@ func (s *deploymentService) connectCluster(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var input struct {
-		Context    string `json:"context"`
-		Kubeconfig string `json:"kubeconfig"`
+		Context string `json:"context"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "Choose a kubeconfig context or upload a kubeconfig file")
+		writeError(w, http.StatusBadRequest, "Choose an available cluster")
 		return
 	}
 	input.Context = strings.TrimSpace(input.Context)
-	var provisioner *kubernetesProvisioner
-	if strings.TrimSpace(input.Kubeconfig) != "" {
-		if len(input.Kubeconfig) > 1<<20 {
-			writeError(w, http.StatusRequestEntityTooLarge, "Kubeconfig file is too large (maximum 1 MiB)")
-			return
-		}
-		var err error
-		provisioner, input.Context, err = newKubernetesProvisionerFromKubeconfig([]byte(input.Kubeconfig), input.Context)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "Could not load that kubeconfig. Use embedded credentials and the current context.")
-			return
-		}
-	} else {
-		if input.Context == "" {
-			writeError(w, http.StatusBadRequest, "Choose a kubeconfig context or upload a kubeconfig file")
-			return
-		}
-		var err error
-		provisioner, err = newKubernetesProvisionerForContext(input.Context)
-		if err != nil {
-			log.Printf("build Kubernetes client for context %q: %v", input.Context, err)
-			writeError(w, http.StatusBadRequest, "Could not load that kubeconfig context")
-			return
-		}
-	}
-	if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
-		log.Printf("connect Kubernetes context %q: %v", input.Context, err)
-		writeError(w, http.StatusBadGateway, "Could not reach that Kubernetes cluster with the configured credentials")
+	if input.Context == "" {
+		writeError(w, http.StatusBadRequest, "Choose an available cluster")
 		return
+	}
+	contexts, _, contextsErr := loadKubeconfigContexts()
+	available := contextsErr == nil && slices.Contains(contexts, input.Context)
+	s.providerMu.RLock()
+	_, knownProvider := s.providers[input.Context]
+	s.providerMu.RUnlock()
+	if !available && !knownProvider {
+		writeError(w, http.StatusForbidden, "That cluster is not available to this workspace")
+		return
+	}
+	provisioner, err := s.provisionerForContext(input.Context)
+	if err != nil {
+		log.Printf("build Kubernetes client for context %q: %v", input.Context, err)
+		writeError(w, http.StatusBadRequest, "Could not load that cluster")
+		return
+	}
+	if client, ok := provisioner.(*kubernetesProvisioner); ok {
+		if _, err := client.client.Discovery().ServerVersion(); err != nil {
+			log.Printf("connect Kubernetes context %q: %v", input.Context, err)
+			writeError(w, http.StatusBadGateway, "Could not reach that cluster with the configured credentials")
+			return
+		}
 	}
 	s.setCluster(provisioner, input.Context)
 	writeJSON(w, http.StatusOK, map[string]string{"context": input.Context, "status": "connected"})

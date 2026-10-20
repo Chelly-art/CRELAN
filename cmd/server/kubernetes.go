@@ -112,43 +112,6 @@ func newKubernetesProvisionerForContext(contextName string) (*kubernetesProvisio
 	return newKubernetesProvisionerWithRESTConfig(config)
 }
 
-func newKubernetesProvisionerFromKubeconfig(data []byte, contextName string) (*kubernetesProvisioner, string, error) {
-	loaded, err := clientcmd.Load(data)
-	if err != nil {
-		return nil, "", fmt.Errorf("parse kubeconfig: %w", err)
-	}
-	if strings.TrimSpace(contextName) == "" {
-		contextName = loaded.CurrentContext
-	}
-	selected := loaded.Contexts[contextName]
-	if contextName == "" || selected == nil {
-		return nil, "", errors.New("selected kubeconfig context was not found")
-	}
-	cluster := loaded.Clusters[selected.Cluster]
-	if cluster == nil {
-		return nil, "", errors.New("selected context has no cluster configuration")
-	}
-	if cluster.CertificateAuthority != "" {
-		return nil, "", errors.New("kubeconfig must include certificate-authority-data instead of a file path")
-	}
-	user := loaded.AuthInfos[selected.AuthInfo]
-	if user == nil {
-		return nil, "", errors.New("selected context has no user credentials")
-	}
-	if user.Exec != nil || user.AuthProvider != nil {
-		return nil, "", errors.New("exec and auth-provider kubeconfig plugins are not supported for uploaded files")
-	}
-	if user.ClientCertificate != "" || user.ClientKey != "" || user.TokenFile != "" {
-		return nil, "", errors.New("kubeconfig credentials must be embedded in the file")
-	}
-	config, err := clientcmd.NewNonInteractiveClientConfig(*loaded, contextName, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
-	if err != nil {
-		return nil, "", fmt.Errorf("load kubeconfig context %q: %w", contextName, err)
-	}
-	provisioner, err := newKubernetesProvisionerWithRESTConfig(config)
-	return provisioner, contextName, err
-}
-
 func loadKubeconfigContexts() ([]string, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	loaded, err := rules.Load()

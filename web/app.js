@@ -114,13 +114,13 @@ async function loadClusterContexts() {
     if (!result.contexts.length) {
       const option = document.createElement("option");
       option.value = "";
-      option.textContent = result.in_cluster ? "Using the in-cluster ServiceAccount" : "No kubeconfig contexts available";
+      option.textContent = result.in_cluster ? "No cluster choices available" : "No clusters configured";
       option.disabled = true;
       option.selected = true;
       select.append(option);
       help.textContent = result.in_cluster
-        ? "Crelan is using its Kubernetes ServiceAccount. To switch clusters, configure a kubeconfig for the server."
-        : "No contexts were found. Add a cluster to the kubeconfig used by this server, then refresh contexts.";
+        ? "Crelan is using its Kubernetes ServiceAccount. Ask the operator to configure additional clusters."
+        : "No clusters are configured. Ask the operator to configure a cluster for Crelan.";
       return;
     }
     result.contexts.forEach((contextName) => {
@@ -145,9 +145,8 @@ $("#cluster-connect-form").addEventListener("submit", async (event) => {
   const error = $("#cluster-connect-error");
   const button = $("#connect-cluster");
   const contextName = $("#cluster-context").value;
-  const file = $("#cluster-kubeconfig").files[0];
-  if (!contextName && !file) {
-    error.textContent = "Choose a context or upload a kubeconfig file.";
+  if (!contextName) {
+    error.textContent = "Choose an available cluster.";
     error.hidden = false;
     return;
   }
@@ -155,14 +154,10 @@ $("#cluster-connect-form").addEventListener("submit", async (event) => {
   button.disabled = true;
   button.textContent = "Connecting…";
   try {
-    const payload = file
-      ? { kubeconfig: await file.text() }
-      : { context: contextName };
     const result = await api("/api/v1/cluster/connect", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ context: contextName }),
     });
-    $("#cluster-kubeconfig").value = "";
     $("#cluster-status").textContent = `Connected: ${result.context}`;
     await loadClusterResources();
     await loadClusterContexts();
@@ -171,7 +166,7 @@ $("#cluster-connect-form").addEventListener("submit", async (event) => {
     error.hidden = false;
   } finally {
     button.disabled = false;
-    button.textContent = "Connect cluster";
+    button.textContent = "Use cluster";
   }
 });
 
