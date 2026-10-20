@@ -32,7 +32,7 @@
               <textarea class="text-input" id="cluster-kubeconfig" rows="9" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste kubeconfig YAML" required></textarea>
               <label class="form-label" for="cluster-context">Context <span>(optional; defaults to current-context)</span></label>
               <input class="text-input" id="cluster-context" autocomplete="off" placeholder="Context name from the kubeconfig">
-              <p class="cluster-connect-help">Use a self-contained kubeconfig with certificate data embedded. The API server must be reachable from Crelan. Contexts that rely on local cloud CLI login plugins may not work in the hosted service. The pasted credential is held in server memory and must be reconnected after a Crelan restart.</p>
+              <p class="cluster-connect-help">Use a self-contained kubeconfig with certificate data embedded. The API server must be reachable from Crelan. Contexts that rely on local cloud CLI login plugins may not work in the hosted service. Before connecting, configure a durable DATABASE_PATH and CRELAN_KUBECONFIG_ENCRYPTION_KEY in PipeOps. Generate a key with <code>openssl rand -base64 32</code>; keep it as a PipeOps secret and separate from database backups.</p>
               <p class="admin-state" id="cluster-connect-state" role="status">No new connection attempt.</p>
               <button class="primary-button" id="cluster-connect-submit" type="submit">Validate and connect</button>
             </form>

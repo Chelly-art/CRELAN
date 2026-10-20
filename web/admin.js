@@ -106,7 +106,7 @@ $("#cluster-connect-form").addEventListener("submit", async (event) => {
       return;
     }
     if (!response.ok) throw new Error(body.error || `Connection failed (${response.status})`);
-    state.textContent = `Connected to “${body.context}”. Customer deployments will use this cluster.`;
+    state.textContent = `Connected to “${body.context}”. The encrypted connection is saved; new customer workloads will use this cluster.`;
     kubeconfig.value = "";
     $("#cluster-context").value = "";
     await loadAdminOverview();

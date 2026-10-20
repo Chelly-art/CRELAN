@@ -143,7 +143,7 @@ async function loadDeployments() {
 async function deleteDeployment(item) {
   const removesVolume = Boolean(item.persistent_storage || item.volume || item.pvc);
   const prompt = removesVolume
-    ? `Delete deployment “${item.name}” and its persistent volume? Stored data on that volume will be deleted.`
+    ? `Delete deployment “${item.name}”? Its persistent volume will be retained. You can purge it later from Retained volumes.`
     : `Delete deployment “${item.name}”?`;
   if (!window.confirm(prompt)) return;
   try {
@@ -193,7 +193,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     }
   }
   if ($("#app-volume-enabled").checked) {
-    payload.persistent_storage = { size: $("#app-volume-size").value, mount_path: $("#app-volume-mount").value.trim() };
+    payload.persistent_storage = { size: $("#app-volume-size").value, mount_path: $("#app-volume-mount").value.trim(), access_mode: $("#app-volume-access-mode").value || "single_writer" };
     if (!payload.persistent_storage.mount_path) {
       error.textContent = "Enter a mount path for persistent storage.";
       error.hidden = false;
@@ -228,9 +228,17 @@ let activeApplication = null;
 async function showApplication(item) {
   activeApplication = item;
   $("#app-runtime").hidden = false;
+  const isInfisicalImage = String(item.image || "").startsWith("infisical/infisical:");
+  $("#infisical-app-setup").hidden = !isInfisicalImage;
+  const waitingForWorkload = ["queued", "building", "deploying", "deleting"].includes(String(item.status || "").toLowerCase());
+  $("#infisical-app-submit").disabled = waitingForWorkload;
+  $("#infisical-app-status").textContent = waitingForWorkload
+    ? `Wait until this deployment finishes (${item.status}) before applying Infisical configuration.`
+    : "Choose ready PostgreSQL and Redis/Valkey connection records with connection URLs.";
+  if (!$("#infisical-site-url").value && String(item.url || "").startsWith("https://")) $("#infisical-site-url").value = item.url;
   $("#runtime-app-name").textContent = item.name;
   $("#runtime-app-summary").textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Application runtime details");
-  await Promise.all([loadApplicationResources(), loadApplicationLogs(), loadConnections()]);
+  await Promise.all([loadApplicationResources(), loadApplicationLogs(), loadApplicationEvents(), loadConnections()]);
 }
 
 function closeApplication() {
@@ -281,6 +289,22 @@ async function loadApplicationLogs() {
   }
 }
 
+async function loadApplicationEvents() {
+  if (!activeApplication) return;
+  try {
+    const result = await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/events`);
+    renderTable($("#app-events-list"), [
+      { label: "Time", value: (event) => event.last_seen ? new Date(event.last_seen).toLocaleString() : "—" },
+      { label: "Reason", value: (event) => event.reason },
+      { label: "Resource", value: (event) => event.object },
+      { label: "Count", value: (event) => event.count },
+      { label: "Details", value: (event) => event.message },
+    ], result.events || [], "No recent warning events for this application.");
+  } catch (cause) {
+    $("#app-events-list").textContent = cause.message;
+  }
+}
+
 async function loadDatabases() {
   const list = $("#database-list");
   list.replaceChildren();
@@ -314,7 +338,16 @@ async function loadDatabases() {
           window.alert(cause.message);
         }
       });
-      row.append(details, status, remove);
+      row.append(details, status);
+      if (item.backups_enabled) {
+        const backups = document.createElement("button");
+        backups.className = "inline-action";
+        backups.type = "button";
+        backups.textContent = "Backups";
+        backups.addEventListener("click", () => manageDatabaseBackups(item));
+        row.append(backups);
+      }
+      row.append(remove);
       if (item.message) {
         const message = document.createElement("small");
         message.className = "deployment-message";
@@ -337,6 +370,69 @@ async function loadDatabases() {
   }
 }
 
+async function manageDatabaseBackups(database) {
+  try {
+    const result = await api(`/api/v1/databases/${encodeURIComponent(database.name)}/backups`);
+    const backups = result.backups || [];
+    const summary = backups.length ? backups.map((backup) => `${backup.id}: ${backup.status || "pending"}${backup.started_at ? ` (${backup.started_at})` : ""}`).join("\n") : "No backup records yet.";
+    window.alert(`${database.name} backups\n\n${summary}`);
+    if (result.enabled && window.confirm("Start a new on-demand backup?")) {
+      await api(`/api/v1/databases/${encodeURIComponent(database.name)}/backups`, { method: "POST", body: "{}" });
+      window.alert("Backup queued. Reopen Backups to refresh its status.");
+      return;
+    }
+    if (result.restore_supported && backups.some((backup) => String(backup.status).toLowerCase() === "completed") && window.confirm("Restore the latest completed backup as a new PostgreSQL database? The source will remain unchanged.")) {
+      const name = window.prompt("New database name for the restored copy:");
+      if (!name) return;
+      await api(`/api/v1/databases/${encodeURIComponent(database.name)}/restore`, { method: "POST", body: JSON.stringify({ name }) });
+      window.alert("Restore queued as a new database. Refresh the database list to track it.");
+      await loadDatabases();
+    }
+  } catch (cause) {
+    window.alert(cause.message);
+  }
+}
+
+async function loadWorkspaceStorage() {
+  const list = $("#workspace-storage-list");
+  list.replaceChildren();
+  try {
+    const result = await api("/api/v1/workspace/storage");
+    for (const volume of result.volumes || []) {
+      const row = document.createElement("div");
+      row.className = "token-row service-resource-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = volume.application;
+      const pvc = document.createElement("code");
+      pvc.textContent = `${volume.name} · ${volume.size || "size unknown"} · ${volume.access_mode}${volume.mount_path ? ` · mounted at ${volume.mount_path}` : ""}`;
+      const status = document.createElement("small");
+      status.textContent = `${volume.status}${volume.orphaned ? " · retained after app deletion" : " · app still exists"}`;
+      details.append(name, pvc, status);
+      row.append(details);
+      if (volume.orphaned) {
+        const purge = document.createElement("button");
+        purge.className = "inline-action";
+        purge.type = "button";
+        purge.textContent = "Purge data";
+        purge.addEventListener("click", async () => {
+          if (!window.confirm(`Permanently delete ${volume.name} and all data for ${volume.application}?`)) return;
+          try {
+            await api(`/api/v1/workspace/storage/${encodeURIComponent(volume.application)}?confirm_data_loss=true`, { method: "DELETE" });
+            await loadWorkspaceStorage();
+          } catch (cause) { window.alert(cause.message); }
+        });
+        row.append(purge);
+      }
+      list.append(row);
+    }
+    if (!list.children.length) list.innerHTML = '<div class="token-empty">No persistent app volumes found.</div>';
+  } catch (cause) {
+    list.textContent = cause.message;
+  }
+}
+
 async function loadDatabaseEngines() {
   try {
     const result = await api("/api/v1/database-engines");
@@ -345,9 +441,10 @@ async function loadDatabaseEngines() {
       const option = [...select.options].find((item) => item.value === engine.id);
       if (option) {
         option.disabled = !engine.available;
-        if (!engine.available) option.textContent = `${engine.name} (operator not installed)`;
+        option.textContent = `${engine.name}${!engine.available ? " (operator not installed)" : (engine.backups_available ? " (backups enabled)" : " (backups unavailable)")}`;
       }
     }
+    $("#database-backup-note").textContent = "Backups require an operator schema and S3-compatible bucket configured by the platform. PostgreSQL restore creates a new database from the latest completed backup; MySQL restore is not currently exposed.";
   } catch {
     // Keep the catalog visible; create requests return the specific provisioning issue.
   }
@@ -605,6 +702,7 @@ async function loadConnections() {
     attachSelect.replaceChildren(new Option("Choose a saved connection", ""));
     workspaceConnections.forEach((item) => attachSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
     attachSelect.disabled = workspaceConnections.length === 0;
+    renderInfisicalConnectionOptions();
     $("#app-connection-submit").disabled = true;
     renderConnectionMappings();
     for (const item of workspaceConnections) {
@@ -626,6 +724,7 @@ async function loadConnections() {
       edit.type = "button";
       edit.textContent = "Edit";
       edit.addEventListener("click", () => {
+        $("#connection-rollout-status").textContent = "";
         editingConnectionId = item.id;
         editingConnectionSecretKeys = item.secret_keys || [];
         $("#connection-form").reset();
@@ -676,7 +775,26 @@ async function loadConnections() {
     attachSelect.replaceChildren(new Option("Could not load saved connections", ""));
     attachSelect.disabled = true;
     $("#app-connection-submit").disabled = true;
+    renderInfisicalConnectionOptions();
   }
+}
+
+function renderInfisicalConnectionOptions() {
+  const databaseSelect = $("#infisical-database-connection");
+  const cacheSelect = $("#infisical-cache-connection");
+  if (!databaseSelect || !cacheSelect) return;
+  const databasePrevious = databaseSelect.value;
+  const cachePrevious = cacheSelect.value;
+  const hasConnectionURL = (item) => (item.secret_keys || []).some((key) => String(key).toUpperCase() === "CONNECTION_URL");
+  const sameCluster = (item) => !activeApplication?.cluster_context || !item.cluster_context || item.cluster_context === activeApplication.cluster_context;
+  const databases = workspaceConnections.filter((item) => String(item.type).toLowerCase() === "postgresql" && hasConnectionURL(item) && sameCluster(item));
+  const caches = workspaceConnections.filter((item) => ["redis", "valkey"].includes(String(item.type).toLowerCase()) && hasConnectionURL(item) && sameCluster(item));
+  databaseSelect.replaceChildren(new Option(databases.length ? "Choose PostgreSQL connection" : "No PostgreSQL URL connection saved", ""));
+  cacheSelect.replaceChildren(new Option(caches.length ? "Choose Redis / Valkey connection" : "No Redis-compatible URL connection saved", ""));
+  databases.forEach((item) => databaseSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
+  caches.forEach((item) => cacheSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
+  databaseSelect.value = databases.some((item) => String(item.id) === databasePrevious) ? databasePrevious : "";
+  cacheSelect.value = caches.some((item) => String(item.id) === cachePrevious) ? cachePrevious : "";
 }
 
 function suggestedEnvName(connectionType, secretKey) {
@@ -822,10 +940,21 @@ $("#connection-form").addEventListener("submit", async (event) => {
   }
   const button = $("#connection-submit");
   button.disabled = true;
+  $("#connection-rollout-status").textContent = "";
   try {
     const path = editingConnectionId ? `/api/v1/workspace/connections/${encodeURIComponent(editingConnectionId)}` : "/api/v1/workspace/connections";
-    await api(path, { method: editingConnectionId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    const saved = await api(path, { method: editingConnectionId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    if (saved.rollout_status) {
+      const appNames = (saved.affected_apps || []).join(", ");
+      $("#connection-rollout-status").textContent = saved.rollout_error || (saved.rollout_status === "triggered"
+        ? `Credential change saved. Restart triggered for: ${appNames || "no attached apps"}.`
+        : `Credential change saved. App rollout status: ${saved.rollout_status}.`);
+    } else {
+      $("#connection-rollout-status").textContent = "Connection saved securely.";
+    }
     resetConnectionForm();
+    // Keep the rollout result visible after resetting the inputs.
+    if (saved.rollout_status) $("#connection-rollout-status").textContent = saved.rollout_error || `Connection saved. App rollout status: ${saved.rollout_status}${saved.affected_apps?.length ? ` (${saved.affected_apps.join(", ")})` : ""}.`;
     await loadConnections();
   } catch (cause) {
     error.textContent = cause.message;
@@ -929,21 +1058,24 @@ document.querySelectorAll(".nav-link[href^='#']").forEach((link) => link.addEven
   const isDeploy = link.hash === "#deploy";
   const isDatabases = link.hash === "#databases";
   const isServices = link.hash === "#services";
+  const isStorage = link.hash === "#storage";
   const isTeam = link.hash === "#team";
   const isUsage = link.hash === "#usage";
-  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications"))));
+  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isStorage ? "Retained volumes" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications")))));
   $("#deploy-form-panel").hidden = !isDeploy;
   $("#databases-page").hidden = !isDatabases;
   $("#services-page").hidden = !isServices;
+  $("#workspace-storage-page").hidden = !isStorage;
   $("#team-page").hidden = !isTeam;
   $("#usage-page").hidden = !isUsage;
-  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isTeam || isUsage;
-  $(".token-layout").hidden = isDatabases || isServices || isTeam || isUsage;
-  $("#app-runtime").hidden = isDatabases || isServices || isTeam || isUsage || !activeApplication;
+  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isStorage || isTeam || isUsage;
+  $(".token-layout").hidden = isDatabases || isServices || isStorage || isTeam || isUsage;
+  $("#app-runtime").hidden = isDatabases || isServices || isStorage || isTeam || isUsage || !activeApplication;
   document.querySelectorAll(".nav-link[href^='#']").forEach((item) => item.classList.toggle("active", item === link));
   if (isDeploy) $("#app-name").focus();
   if (isDatabases) Promise.all([loadDatabases(), loadDatabaseEngines()]);
   if (isServices) Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]);
+  if (isStorage) loadWorkspaceStorage();
   if (isTeam) loadWorkspaceMembers();
   if (isUsage) loadWorkspaceUsage();
 }));
@@ -954,6 +1086,16 @@ $("#show-deploy-form").addEventListener("click", () => {
   $("#deploy-form-panel").hidden = false;
   $("#page-title").textContent = "Deploy an app";
   $("#app-name").focus();
+});
+$("#prepare-infisical-deploy").addEventListener("click", () => {
+  $("#show-deploy-form").click();
+  $("#app-source").value = "image";
+  updateSourceFields();
+  $("#app-name").value = "infisical";
+  $("#app-image").value = "infisical/infisical:v0.166.8";
+  $("#image-port").value = "8080";
+  $("#app-image").focus();
+  $("#deployment-error").hidden = true;
 });
 function updateSourceFields() {
   const imageSource = $("#app-source").value === "image";
@@ -974,6 +1116,8 @@ $("#app-volume-enabled").addEventListener("change", updateVolumeFields);
 updateVolumeFields();
 $("#close-runtime").addEventListener("click", closeApplication);
 $("#refresh-runtime").addEventListener("click", loadApplicationResources);
+$("#refresh-app-events").addEventListener("click", loadApplicationEvents);
+$("#refresh-workspace-storage").addEventListener("click", loadWorkspaceStorage);
 $("#refresh-logs").addEventListener("click", loadApplicationLogs);
 $("#refresh-deployments").addEventListener("click", loadDeployments);
 $("#refresh-databases").addEventListener("click", loadDatabases);
@@ -982,26 +1126,97 @@ document.querySelectorAll(".template-nav-link").forEach((link) => link.addEventL
   event.preventDefault();
   document.querySelector(`.nav-link[href="${link.hash}"]`)?.click();
 }));
-$("#generate-infisical-keys").addEventListener("click", () => {
-  const bytesToHex = (bytes) => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+$("#generate-infisical-app-keys").addEventListener("click", () => {
   if (!globalThis.crypto?.getRandomValues) {
-    $("#infisical-generated-keys").textContent = "Secure browser randomness is unavailable. Use the official generation steps in the self-hosting guide.";
-    $("#infisical-generated-keys").hidden = false;
+    $("#infisical-app-error").textContent = "Secure browser randomness is unavailable. Generate the keys using Infisical's official instructions.";
+    $("#infisical-app-error").hidden = false;
     return;
   }
   const encryptionBytes = crypto.getRandomValues(new Uint8Array(16));
   const authBytes = crypto.getRandomValues(new Uint8Array(32));
+  const encryptionKey = [...encryptionBytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const authSecret = btoa(String.fromCharCode(...authBytes));
-  $("#infisical-generated-keys").textContent = `ENCRYPTION_KEY=${bytesToHex(encryptionBytes)}\nAUTH_SECRET=${authSecret}`;
-  $("#infisical-generated-keys").hidden = false;
-  $("#copy-infisical-keys").hidden = false;
+  $("#infisical-encryption-key").value = encryptionKey;
+  $("#infisical-auth-secret").value = authSecret;
+  $("#infisical-app-error").hidden = true;
+  $("#copy-infisical-app-keys").disabled = false;
+  $("#infisical-app-status").textContent = "Keys generated in this browser. Copy and securely back them up before applying; they cannot be read back from Crelan.";
 });
-$("#copy-infisical-keys").addEventListener("click", async () => {
+$("#copy-infisical-app-keys").addEventListener("click", async () => {
+  const text = `ENCRYPTION_KEY=${$("#infisical-encryption-key").value}\nAUTH_SECRET=${$("#infisical-auth-secret").value}`;
   try {
-    await navigator.clipboard.writeText($("#infisical-generated-keys").textContent);
-    $("#copy-infisical-keys").textContent = "Copied keys";
+    await navigator.clipboard.writeText(text);
+    $("#infisical-app-status").textContent = "Keys copied. Save them in a secure password manager before applying configuration.";
   } catch {
-    $("#copy-infisical-keys").textContent = "Select and copy the keys above";
+    $("#infisical-app-status").textContent = "Clipboard access is unavailable. Copy the password fields manually and save them securely before applying.";
+  }
+});
+
+$("#infisical-app-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!activeApplication || $("#infisical-app-setup").hidden) return;
+  const error = $("#infisical-app-error");
+  const button = $("#infisical-app-submit");
+  error.hidden = true;
+  const databaseConnection = workspaceConnections.find((item) => String(item.id) === $("#infisical-database-connection").value);
+  const cacheConnection = workspaceConnections.find((item) => String(item.id) === $("#infisical-cache-connection").value);
+  if (!databaseConnection || !cacheConnection) {
+    error.textContent = "Choose a saved PostgreSQL connection and a saved Redis/Valkey connection.";
+    error.hidden = false;
+    return;
+  }
+  const siteURL = $("#infisical-site-url").value.trim();
+  let parsedSiteURL;
+  try { parsedSiteURL = new URL(siteURL); } catch { /* handled below */ }
+  if (!parsedSiteURL || parsedSiteURL.protocol !== "https:" || !parsedSiteURL.hostname || parsedSiteURL.username || parsedSiteURL.password || parsedSiteURL.search || parsedSiteURL.hash) {
+    error.textContent = "Enter the public HTTPS URL users will use to reach this Infisical app, without credentials, query, or fragment.";
+    error.hidden = false;
+    return;
+  }
+  const encryptionKey = $("#infisical-encryption-key").value.trim();
+  const authSecret = $("#infisical-auth-secret").value.trim();
+  if (!/^[a-fA-F0-9]{32}$/.test(encryptionKey)) {
+    error.textContent = "ENCRYPTION_KEY must be 16 random bytes encoded as 32 hexadecimal characters.";
+    error.hidden = false;
+    return;
+  }
+  let authSecretBytes;
+  try { authSecretBytes = atob(authSecret); } catch { /* handled below */ }
+  if (!authSecretBytes || authSecretBytes.length !== 32) {
+    error.textContent = "AUTH_SECRET must be 32 random bytes encoded as base64.";
+    error.hidden = false;
+    return;
+  }
+
+  button.disabled = true;
+  $("#infisical-app-status").textContent = "Attaching database and cache Secret references, then applying the Infisical configuration…";
+  try {
+    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/connections`, {
+      method: "POST",
+      body: JSON.stringify({ connection_id: databaseConnection.id, env_mapping: { DB_CONNECTION_URI: "CONNECTION_URL" } }),
+    });
+    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/connections`, {
+      method: "POST",
+      body: JSON.stringify({ connection_id: cacheConnection.id, env_mapping: { REDIS_URL: "CONNECTION_URL" } }),
+    });
+    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/configuration`, {
+      method: "PUT",
+      body: JSON.stringify({
+        environment: { SITE_URL: parsedSiteURL.origin },
+        secrets: { ENCRYPTION_KEY: encryptionKey, AUTH_SECRET: authSecret },
+      }),
+    });
+    $("#infisical-encryption-key").value = "";
+    $("#infisical-auth-secret").value = "";
+    $("#copy-infisical-app-keys").disabled = true;
+    $("#infisical-app-status").textContent = "Infisical configuration applied. Database/cache credentials remain Kubernetes Secret references; key values are stored as app Secret data and were cleared from this form.";
+    await loadApplicationResources();
+  } catch (cause) {
+    error.textContent = `${cause.message} Some connection references may already have been applied; you can safely retry this setup.`;
+    error.hidden = false;
+    $("#infisical-app-status").textContent = "Configuration is incomplete. Review the error, then retry.";
+  } finally {
+    button.disabled = false;
   }
 });
 $("#signout-button").addEventListener("click", async () => {

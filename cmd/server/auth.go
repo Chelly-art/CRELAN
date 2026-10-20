@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS deployments (
 	storage_size TEXT NOT NULL DEFAULT '',
 	storage_mount_path TEXT NOT NULL DEFAULT '',
 	storage_class TEXT NOT NULL DEFAULT '',
+	storage_access_mode TEXT NOT NULL DEFAULT 'single_writer',
 	status TEXT NOT NULL,
 	status_message TEXT NOT NULL DEFAULT '',
 	latest_run_id INTEGER,
@@ -229,6 +230,12 @@ CREATE TABLE IF NOT EXISTS custom_domains (
 	created_at TEXT NOT NULL,
 	verified_at TEXT
 );
+CREATE TABLE IF NOT EXISTS platform_cluster_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	context_name TEXT NOT NULL,
+	encrypted_kubeconfig BLOB NOT NULL,
+	updated_at TEXT NOT NULL
+);
 `
 
 func ensureDeploymentColumns(db *sql.DB) error {
@@ -266,6 +273,7 @@ func ensureDeploymentColumns(db *sql.DB) error {
 		{"storage_size", `ALTER TABLE deployments ADD COLUMN storage_size TEXT NOT NULL DEFAULT ''`},
 		{"storage_mount_path", `ALTER TABLE deployments ADD COLUMN storage_mount_path TEXT NOT NULL DEFAULT ''`},
 		{"storage_class", `ALTER TABLE deployments ADD COLUMN storage_class TEXT NOT NULL DEFAULT ''`},
+		{"storage_access_mode", `ALTER TABLE deployments ADD COLUMN storage_access_mode TEXT NOT NULL DEFAULT 'single_writer'`},
 		{"image", `ALTER TABLE deployments ADD COLUMN image TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {

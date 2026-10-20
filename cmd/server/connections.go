@@ -63,6 +63,9 @@ type externalConnectionMetadata struct {
 	ClusterContext  string            `json:"cluster_context,omitempty"`
 	CreatedAt       string            `json:"created_at,omitempty"`
 	UpdatedAt       string            `json:"updated_at,omitempty"`
+	RolloutStatus   string            `json:"rollout_status,omitempty"`
+	AffectedApps    []string          `json:"affected_apps,omitempty"`
+	RolloutError    string            `json:"rollout_error,omitempty"`
 }
 
 func (s *connectionService) registerRoutes(mux *http.ServeMux) {
@@ -498,7 +501,57 @@ func (s *connectionService) update(w http.ResponseWriter, r *http.Request) {
 		s.writeFailure(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, metadataFromConnectionSecret(updated))
+	metadata := metadataFromConnectionSecret(updated)
+	metadata.RolloutStatus, metadata.AffectedApps, metadata.RolloutError = rolloutAppsUsingConnection(r.Context(), cluster, workspaceID, current.Namespace, updated.Name)
+	status := http.StatusOK
+	if metadata.RolloutError != "" {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, metadata)
+}
+
+func rolloutAppsUsingConnection(ctx context.Context, cluster *kubernetesProvisioner, workspaceID int64, namespace, secretName string) (string, []string, string) {
+	selector := workspaceLabel + "=" + strconv.FormatInt(workspaceID, 10)
+	deployments, err := cluster.client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return "pending", nil, "Connection credentials were saved, but affected apps could not be listed for rollout"
+	}
+	rolled := make([]string, 0)
+	failed := make([]string, 0)
+	for i := range deployments.Items {
+		app := &deployments.Items[i]
+		if !ownsWorkspace(app.Labels, workspaceID) || app.Labels[applicationLabel] != app.Name {
+			continue
+		}
+		referencesSecret := false
+		for _, container := range app.Spec.Template.Spec.Containers {
+			for _, env := range container.Env {
+				if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == secretName {
+					referencesSecret = true
+					break
+				}
+			}
+			if referencesSecret {
+				break
+			}
+		}
+		if !referencesSecret {
+			continue
+		}
+		if app.Spec.Template.Annotations == nil {
+			app.Spec.Template.Annotations = map[string]string{}
+		}
+		app.Spec.Template.Annotations["crelan.io/connection-updated-at"] = time.Now().UTC().Format(time.RFC3339Nano)
+		if _, err := cluster.client.AppsV1().Deployments(namespace).Update(ctx, app, metav1.UpdateOptions{}); err != nil {
+			failed = append(failed, app.Name)
+			continue
+		}
+		rolled = append(rolled, app.Name)
+	}
+	if len(failed) > 0 {
+		return "partial", rolled, "Credentials were saved, but some apps did not start a rollout: " + strings.Join(failed, ", ")
+	}
+	return "complete", rolled, ""
 }
 
 func (s *connectionService) delete(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sschema "k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 )
 
 // databaseService exposes a deliberately small database API. Database
@@ -48,28 +50,34 @@ var databaseNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9
 var (
 	cloudNativePGGVR                = k8sschema.GroupVersionResource{Group: "postgresql.cnpg.io", Version: "v1", Resource: "clusters"}
 	cloudNativePGScheduledBackupGVR = k8sschema.GroupVersionResource{Group: "postgresql.cnpg.io", Version: "v1", Resource: "scheduledbackups"}
+	cloudNativePGBackupGVR          = k8sschema.GroupVersionResource{Group: "postgresql.cnpg.io", Version: "v1", Resource: "backups"}
 	mysqlInnoDBGVR                  = k8sschema.GroupVersionResource{Group: "mysql.oracle.com", Version: "v2", Resource: "innodbclusters"}
+	mysqlBackupGVR                  = k8sschema.GroupVersionResource{Group: "mysql.oracle.com", Version: "v2", Resource: "mysqlbackups"}
+	databaseCRDGVR                  = k8sschema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
 )
 
 type databaseEngine struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Available   bool   `json:"available"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Available        bool   `json:"available"`
+	BackupsAvailable bool   `json:"backups_available"`
+	RestoreAvailable bool   `json:"restore_available"`
 }
 
 type databaseRecord struct {
-	Name           string `json:"name"`
-	Engine         string `json:"engine"`
-	Version        string `json:"version"`
-	Status         string `json:"status"`
-	Message        string `json:"message,omitempty"`
-	Endpoint       string `json:"endpoint"`
-	Port           int    `json:"port"`
-	Storage        string `json:"storage"`
-	Namespace      string `json:"namespace"`
-	CreatedAt      string `json:"created_at,omitempty"`
-	BackupsEnabled bool   `json:"backups_enabled"`
+	Name             string `json:"name"`
+	Engine           string `json:"engine"`
+	Version          string `json:"version"`
+	Status           string `json:"status"`
+	Message          string `json:"message,omitempty"`
+	Endpoint         string `json:"endpoint"`
+	Port             int    `json:"port"`
+	Storage          string `json:"storage"`
+	Namespace        string `json:"namespace"`
+	CreatedAt        string `json:"created_at,omitempty"`
+	BackupsEnabled   bool   `json:"backups_enabled"`
+	RestoreSupported bool   `json:"restore_supported"`
 }
 
 type createDatabaseInput struct {
@@ -79,12 +87,20 @@ type createDatabaseInput struct {
 	Storage string `json:"storage,omitempty"`
 }
 
+type databaseRestoreInput struct {
+	Name       string `json:"name"`
+	TargetTime string `json:"target_time,omitempty"`
+}
+
 func (s *databaseService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/database-engines", s.engines)
 	mux.HandleFunc("GET /api/v1/databases", s.list)
 	mux.HandleFunc("POST /api/v1/databases", s.create)
 	mux.HandleFunc("GET /api/v1/databases/{name}", s.get)
 	mux.HandleFunc("DELETE /api/v1/databases/{name}", s.delete)
+	mux.HandleFunc("GET /api/v1/databases/{name}/backups", s.listBackups)
+	mux.HandleFunc("POST /api/v1/databases/{name}/backups", s.createBackup)
+	mux.HandleFunc("POST /api/v1/databases/{name}/restore", s.restore)
 }
 
 func (s *databaseService) identity(r *http.Request) (int64, string, error) {
@@ -117,8 +133,70 @@ func (s *databaseService) engines(w http.ResponseWriter, r *http.Request) {
 		gvr := databaseGVR(engines[i].ID)
 		_, err := s.currentProvisioner().dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{Limit: 1})
 		engines[i].Available = err == nil
+		_, backupConfigured, configErr := databaseBackupConfiguration()
+		engines[i].BackupsAvailable = err == nil && configErr == nil && backupConfigured && s.backupSchemaAvailable(ctx, engines[i].ID)
+		engines[i].RestoreAvailable = engines[i].BackupsAvailable && engines[i].ID == "postgresql"
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"engines": engines})
+}
+
+func (s *databaseService) backupSchemaAvailable(ctx context.Context, engine string) bool {
+	clusterName := "clusters.postgresql.cnpg.io"
+	clusterVersion := "v1"
+	clusterFields := [][]string{{"spec", "properties", "backup", "properties", "barmanObjectStore"}}
+	if engine == "mysql" {
+		clusterName = "innodbclusters.mysql.oracle.com"
+		clusterVersion = "v2"
+		clusterFields = [][]string{{"spec", "properties", "backupProfiles"}, {"spec", "properties", "backupSchedules"}, {"spec", "properties", "initDB", "properties", "dump"}}
+	}
+	client := s.currentProvisioner().dynamicClient
+	if !databaseCRDSchemaHasFields(ctx, client, clusterName, clusterVersion, clusterFields...) {
+		return false
+	}
+	backupCRD, backupVersion := "backups.postgresql.cnpg.io", "v1"
+	backupFields := [][]string{{"spec", "properties", "cluster"}}
+	if engine == "mysql" {
+		backupCRD = "mysqlbackups.mysql.oracle.com"
+		backupVersion = "v2"
+		backupFields = [][]string{{"spec", "properties", "clusterName"}, {"spec", "properties", "backupProfileName"}}
+	}
+	if !databaseCRDSchemaHasFields(ctx, client, backupCRD, backupVersion, backupFields...) {
+		return false
+	}
+	if engine == "postgresql" {
+		return databaseCRDSchemaHasFields(ctx, client, "scheduledbackups.postgresql.cnpg.io", "v1", [][]string{{"spec", "properties", "schedule"}, {"spec", "properties", "cluster"}, {"spec", "properties", "immediate"}}...)
+	}
+	return true
+}
+
+func databaseCRDSchemaHasFields(ctx context.Context, client dynamic.Interface, crdName, servedVersion string, fields ...[]string) bool {
+	crd, err := client.Resource(databaseCRDGVR).Get(ctx, crdName, metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	versions, found, err := unstructured.NestedSlice(crd.Object, "spec", "versions")
+	if err != nil || !found {
+		return false
+	}
+	for _, raw := range versions {
+		version, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _, _ := unstructured.NestedString(version, "name")
+		served, _, _ := unstructured.NestedBool(version, "served")
+		if name != servedVersion || !served {
+			continue
+		}
+		for _, field := range fields {
+			path := append([]string{"schema", "openAPIV3Schema", "properties"}, field...)
+			if _, ok, _ := unstructured.NestedFieldNoCopy(version, path...); !ok {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func (s *databaseService) list(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +304,14 @@ func (s *databaseService) create(w http.ResponseWriter, r *http.Request) {
 		s.writeFailure(w, err)
 		return
 	}
-	backupSecretName, backupConfigured, backupErr := s.ensureBackupSecret(r.Context(), namespace, input.Name, workspaceID)
+	_, backupConfigured, backupErr := databaseBackupConfiguration()
+	if backupErr == nil && backupConfigured {
+		backupConfigured = s.backupSchemaAvailable(r.Context(), input.Engine)
+	}
+	backupSecretName := ""
+	if backupErr == nil && backupConfigured {
+		backupSecretName, backupConfigured, backupErr = s.ensureBackupSecret(r.Context(), namespace, input.Name, workspaceID)
+	}
 	if backupErr != nil {
 		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), secretName, metav1.DeleteOptions{})
 		writeError(w, http.StatusServiceUnavailable, "Could not configure database backup credentials")
@@ -371,10 +456,14 @@ func (s *databaseService) ensureDatabaseQuota(ctx context.Context, workspaceID i
 }
 
 func (s *databaseService) ensureBackupSecret(ctx context.Context, namespace, database string, workspaceID int64) (string, bool, error) {
-	bucket := strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_BUCKET"))
-	accessKey := os.Getenv("CRELAN_DB_BACKUP_ACCESS_KEY")
-	secretKeyValue := os.Getenv("CRELAN_DB_BACKUP_SECRET_KEY")
-	region := strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_REGION"))
+	config, enabled, err := databaseBackupConfiguration()
+	if err != nil || !enabled {
+		return "", false, err
+	}
+	bucket := config.bucket
+	accessKey := config.accessKey
+	secretKeyValue := config.secretKey
+	region := config.region
 	if bucket == "" || accessKey == "" || secretKeyValue == "" || region == "" {
 		return "", false, nil
 	}
@@ -386,12 +475,54 @@ func (s *databaseService) ensureBackupSecret(ctx context.Context, namespace, dat
 		"awsAccessKeyId": []byte(accessKey), "awsSecretAccessKey": []byte(secretKeyValue),
 		"bucket": []byte(bucket), "region": []byte(region),
 	}
-	if endpoint := strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_ENDPOINT")); endpoint != "" {
-		data["s3EndpointOverride"] = []byte(endpoint)
+	if config.endpoint != "" {
+		data["s3EndpointOverride"] = []byte(config.endpoint)
 	}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels}, Type: corev1.SecretTypeOpaque, Data: data}
-	_, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	_, err = s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	return name, err == nil, err
+}
+
+type databaseBackupConfig struct {
+	bucket, region, accessKey, secretKey, endpoint string
+}
+
+func databaseBackupConfiguration() (databaseBackupConfig, bool, error) {
+	config := databaseBackupConfig{
+		bucket:    strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_BUCKET")),
+		region:    strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_REGION")),
+		accessKey: strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_ACCESS_KEY")),
+		secretKey: strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_SECRET_KEY")),
+		endpoint:  strings.TrimSpace(os.Getenv("CRELAN_DB_BACKUP_ENDPOINT")),
+	}
+	present := 0
+	for _, value := range []string{config.bucket, config.region, config.accessKey, config.secretKey} {
+		if value != "" {
+			present++
+		}
+	}
+	if present == 0 {
+		return config, false, nil
+	}
+	if present != 4 {
+		return databaseBackupConfig{}, false, errors.New("database backup bucket, region, access key and secret key must be configured together")
+	}
+	if !regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`).MatchString(config.bucket) || strings.Contains(config.bucket, "..") {
+		return databaseBackupConfig{}, false, errors.New("database backup bucket name is invalid")
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(config.region) {
+		return databaseBackupConfig{}, false, errors.New("database backup region is invalid")
+	}
+	if strings.ContainsAny(config.accessKey+config.secretKey, "\x00\r\n") {
+		return databaseBackupConfig{}, false, errors.New("database backup credentials contain invalid characters")
+	}
+	if config.endpoint != "" {
+		endpoint, err := url.Parse(config.endpoint)
+		if err != nil || (endpoint.Scheme != "https" && endpoint.Scheme != "http") || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+			return databaseBackupConfig{}, false, errors.New("database backup endpoint must be an HTTP(S) URL without embedded credentials or query parameters")
+		}
+	}
+	return config, true, nil
 }
 
 func configureDatabaseBackups(resource *unstructured.Unstructured, engine, secretName string, enabled bool) {
@@ -533,6 +664,326 @@ func (s *databaseService) delete(w http.ResponseWriter, r *http.Request) {
 	// only after the custom resource has disappeared (normally the operator
 	// owns finalization); a garbage-collection owner reference is not portable.
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type databaseBackupRecord struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	StartedAt string `json:"started_at,omitempty"`
+	StoppedAt string `json:"stopped_at,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+func (s *databaseService) listBackups(w http.ResponseWriter, r *http.Request) {
+	workspaceID, namespace, err := s.identity(r)
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	source, engine, err := s.findOwned(r.Context(), namespace, workspaceID, r.PathValue("name"))
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	if !databaseResourceBackupsEnabled(source, engine) {
+		writeJSON(w, http.StatusOK, map[string]any{"backups": []databaseBackupRecord{}, "enabled": false, "restore_supported": false})
+		return
+	}
+	gvr := cloudNativePGBackupGVR
+	if engine == "mysql" {
+		gvr = mysqlBackupGVR
+	}
+	list, err := s.currentProvisioner().dynamicClient.Resource(gvr).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	items := make([]databaseBackupRecord, 0)
+	for i := range list.Items {
+		item := &list.Items[i]
+		clusterName := ""
+		if engine == "postgresql" {
+			clusterName, _, _ = unstructured.NestedString(item.Object, "spec", "cluster", "name")
+		} else {
+			clusterName, _, _ = unstructured.NestedString(item.Object, "spec", "clusterName")
+		}
+		if clusterName != source.GetName() {
+			continue
+		}
+		status, _, _ := unstructured.NestedString(item.Object, "status", "phase")
+		if status == "" {
+			status, _, _ = unstructured.NestedString(item.Object, "status", "status")
+		}
+		started, _, _ := unstructured.NestedString(item.Object, "status", "startedAt")
+		stopped, _, _ := unstructured.NestedString(item.Object, "status", "stoppedAt")
+		message, _, _ := unstructured.NestedString(item.Object, "status", "message")
+		items = append(items, databaseBackupRecord{ID: item.GetName(), Status: status, StartedAt: started, StoppedAt: stopped, Message: message})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"backups": items, "enabled": true, "restore_supported": engine == "postgresql" && s.restoreSchemaAvailable(r.Context())})
+}
+
+func (s *databaseService) createBackup(w http.ResponseWriter, r *http.Request) {
+	workspaceID, namespace, err := s.identity(r)
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	if !s.authorizeWrite(w, r, workspaceID) {
+		return
+	}
+	source, engine, err := s.findOwned(r.Context(), namespace, workspaceID, r.PathValue("name"))
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	if !databaseResourceBackupsEnabled(source, engine) || !s.backupSchemaAvailable(r.Context(), engine) {
+		writeError(w, http.StatusConflict, "Backups are not enabled for this database")
+		return
+	}
+	backupName := fmt.Sprintf("b-%s-%d", source.GetName(), time.Now().UTC().UnixMilli())
+	labels := map[string]any{databaseWorkspaceLabel: fmt.Sprint(workspaceID), databaseNameLabel: source.GetName(), "app.kubernetes.io/managed-by": "crelan"}
+	var resource *unstructured.Unstructured
+	if engine == "postgresql" {
+		resource = &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "postgresql.cnpg.io/v1", "kind": "Backup",
+			"metadata": map[string]any{"name": backupName, "namespace": namespace, "labels": labels},
+			"spec":     map[string]any{"method": "barmanObjectStore", "cluster": map[string]any{"name": source.GetName()}},
+		}}
+	} else {
+		resource = &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "mysql.oracle.com/v2", "kind": "MySQLBackup",
+			"metadata": map[string]any{"name": backupName, "namespace": namespace, "labels": labels},
+			"spec":     map[string]any{"clusterName": source.GetName(), "backupProfileName": "daily"},
+		}}
+	}
+	setDatabaseDynamicOwnerReference(resource, source)
+	gvr := cloudNativePGBackupGVR
+	if engine == "mysql" {
+		gvr = mysqlBackupGVR
+	}
+	created, err := s.currentProvisioner().dynamicClient.Resource(gvr).Namespace(namespace).Create(r.Context(), resource, metav1.CreateOptions{})
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	_, _ = s.auth.db.ExecContext(r.Context(), `INSERT INTO audit_events (workspace_id, action, details, created_at) VALUES (?, 'database.backup', ?, ?)`, workspaceID, source.GetName(), time.Now().UTC().Format(time.RFC3339Nano))
+	writeJSON(w, http.StatusAccepted, map[string]any{"backup": databaseBackupFromResource(created, engine)})
+}
+
+func (s *databaseService) restore(w http.ResponseWriter, r *http.Request) {
+	workspaceID, namespace, err := s.identity(r)
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	if !s.authorizeWrite(w, r, workspaceID) {
+		return
+	}
+	sourceName := r.PathValue("name")
+	source, engine, err := s.findOwned(r.Context(), namespace, workspaceID, sourceName)
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	if engine != "postgresql" {
+		writeError(w, http.StatusNotImplemented, "Customer-triggered restore is currently supported for PostgreSQL only; restore MySQL through its operator procedure")
+		return
+	}
+	if !databaseResourceBackupsEnabled(source, engine) || !s.restoreSchemaAvailable(r.Context()) {
+		writeError(w, http.StatusConflict, "Restore requires the supported CloudNativePG object-store backup schema and configured backups")
+		return
+	}
+	backupList, listErr := s.currentProvisioner().dynamicClient.Resource(cloudNativePGBackupGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
+	if listErr != nil {
+		s.writeFailure(w, listErr)
+		return
+	}
+	completedBackup := false
+	for i := range backupList.Items {
+		backup := &backupList.Items[i]
+		clusterName, _, _ := unstructured.NestedString(backup.Object, "spec", "cluster", "name")
+		phase, _, _ := unstructured.NestedString(backup.Object, "status", "phase")
+		if clusterName == sourceName && strings.EqualFold(phase, "completed") {
+			completedBackup = true
+			break
+		}
+	}
+	if !completedBackup {
+		writeError(w, http.StatusConflict, "No completed CloudNativePG backup is available to restore")
+		return
+	}
+	var input databaseRestoreInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Provide a valid restore name and optional RFC3339 target_time")
+		return
+	}
+	input.Name = strings.ToLower(strings.TrimSpace(input.Name))
+	if !databaseNamePattern.MatchString(input.Name) || len(input.Name) > 40 || input.Name == sourceName {
+		writeError(w, http.StatusBadRequest, "Restore name must be a new lowercase DNS name of at most 40 characters")
+		return
+	}
+	if input.TargetTime != "" {
+		target, parseErr := time.Parse(time.RFC3339, input.TargetTime)
+		if parseErr != nil || target.After(time.Now().UTC()) {
+			writeError(w, http.StatusBadRequest, "target_time must be a past RFC3339 timestamp")
+			return
+		}
+	}
+	if !s.databaseNameAvailable(r.Context(), namespace, input.Name) {
+		writeError(w, http.StatusConflict, "A database with that name already exists")
+		return
+	}
+	storage := databaseResourceStorage(source, engine)
+	if !s.checkDatabaseLimits(w, r, workspaceID, namespace, storage) {
+		return
+	}
+	if err := s.ensureDatabaseQuota(r.Context(), workspaceID, namespace); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "Could not apply workspace database limits")
+		return
+	}
+	_, configured, err := databaseBackupConfiguration()
+	if err != nil || !configured {
+		writeError(w, http.StatusServiceUnavailable, "Database object-store backup configuration is unavailable")
+		return
+	}
+	version, _, _ := unstructured.NestedString(source.Object, "spec", "imageName")
+	version = strings.TrimPrefix(version, "ghcr.io/cloudnative-pg/postgresql:")
+	if version == "" {
+		writeError(w, http.StatusConflict, "The source database version cannot be determined safely")
+		return
+	}
+	credentialsName := "db-" + input.Name + "-credentials"
+	sourceCredentials, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Get(r.Context(), "db-"+sourceName+"-credentials", metav1.GetOptions{})
+	if err != nil || sourceCredentials.Labels[databaseWorkspaceLabel] != fmt.Sprint(workspaceID) || sourceCredentials.Labels[databaseNameLabel] != sourceName {
+		writeError(w, http.StatusConflict, "Source database credentials are unavailable for restore")
+		return
+	}
+	credentialCopy := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: credentialsName, Namespace: namespace, Labels: map[string]string{databaseWorkspaceLabel: fmt.Sprint(workspaceID), databaseNameLabel: input.Name, "app.kubernetes.io/managed-by": "crelan"}}, Type: corev1.SecretTypeOpaque, Data: map[string][]byte{"username": append([]byte(nil), sourceCredentials.Data["username"]...), "password": append([]byte(nil), sourceCredentials.Data["password"]...)}}
+	if len(credentialCopy.Data["username"]) == 0 || len(credentialCopy.Data["password"]) == 0 {
+		writeError(w, http.StatusConflict, "Source database credentials are invalid for restore")
+		return
+	}
+	createdCredentialSecret, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(r.Context(), credentialCopy, metav1.CreateOptions{})
+	if err != nil {
+		s.writeFailure(w, err)
+		return
+	}
+	backupSecretSource, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Get(r.Context(), "db-"+sourceName+"-backup", metav1.GetOptions{})
+	if err != nil || backupSecretSource.Labels[databaseWorkspaceLabel] != fmt.Sprint(workspaceID) {
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), credentialsName, metav1.DeleteOptions{})
+		writeError(w, http.StatusConflict, "Source database backup credentials are unavailable")
+		return
+	}
+	backupSecretName := "db-" + input.Name + "-backup"
+	backupSecretCopy := backupSecretSource.DeepCopy()
+	backupSecretCopy.ResourceVersion = ""
+	backupSecretCopy.UID = ""
+	backupSecretCopy.Name = backupSecretName
+	backupSecretCopy.OwnerReferences = nil
+	backupSecretCopy.Labels = map[string]string{databaseWorkspaceLabel: fmt.Sprint(workspaceID), databaseNameLabel: input.Name, "app.kubernetes.io/managed-by": "crelan"}
+	createdBackupSecret, err := s.currentProvisioner().client.CoreV1().Secrets(namespace).Create(r.Context(), backupSecretCopy, metav1.CreateOptions{})
+	if err != nil {
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), credentialsName, metav1.DeleteOptions{})
+		s.writeFailure(w, err)
+		return
+	}
+	store, found, _ := unstructured.NestedMap(source.Object, "spec", "backup", "barmanObjectStore")
+	if !found {
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), credentialsName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), backupSecretName, metav1.DeleteOptions{})
+		writeError(w, http.StatusConflict, "Source database does not use the supported Barman object-store backup method")
+		return
+	}
+	resource := databaseCustomResource(createDatabaseInput{Name: input.Name, Engine: engine}, version, storage, namespace, credentialsName, map[string]string{databaseWorkspaceLabel: fmt.Sprint(workspaceID), databaseNameLabel: input.Name, "app.kubernetes.io/managed-by": "crelan"})
+	_ = unstructured.SetNestedMap(resource.Object, map[string]any{"source": sourceName}, "spec", "bootstrap", "recovery")
+	if input.TargetTime != "" {
+		_ = unstructured.SetNestedField(resource.Object, input.TargetTime, "spec", "bootstrap", "recovery", "recoveryTarget", "targetTime")
+	}
+	_ = unstructured.SetNestedSlice(resource.Object, []any{map[string]any{"name": sourceName, "barmanObjectStore": store}}, "spec", "externalClusters")
+	configureDatabaseBackups(resource, engine, backupSecretName, true)
+	if err := validateDatabaseRecoverySchema(r.Context(), s.currentProvisioner().dynamicClient); err != nil {
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), credentialsName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), backupSecretName, metav1.DeleteOptions{})
+		writeError(w, http.StatusServiceUnavailable, "Installed CloudNativePG schema does not support the required recovery workflow")
+		return
+	}
+	created, err := s.currentProvisioner().dynamicClient.Resource(cloudNativePGGVR).Namespace(namespace).Create(r.Context(), resource, metav1.CreateOptions{})
+	if err != nil {
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), credentialsName, metav1.DeleteOptions{})
+		_ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Delete(context.Background(), backupSecretName, metav1.DeleteOptions{})
+		s.writeFailure(w, err)
+		return
+	}
+	owner := metav1.NewControllerRef(created, k8sschema.GroupVersion{Group: "postgresql.cnpg.io", Version: "v1"}.WithKind("Cluster"))
+	createdCredentialSecret.OwnerReferences = []metav1.OwnerReference{*owner}
+	_, _ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Update(r.Context(), createdCredentialSecret, metav1.UpdateOptions{})
+	createdBackupSecret.OwnerReferences = []metav1.OwnerReference{*owner}
+	_, _ = s.currentProvisioner().client.CoreV1().Secrets(namespace).Update(r.Context(), createdBackupSecret, metav1.UpdateOptions{})
+	if err := s.createPostgresBackupSchedule(r.Context(), namespace, input.Name, workspaceID); err != nil {
+		log.Printf("create restored PostgreSQL backup schedule: %v", err)
+	}
+	if err := s.ensureDatabaseNetworkPolicy(r.Context(), namespace, input.Name, workspaceID); err != nil {
+		log.Printf("apply restored PostgreSQL network policy: %v", err)
+	}
+	_, _ = s.auth.db.ExecContext(r.Context(), `INSERT INTO audit_events (workspace_id, action, details, created_at) VALUES (?, 'database.restore', ?, ?)`, workspaceID, sourceName+" -> "+input.Name, time.Now().UTC().Format(time.RFC3339Nano))
+	writeJSON(w, http.StatusAccepted, map[string]any{"database": databaseRecordFromResource(created, engine, namespace), "source": sourceName, "restore_status": "provisioning", "credentials": map[string]string{"username": "app", "database": "app"}})
+}
+
+func (s *databaseService) databaseNameAvailable(ctx context.Context, namespace, name string) bool {
+	for _, engine := range []string{"postgresql", "mysql"} {
+		_, err := s.currentProvisioner().dynamicClient.Resource(databaseGVR(engine)).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err == nil || (!apierrors.IsNotFound(err) && !isDatabaseOperatorMissing(err)) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *databaseService) restoreSchemaAvailable(ctx context.Context) bool {
+	return validateDatabaseRecoverySchema(ctx, s.currentProvisioner().dynamicClient) == nil
+}
+
+func databaseResourceBackupsEnabled(resource *unstructured.Unstructured, engine string) bool {
+	if engine == "postgresql" {
+		_, found, _ := unstructured.NestedMap(resource.Object, "spec", "backup", "barmanObjectStore")
+		return found
+	}
+	profiles, found, _ := unstructured.NestedSlice(resource.Object, "spec", "backupProfiles")
+	return found && len(profiles) > 0
+}
+
+func databaseBackupFromResource(resource *unstructured.Unstructured, engine string) databaseBackupRecord {
+	status, _, _ := unstructured.NestedString(resource.Object, "status", "phase")
+	if status == "" {
+		status, _, _ = unstructured.NestedString(resource.Object, "status", "status")
+	}
+	started, _, _ := unstructured.NestedString(resource.Object, "status", "startedAt")
+	stopped, _, _ := unstructured.NestedString(resource.Object, "status", "stoppedAt")
+	message, _, _ := unstructured.NestedString(resource.Object, "status", "message")
+	return databaseBackupRecord{ID: resource.GetName(), Status: status, StartedAt: started, StoppedAt: stopped, Message: message}
+}
+
+func validateDatabaseRecoverySchema(ctx context.Context, client dynamic.Interface) error {
+	returnFields := [][]string{
+		{"spec", "properties", "bootstrap", "properties", "recovery"},
+		{"spec", "properties", "bootstrap", "properties", "recovery", "properties", "source"},
+		{"spec", "properties", "externalClusters"},
+		{"spec", "properties", "backup"},
+	}
+	if !databaseCRDSchemaHasFields(ctx, client, "clusters.postgresql.cnpg.io", "v1", returnFields...) {
+		return errors.New("recovery fields are unavailable")
+	}
+	return nil
+}
+
+func setDatabaseDynamicOwnerReference(child, owner *unstructured.Unstructured) {
+	gv, err := k8sschema.ParseGroupVersion(owner.GetAPIVersion())
+	if err != nil || owner.GetUID() == "" {
+		return
+	}
+	ownerRef := metav1.NewControllerRef(owner, gv.WithKind(owner.GetKind()))
+	refs := []any{map[string]any{"apiVersion": ownerRef.APIVersion, "kind": ownerRef.Kind, "name": ownerRef.Name, "uid": string(ownerRef.UID), "controller": true, "blockOwnerDeletion": true}}
+	_ = unstructured.SetNestedSlice(child.Object, refs, "metadata", "ownerReferences")
 }
 
 func (s *databaseService) authorizeWrite(w http.ResponseWriter, r *http.Request, workspaceID int64) bool {
@@ -711,7 +1162,7 @@ func databaseRecordFromResource(resource *unstructured.Unstructured, engine, nam
 		profiles, found, _ := unstructured.NestedSlice(resource.Object, "spec", "backupProfiles")
 		backupsEnabled = found && len(profiles) > 0
 	}
-	return databaseRecord{Name: resource.GetName(), Engine: engine, Version: version, Status: status, Message: message, Endpoint: endpoint, Port: port, Storage: databaseResourceStorage(resource, engine), Namespace: namespace, CreatedAt: resource.GetCreationTimestamp().UTC().Format("2006-01-02T15:04:05Z07:00"), BackupsEnabled: backupsEnabled}
+	return databaseRecord{Name: resource.GetName(), Engine: engine, Version: version, Status: status, Message: message, Endpoint: endpoint, Port: port, Storage: databaseResourceStorage(resource, engine), Namespace: namespace, CreatedAt: resource.GetCreationTimestamp().UTC().Format("2006-01-02T15:04:05Z07:00"), BackupsEnabled: backupsEnabled, RestoreSupported: engine == "postgresql" && backupsEnabled}
 }
 
 func databaseResourceStorage(resource *unstructured.Unstructured, engine string) string {

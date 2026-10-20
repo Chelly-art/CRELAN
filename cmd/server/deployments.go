@@ -176,6 +176,7 @@ type deployment struct {
 }
 
 func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
+	s.registerStorageRoutes(mux)
 	mux.HandleFunc("GET /api/v1/cluster/contexts", s.clusterContexts)
 	mux.HandleFunc("POST /api/v1/cluster/connect", s.connectCluster)
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.clusterResources)
@@ -184,6 +185,7 @@ func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/deployments/{id}", s.get)
 	mux.HandleFunc("GET /api/v1/deployments/{id}/history", s.history)
 	mux.HandleFunc("GET /api/v1/deployments/{id}/resources", s.resources)
+	mux.HandleFunc("GET /api/v1/deployments/{id}/events", s.deploymentEvents)
 	mux.HandleFunc("GET /api/v1/deployments/{id}/logs", s.logs)
 	mux.HandleFunc("POST /api/v1/deployments/{id}/rollback", s.rollback)
 	mux.HandleFunc("PUT /api/v1/deployments/{id}/configuration", s.configure)
@@ -1066,8 +1068,8 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if input.PersistentStorage != nil && configuredAppReplicas() != 1 {
-		writeError(w, http.StatusBadRequest, "Persistent app storage requires CRELAN_APP_REPLICAS=1")
+	if input.PersistentStorage != nil && input.PersistentStorage.AccessMode == "single_writer" && configuredAppReplicas() != 1 {
+		writeError(w, http.StatusBadRequest, "Single-writer app storage requires CRELAN_APP_REPLICAS=1; use shared storage with a platform-enabled RWX storage class to run multiple replicas")
 		return
 	}
 	if !deploymentNamePattern.MatchString(input.Name) {
@@ -1161,7 +1163,7 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "Persistent storage is unavailable for the selected deployment provider")
 			return
 		}
-		if err := validateStorageClass(r.Context(), cluster, input.PersistentStorage.StorageClass); err != nil {
+		if err := validateStorageClass(r.Context(), cluster, input.PersistentStorage.StorageClass, input.PersistentStorage.AccessMode); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1254,16 +1256,17 @@ WHERE workspace_id = ? AND status IN ('building', 'deploying')`,
 		return 0, 0, time.Time{}, errWorkspaceConcurrencyLimit
 	}
 
-	storageSize, storageMountPath, storageClass := "", "", ""
+	storageSize, storageMountPath, storageClass, storageAccessMode := "", "", "", "single_writer"
 	if input.PersistentStorage != nil {
 		storageSize = input.PersistentStorage.Size
 		storageMountPath = input.PersistentStorage.MountPath
 		storageClass = input.PersistentStorage.StorageClass
+		storageAccessMode = input.PersistentStorage.AccessMode
 	}
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO deployments (workspace_id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
+INSERT INTO deployments (workspace_id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, storage_access_mode, status, status_message, url, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
 ON CONFLICT(workspace_id, name) DO UPDATE SET
 	repository_url = excluded.repository_url,
 	image = excluded.image,
@@ -1276,12 +1279,13 @@ ON CONFLICT(workspace_id, name) DO UPDATE SET
 	storage_size = excluded.storage_size,
 	storage_mount_path = excluded.storage_mount_path,
 	storage_class = excluded.storage_class,
+	storage_access_mode = excluded.storage_access_mode,
 	status = 'queued',
 	status_message = 'Waiting for a build worker',
 	updated_at = excluded.updated_at
 RETURNING id`,
 		workspaceID, input.Name, input.RepositoryURL, input.Image, input.Branch, input.ClusterContext,
-		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, storageSize, storageMountPath, storageClass, nowText, nowText).Scan(&id)
+		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, storageSize, storageMountPath, storageClass, storageAccessMode, nowText, nowText).Scan(&id)
 	if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("persist deployment: %w", err)
 	}
@@ -1666,7 +1670,7 @@ func (s *deploymentService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.QueryContext(r.Context(), `
-SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, storage_access_mode, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE workspace_id = ? ORDER BY created_at DESC, id DESC`, principal.workspaceID)
 	if err != nil {
 		log.Printf("list deployments: %v", err)
@@ -1702,9 +1706,9 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 	var appURL sql.NullString
 	var statusMessage sql.NullString
 	var runID sql.NullInt64
-	var storageSize, storageMountPath, storageClass string
+	var storageSize, storageMountPath, storageClass, storageAccessMode string
 	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Image, &item.Branch, &item.ClusterContext,
-		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &storageSize, &storageMountPath, &storageClass, &item.Status,
+		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &storageSize, &storageMountPath, &storageClass, &storageAccessMode, &item.Status,
 		&statusMessage, &runID, &appURL, &createdAt, &updatedAt)
 	if err != nil {
 		return deployment{}, err
@@ -1727,7 +1731,7 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 		item.URL = appURL.String
 	}
 	if storageSize != "" && storageMountPath != "" && storageClass != "" {
-		item.PersistentStorage = &appPersistentStorage{Size: storageSize, MountPath: storageMountPath, StorageClass: storageClass}
+		item.PersistentStorage = &appPersistentStorage{Size: storageSize, MountPath: storageMountPath, StorageClass: storageClass, AccessMode: storageAccessMode}
 	}
 	return item, nil
 }
@@ -1867,7 +1871,7 @@ func (s *deploymentService) authorizedDeployment(w http.ResponseWriter, r *http.
 
 func (s *deploymentService) loadDeployment(ctx context.Context, id string, workspaceID int64) (deployment, error) {
 	return scanDeployment(s.db.QueryRowContext(ctx, `
-SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, image, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, storage_size, storage_mount_path, storage_class, storage_access_mode, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE id = ? AND workspace_id = ?`, id, workspaceID))
 }
 

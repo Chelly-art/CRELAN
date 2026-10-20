@@ -1152,8 +1152,8 @@ func (p *kubernetesProvisioner) applyApplication(ctx context.Context, workspaceI
 	}
 	var volumes []corev1.Volume
 	if storage := request.PersistentStorage; storage != nil {
-		if configuredAppReplicas() != 1 {
-			return errors.New("persistent app storage requires one configured replica")
+		if storage.AccessMode == "single_writer" && configuredAppReplicas() != 1 {
+			return errors.New("single-writer persistent app storage requires one configured replica")
 		}
 		if err := p.ensureAppPersistentVolume(ctx, workspaceID, namespace, name, storage); err != nil {
 			return err

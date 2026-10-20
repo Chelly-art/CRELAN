@@ -19,6 +19,7 @@ type appPersistentStorage struct {
 	Size         string `json:"size"`
 	MountPath    string `json:"mount_path"`
 	StorageClass string `json:"storage_class"`
+	AccessMode   string `json:"access_mode"`
 }
 
 var storageClassNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$`)
@@ -30,6 +31,13 @@ func validateAppPersistentStorage(storage *appPersistentStorage) error {
 	storage.Size = strings.TrimSpace(storage.Size)
 	storage.MountPath = strings.TrimSpace(storage.MountPath)
 	storage.StorageClass = strings.TrimSpace(storage.StorageClass)
+	storage.AccessMode = strings.TrimSpace(storage.AccessMode)
+	if storage.AccessMode == "" {
+		storage.AccessMode = "single_writer"
+	}
+	if storage.AccessMode != "single_writer" && storage.AccessMode != "shared" {
+		return errors.New("persistent storage access_mode must be single_writer or shared")
+	}
 	if storage.Size == "" || storage.MountPath == "" {
 		return errors.New("persistent storage needs a size and mount path")
 	}
@@ -64,8 +72,11 @@ func resolveAppStorageClass(storage *appPersistentStorage) error {
 		return nil
 	}
 	allowed := allowedAppStorageClasses()
+	if storage.AccessMode == "shared" {
+		allowed = allowedSharedAppStorageClasses()
+	}
 	if len(allowed) != 1 {
-		return errors.New("choose a storage class enabled by the platform")
+		return errors.New("choose a storage class enabled by the platform for this access mode")
 	}
 	for name := range allowed {
 		storage.StorageClass = name
@@ -98,8 +109,16 @@ func configuredWorkspaceAppStorageQuota() resource.Quantity {
 }
 
 func allowedAppStorageClasses() map[string]struct{} {
+	return parseStorageClassAllowlist(getenv("CRELAN_ALLOWED_APP_STORAGE_CLASSES"))
+}
+
+func allowedSharedAppStorageClasses() map[string]struct{} {
+	return parseStorageClassAllowlist(getenv("CRELAN_ALLOWED_APP_SHARED_STORAGE_CLASSES"))
+}
+
+func parseStorageClassAllowlist(value string) map[string]struct{} {
 	result := make(map[string]struct{})
-	for _, name := range strings.Split(getenv("CRELAN_ALLOWED_APP_STORAGE_CLASSES"), ",") {
+	for _, name := range strings.Split(value, ",") {
 		name = strings.TrimSpace(name)
 		if storageClassNamePattern.MatchString(name) {
 			result[name] = struct{}{}
@@ -108,8 +127,12 @@ func allowedAppStorageClasses() map[string]struct{} {
 	return result
 }
 
-func validateStorageClass(ctx context.Context, provisioner *kubernetesProvisioner, name string) error {
-	if _, ok := allowedAppStorageClasses()[name]; !ok {
+func validateStorageClass(ctx context.Context, provisioner *kubernetesProvisioner, name, accessMode string) error {
+	allowed := allowedAppStorageClasses()
+	if accessMode == "shared" {
+		allowed = allowedSharedAppStorageClasses()
+	}
+	if _, ok := allowed[name]; !ok {
 		return errors.New("requested storage class is not enabled by the platform")
 	}
 	if _, err := provisioner.client.StorageV1().StorageClasses().Get(ctx, name, metav1.GetOptions{}); err != nil {
@@ -138,7 +161,7 @@ func (p *kubernetesProvisioner) ensureAppPersistentVolume(ctx context.Context, w
 	if err := validateAppPersistentStorage(storage); err != nil {
 		return err
 	}
-	if err := validateStorageClass(ctx, p, storage.StorageClass); err != nil {
+	if err := validateStorageClass(ctx, p, storage.StorageClass, storage.AccessMode); err != nil {
 		return err
 	}
 	if err := p.checkWorkspaceAppStorageBudget(ctx, workspaceID, namespace, appName, storage.Size); err != nil {
@@ -155,6 +178,20 @@ func (p *kubernetesProvisioner) ensureAppPersistentVolume(ctx context.Context, w
 		if current.Spec.StorageClassName == nil || *current.Spec.StorageClassName != storage.StorageClass {
 			return errors.New("an existing app volume cannot change storage class")
 		}
+		requestedAccessMode := corev1.ReadWriteOnce
+		if storage.AccessMode == "shared" {
+			requestedAccessMode = corev1.ReadWriteMany
+		}
+		modeMatches := false
+		for _, existingMode := range current.Spec.AccessModes {
+			if existingMode == requestedAccessMode {
+				modeMatches = true
+				break
+			}
+		}
+		if !modeMatches {
+			return errors.New("an existing app volume cannot change access mode")
+		}
 		oldSize := current.Spec.Resources.Requests[corev1.ResourceStorage]
 		requested := resource.MustParse(storage.Size)
 		if requested.Cmp(oldSize) != 0 {
@@ -166,11 +203,19 @@ func (p *kubernetesProvisioner) ensureAppPersistentVolume(ctx context.Context, w
 		return fmt.Errorf("read app volume: %w", err)
 	}
 	quantity := resource.MustParse(storage.Size)
+	accessMode := corev1.ReadWriteOnce
+	if storage.AccessMode == "shared" {
+		accessMode = corev1.ReadWriteMany
+	}
 	claim := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels,
-			Annotations: map[string]string{"crelan.io/storage-retention": "retain-on-app-delete"}},
+			Annotations: map[string]string{
+				"crelan.io/storage-retention":   "retain-on-app-delete",
+				"crelan.io/storage-mount-path":  storage.MountPath,
+				"crelan.io/storage-access-mode": storage.AccessMode,
+			}},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes:      []corev1.PersistentVolumeAccessMode{accessMode},
 			StorageClassName: &storage.StorageClass,
 			Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: quantity}},
 		},

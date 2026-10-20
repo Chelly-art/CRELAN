@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
@@ -122,6 +121,19 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Deployment service is not available")
 		return
 	}
+	if s.auth.databasePath == ":memory:" {
+		writeError(w, http.StatusConflict, "Set DATABASE_PATH to a durable file before saving a cluster connection")
+		return
+	}
+	if err := saveKubeconfigCredential(s.auth.db, contextName, input.Kubeconfig); err != nil {
+		if errors.Is(err, errKubeconfigEncryptionKeyMissing) || strings.Contains(err.Error(), "CRELAN_KUBECONFIG_ENCRYPTION_KEY") {
+			writeError(w, http.StatusServiceUnavailable, "Configure CRELAN_KUBECONFIG_ENCRYPTION_KEY as a base64-encoded 32-byte key before connecting a cluster")
+			return
+		}
+		log.Printf("save encrypted kubeconfig for context %q: %v", contextName, err)
+		writeError(w, http.StatusInternalServerError, "Could not securely save the cluster connection")
+		return
+	}
 	s.deployments.setCluster(provisioner, contextName)
 	writeJSON(w, http.StatusOK, map[string]string{"context": contextName, "status": "connected"})
 }
@@ -206,71 +218,18 @@ func (s *adminService) readiness(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	checks := []readinessCheck{}
-	add := func(name string, ready bool, detail string) {
-		checks = append(checks, readinessCheck{Name: name, Ready: ready, Detail: detail})
-	}
-	if err := s.auth.db.PingContext(r.Context()); err != nil {
-		add("Control plane database", false, "SQLite connection failed")
-	} else {
-		add("Control plane database", true, "Connected; persistence mode is set by DATABASE_PATH")
-	}
-	provisioner := s.currentKubernetesProvisioner()
-	if provisioner == nil {
-		add("Kubernetes API", false, "No cluster credentials configured")
-	} else {
-		if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
-			add("Kubernetes API", false, "Cluster API is unreachable")
-		} else {
-			add("Kubernetes API", true, "Cluster API is reachable")
-		}
-		checks = append(checks,
-			apiGroupCheck(provisioner, "Capsule Tenant API", "capsule.clastix.io/v1beta2"),
-			apiGroupCheck(provisioner, "CloudNativePG API", "postgresql.cnpg.io/v1"),
-			apiGroupCheck(provisioner, "MySQL Operator API", "mysql.oracle.com/v2"),
-		)
-		add("Capsule tenant owner", provisioner.config.capsuleOwner != "", map[bool]string{true: "Configured", false: "Set CRELAN_CAPSULE_TENANT_OWNER"}[provisioner.config.capsuleOwner != ""])
-		nodes, err := provisioner.client.CoreV1().Nodes().List(r.Context(), metav1.ListOptions{})
-		if err != nil {
-			add("Ready nodes", false, "Could not list cluster nodes")
-		} else {
-			ready := countReadyNodes(nodes.Items)
-			zones := map[string]struct{}{}
-			for _, node := range nodes.Items {
-				if node.Labels[corev1.LabelTopologyZone] != "" {
-					zones[node.Labels[corev1.LabelTopologyZone]] = struct{}{}
-				}
-			}
-			add("Ready nodes", ready >= 3, fmt.Sprintf("%d ready; three are recommended for three-instance databases", ready))
-			add("Failure zones", len(zones) >= 3, fmt.Sprintf("%d distinct zones; three are recommended for zone-level HA", len(zones)))
-		}
-		classes, err := provisioner.client.StorageV1().StorageClasses().List(r.Context(), metav1.ListOptions{})
-		defaultClass := false
-		if err == nil {
-			for _, class := range classes.Items {
-				if class.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" || class.Annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true" {
-					defaultClass = true
-					break
-				}
-			}
-		}
-		add("Default StorageClass", err == nil && defaultClass, map[bool]string{true: "A default StorageClass is configured", false: "Configure a durable default StorageClass"}[err == nil && defaultClass])
-	}
+	checks := s.clusterPreflightChecks(r.Context(), r.URL.Query().Get("workspace_id"))
 	ready := true
 	for _, check := range checks {
 		if !check.Ready {
 			ready = false
+			break
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ready": ready, "checks": checks})
-}
-
-func apiGroupCheck(provisioner *kubernetesProvisioner, name, groupVersion string) readinessCheck {
-	_, err := provisioner.client.Discovery().ServerResourcesForGroupVersion(groupVersion)
-	if err != nil {
-		return readinessCheck{Name: name, Ready: false, Detail: "API resource unavailable or Crelan cannot discover it"}
-	}
-	return readinessCheck{Name: name, Ready: true, Detail: "API resource is discoverable; controller health still needs verification"}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ready": ready, "checks": checks,
+		"required_rbac": preflightRequiredRBAC,
+	})
 }
 
 func (s *adminService) authorize(w http.ResponseWriter, r *http.Request) bool {
