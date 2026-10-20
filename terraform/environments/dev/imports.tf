@@ -5,8 +5,19 @@ import {
 }
 
 import {
+  to = module.iam.aws_iam_role.eks_node_role
+  id = "dev-eks-node-role"
+}
+
+import {
   to = module.eks.aws_iam_role.eks_node_role
   id = "dev-cluster-node-group-role"
+}
+
+# --- EKS Cluster ---
+import {
+  to = module.eks.aws_eks_cluster.main
+  id = "dev-cluster"
 }
 
 # --- VPC & Networking ---
@@ -39,4 +50,10 @@ import {
 import {
   to = module.vpc.aws_subnet.private[1]
   id = "subnet-0635e1f339c9dd71c"
+}
+
+# --- Route Tables / Associations ---
+import {
+  to = module.vpc.aws_route_table.public
+  id = "rtb-0d966e17e3e4693fd"
 }
