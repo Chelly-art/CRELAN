@@ -132,15 +132,24 @@ $("#cluster-connect-form").addEventListener("submit", async (event) => {
   const error = $("#cluster-connect-error");
   const button = $("#connect-cluster");
   const contextName = $("#cluster-context").value;
-  if (!contextName) return;
+  const file = $("#cluster-kubeconfig").files[0];
+  if (!contextName && !file) {
+    error.textContent = "Choose a context or upload a kubeconfig file.";
+    error.hidden = false;
+    return;
+  }
   error.hidden = true;
   button.disabled = true;
   button.textContent = "Connecting…";
   try {
+    const payload = file
+      ? { kubeconfig: await file.text() }
+      : { context: contextName };
     const result = await api("/api/v1/cluster/connect", {
       method: "POST",
-      body: JSON.stringify({ context: contextName }),
+      body: JSON.stringify(payload),
     });
+    $("#cluster-kubeconfig").value = "";
     $("#cluster-status").textContent = `Connected: ${result.context}`;
     await loadClusterResources();
     await loadClusterContexts();

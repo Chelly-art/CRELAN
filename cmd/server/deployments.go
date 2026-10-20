@@ -222,6 +222,18 @@ func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Reque
 	if active == "" {
 		active = current
 	}
+	if active != "" {
+		found := false
+		for _, contextName := range contexts {
+			if contextName == active {
+				found = true
+				break
+			}
+		}
+		if !found {
+			contexts = append(contexts, active)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"contexts":   contexts,
 		"active":     active,
@@ -240,18 +252,38 @@ func (s *deploymentService) connectCluster(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var input struct {
-		Context string `json:"context"`
+		Context    string `json:"context"`
+		Kubeconfig string `json:"kubeconfig"`
 	}
-	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.Context) == "" {
-		writeError(w, http.StatusBadRequest, "Choose a kubeconfig context")
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Choose a kubeconfig context or upload a kubeconfig file")
 		return
 	}
 	input.Context = strings.TrimSpace(input.Context)
-	provisioner, err := newKubernetesProvisionerForContext(input.Context)
-	if err != nil {
-		log.Printf("build Kubernetes client for context %q: %v", input.Context, err)
-		writeError(w, http.StatusBadRequest, "Could not load that kubeconfig context")
-		return
+	var provisioner *kubernetesProvisioner
+	if strings.TrimSpace(input.Kubeconfig) != "" {
+		if len(input.Kubeconfig) > 1<<20 {
+			writeError(w, http.StatusRequestEntityTooLarge, "Kubeconfig file is too large (maximum 1 MiB)")
+			return
+		}
+		var err error
+		provisioner, input.Context, err = newKubernetesProvisionerFromKubeconfig([]byte(input.Kubeconfig), input.Context)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Could not load that kubeconfig. Use embedded credentials and the current context.")
+			return
+		}
+	} else {
+		if input.Context == "" {
+			writeError(w, http.StatusBadRequest, "Choose a kubeconfig context or upload a kubeconfig file")
+			return
+		}
+		var err error
+		provisioner, err = newKubernetesProvisionerForContext(input.Context)
+		if err != nil {
+			log.Printf("build Kubernetes client for context %q: %v", input.Context, err)
+			writeError(w, http.StatusBadRequest, "Could not load that kubeconfig context")
+			return
+		}
 	}
 	if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
 		log.Printf("connect Kubernetes context %q: %v", input.Context, err)

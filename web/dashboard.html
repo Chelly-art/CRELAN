@@ -38,12 +38,13 @@
             <div class="welcome-actions"><button class="inline-action" id="refresh-contexts" type="button">Refresh contexts</button><button class="primary-button" id="refresh-cluster" type="button">Refresh resources</button></div>
           </div>
           <section class="panel cluster-connect-panel" aria-labelledby="cluster-connect-title">
-            <div class="panel-heading"><div><h2 id="cluster-connect-title">Connect a cluster</h2><p>Choose a context already available in the server's kubeconfig.</p></div></div>
+            <div class="panel-heading"><div><h2 id="cluster-connect-title">Connect a cluster</h2><p>Choose a server context or upload a kubeconfig file.</p></div></div>
             <form class="cluster-connect-form" id="cluster-connect-form">
-              <div class="cluster-context-field"><label class="form-label" for="cluster-context">Kubeconfig context</label><select class="text-input deployment-input" id="cluster-context" name="context" required><option value="">Loading contexts…</option></select></div>
+              <div class="cluster-context-field"><label class="form-label" for="cluster-context">Kubeconfig context</label><select class="text-input deployment-input" id="cluster-context" name="context"><option value="">Loading contexts…</option></select></div>
+              <label class="cluster-file-field" for="cluster-kubeconfig">Or upload kubeconfig<input class="text-input" id="cluster-kubeconfig" type="file" accept=".yaml,.yml,.conf,application/yaml,text/yaml"></label>
               <button class="primary-button" id="connect-cluster" type="submit">Connect cluster</button>
             </form>
-            <p class="cluster-connect-help" id="cluster-connect-help">To add a context, configure it in the kubeconfig used by this server, then refresh contexts.</p>
+            <p class="cluster-connect-help" id="cluster-connect-help">Uploaded kubeconfig credentials are kept in memory only. Exec plugins and external credential file paths are not supported.</p>
             <p class="deployment-form-error" id="cluster-connect-error" role="alert" hidden></p>
           </section>
           <p class="deployment-form-error" id="cluster-error" role="alert" hidden></p>

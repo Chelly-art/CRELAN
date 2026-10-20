@@ -926,7 +926,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		return errors.New("expected JSON")
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err

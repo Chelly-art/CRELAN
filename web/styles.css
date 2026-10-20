@@ -111,6 +111,8 @@ h1 span { color: #a88efa; }
 .cluster-connect-form { display: flex; align-items: end; gap: 12px; }
 .cluster-context-field { width: min(100%, 430px); }
 .cluster-context-field .form-label { margin-bottom: 6px; }
+.cluster-file-field { display: grid; min-width: 190px; gap: 6px; color: #d5dbe5; font-size: 10px; font-weight: 600; }
+.cluster-file-field input { padding: 6px; font-size: 9px; }
 .cluster-connect-help { margin: 10px 0 0; color: #8995a5; font-size: 9px; line-height: 1.5; }
 .panel-heading { display: flex; align-items: start; justify-content: space-between; }
 .more-button { border: 0; background: none; color: #8190a2; font-size: 19px; cursor: pointer; }
@@ -263,6 +265,7 @@ dialog::backdrop { background: #080b10bb; backdrop-filter: blur(3px); }
   .welcome-actions { width: 100%; flex-wrap: wrap; }
   .cluster-connect-form { align-items: stretch; flex-direction: column; }
   .cluster-context-field { width: 100%; }
+  .cluster-file-field { width: 100%; }
   h1 { font-size: 25px; }
   .integration-banner { align-items: start; flex-wrap: wrap; }
   .setup-pill { margin-left: 50px; }
@@ -348,6 +351,7 @@ h1 { color: #202938; }
 .section-heading h2, .panel-heading h2 { color: #202938; }
 .section-heading p, .panel-heading p { color: #667085; }
 .cluster-connect-help { color: #667085; }
+.cluster-file-field { color: #344054; }
 .text-link, .inline-action { color: #b44b00; }
 .step-number { border-color: #d7dde5; color: #667085; background: #fff; }
 .step-number.complete { border-color: #b9e2c8; color: #167044; background: #e8f6ee; }
