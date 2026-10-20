@@ -37,6 +37,22 @@ import {
   id = "dev-cluster:kube-proxy"
 }
 
+import {
+  to = module.eks.aws_eks_addon.coredns
+  id = "dev-cluster:coredns"
+}
+
+# --- EKS Node Groups ---
+import {
+  to = module.eks.aws_eks_node_group.nodes
+  id = "dev-cluster:dev-node-group"
+}
+
+import {
+  to = module.eks.aws_eks_node_group.dev_nodes
+  id = "dev-cluster:dev-cluster-node-group"
+}
+
 # --- VPC & Networking ---
 import {
   to = module.vpc.aws_vpc.main
@@ -73,4 +89,14 @@ import {
 import {
   to = module.vpc.aws_route_table.public
   id = "rtb-0d966e17e3e4693fd"
+}
+
+import {
+  to = module.vpc.aws_route_table_association.public[0]
+  id = "subnet-03553a7e8a5a9b385/rtb-0d966e17e3e4693fd"
+}
+
+import {
+  to = module.vpc.aws_route_table_association.public[1]
+  id = "subnet-0d69fd58b4d67e52d/rtb-0d966e17e3e4693fd"
 }
