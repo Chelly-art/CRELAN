@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10151d">
+    <title>Sign in to Crelan</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/auth.js" defer></script>
+  </head>
+  <body class="auth-body">
+    <main class="auth-shell">
+      <a class="brand auth-brand" href="/" aria-label="Crelan home">
+        <span class="brand-mark">C</span>
+        <span>crelan<span class="brand-period">.</span></span>
+      </a>
+      <section class="auth-card">
+        <div class="eyebrow" id="auth-eyebrow">WELCOME BACK</div>
+        <h1 id="auth-title">Sign in to Crelan</h1>
+        <p class="auth-subtitle" id="auth-subtitle">Deploy and manage your applications from your workspace.</p>
+        <a class="github-button" href="/auth/github"><span class="github-symbol">⌘</span> Continue with GitHub</a>
+        <div class="auth-divider"><span>or continue with email</span></div>
+        <form id="auth-form">
+          <label class="form-label" for="name-field" id="name-label" hidden>Your name</label>
+          <input class="text-input auth-input" id="name-field" name="name" autocomplete="name" placeholder="Your name" maxlength="80" hidden>
+          <label class="form-label" for="email-field" id="identity-label">Email or username</label>
+          <input class="text-input auth-input" id="email-field" name="identity" type="text" autocomplete="username" placeholder="you@example.com or admin" maxlength="254" required>
+          <label class="form-label password-label" for="password-field">Password</label>
+          <input class="text-input auth-input" id="password-field" name="password" type="password" autocomplete="current-password" placeholder="Your password" maxlength="128" required>
+          <p class="auth-error" id="auth-error" role="alert" hidden></p>
+          <button class="primary-button auth-submit" id="auth-submit" type="submit">Sign in</button>
+        </form>
+        <p class="auth-switch"><span id="switch-prompt">New to Crelan?</span> <a href="/signup" id="switch-link">Create an account</a></p>
+      </section>
+      <p class="auth-footnote">By continuing, you agree to use workspace credentials responsibly.</p>
+    </main>
+  </body>
+</html>

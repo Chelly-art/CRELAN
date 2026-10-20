@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fa">
+    <title>Crelan — Kubernetes workspace</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Crelan home"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a>
+        <div class="workspace-label">KUBERNETES</div>
+        <nav aria-label="Main navigation">
+          <a class="nav-link active" href="#cluster"><span class="nav-icon">◫</span> Cluster resources</a>
+          <a class="nav-link" href="#deployments"><span class="nav-icon">▦</span> Deployments</a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="user-card">
+            <span class="user-avatar">U</span>
+            <span class="user-details"><strong id="account-name">Loading account…</strong><small id="account-email"></small></span>
+            <button class="signout-button" id="signout-button" type="button">Sign out</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="breadcrumbs"><span>Kubernetes</span><span class="crumb-divider">/</span><strong id="page-title">Cluster resources</strong></div>
+          <span class="top-avatar" id="top-avatar">U</span>
+        </header>
+
+        <section class="content" id="cluster-page">
+          <div class="welcome">
+            <div><div class="eyebrow">CLUSTER BROWSER</div><h1>Cluster resources</h1><p>Browse pods, ConfigMaps, and Secret metadata in your workspace namespace.</p></div>
+            <button class="primary-button" id="refresh-cluster" type="button">Refresh resources</button>
+          </div>
+          <p class="deployment-form-error" id="cluster-error" role="alert" hidden></p>
+          <div class="token-notice" role="status" id="cluster-summary"><span class="notice-icon">i</span><div><strong>Workspace namespace</strong><span id="namespace-name">Loading cluster connection…</span></div></div>
+          <div class="resource-grid">
+            <section class="panel resource-panel"><div class="panel-heading"><div><h2>Pods</h2><p>Pod status and restart count</p></div><span class="resource-count" id="pod-count">—</span></div><div class="resource-table-wrap" id="pods-list"></div></section>
+            <section class="panel resource-panel"><div class="panel-heading"><div><h2>ConfigMaps</h2><p>Configuration keys</p></div><span class="resource-count" id="configmap-count">—</span></div><div class="resource-table-wrap" id="configmaps-list"></div></section>
+            <section class="panel resource-panel"><div class="panel-heading"><div><h2>Secrets</h2><p>Metadata only; values are never shown</p></div><span class="resource-count" id="secret-count">—</span></div><div class="resource-table-wrap" id="secrets-list"></div></section>
+          </div>
+          <footer>Crelan <span>·</span> Kubernetes workspace <span class="footer-right" id="cluster-status">Connecting to cluster</span></footer>
+        </section>
+
+        <section class="content" id="deployments-page" hidden>
+          <div class="welcome">
+            <div><div class="eyebrow">PUBLIC GIT REPOSITORIES</div><h1>Deployments</h1><p>Deploy a public GitHub repository to the Kubernetes cluster and remove it when you’re done.</p></div>
+          </div>
+          <div class="token-layout app-deploy-layout">
+            <section class="panel token-builder">
+              <div class="panel-heading"><div><h2>Deploy a repository</h2><p>Enter a public GitHub repository URL.</p></div></div>
+              <form id="deployment-form">
+                <label class="form-label" for="app-name">Deployment name</label>
+                <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
+                <label class="form-label" for="app-repository">Public GitHub repository</label>
+                <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository" required>
+                <div class="deployment-two-col">
+                  <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
+                  <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
+                </div>
+                <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
+                <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy to cluster</button>
+              </form>
+            </section>
+            <section class="panel issued-tokens deployment-list-panel">
+              <div class="panel-heading"><div><h2>Deployed services</h2><p>Apps created in this workspace.</p></div><button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div>
+              <div class="token-list" id="deployment-list"><div class="token-empty">Loading deployments…</div></div>
+            </section>
+          </div>
+          <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Deployment API connecting</span></footer>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
