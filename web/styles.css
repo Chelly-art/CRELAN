@@ -55,6 +55,7 @@ nav { display: grid; gap: 5px; margin-top: 30px; }
 .top-avatar { width: 28px; height: 28px; border-radius: 50%; }
 .content { max-width: 1380px; margin: 0 auto; padding: 37px 42px 20px; }
 .welcome { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+.welcome-actions { display: flex; align-items: center; gap: 16px; }
 .eyebrow, .card-kicker { color: #8491a2; font-size: 9px; font-weight: 700; letter-spacing: 1.2px; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin: 10px 0 7px; font: 700 29px Manrope, sans-serif; letter-spacing: -.9px; }
@@ -105,6 +106,12 @@ h1 span { color: #a88efa; }
 .inline-action span { padding-left: 3px; }
 .bottom-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 13px; margin-top: 22px; }
 .panel { min-height: 202px; padding: 17px; }
+.cluster-connect-panel { min-height: 0; margin-bottom: 16px; }
+.cluster-connect-panel .panel-heading { margin-bottom: 14px; }
+.cluster-connect-form { display: flex; align-items: end; gap: 12px; }
+.cluster-context-field { width: min(100%, 430px); }
+.cluster-context-field .form-label { margin-bottom: 6px; }
+.cluster-connect-help { margin: 10px 0 0; color: #8995a5; font-size: 9px; line-height: 1.5; }
 .panel-heading { display: flex; align-items: start; justify-content: space-between; }
 .more-button { border: 0; background: none; color: #8190a2; font-size: 19px; cursor: pointer; }
 .empty-activity { display: grid; place-items: center; gap: 5px; padding: 27px 0 5px; color: #8894a4; text-align: center; }
@@ -253,6 +260,9 @@ dialog::backdrop { background: #080b10bb; backdrop-filter: blur(3px); }
   .topbar { height: 55px; padding: 0 16px; }
   .content { padding: 27px 16px 15px; }
   .welcome { align-items: start; flex-direction: column; }
+  .welcome-actions { width: 100%; flex-wrap: wrap; }
+  .cluster-connect-form { align-items: stretch; flex-direction: column; }
+  .cluster-context-field { width: 100%; }
   h1 { font-size: 25px; }
   .integration-banner { align-items: start; flex-wrap: wrap; }
   .setup-pill { margin-left: 50px; }
@@ -337,6 +347,7 @@ h1 { color: #202938; }
 #health-detail { color: #737f90; }
 .section-heading h2, .panel-heading h2 { color: #202938; }
 .section-heading p, .panel-heading p { color: #667085; }
+.cluster-connect-help { color: #667085; }
 .text-link, .inline-action { color: #b44b00; }
 .step-number { border-color: #d7dde5; color: #667085; background: #fff; }
 .step-number.complete { border-color: #b9e2c8; color: #167044; background: #e8f6ee; }

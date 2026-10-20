@@ -130,14 +130,16 @@ type DeploymentProvisioner interface {
 }
 
 type deploymentService struct {
-	db          *sql.DB
-	auth        *authService
-	provisioner DeploymentProvisioner
-	runtime     deploymentRuntime
-	githubApp   *githubAppService
-	workerMu    sync.Mutex
-	activeRuns  map[int64]context.CancelFunc
-	lookupTXT   func(context.Context, string) ([]string, error)
+	db            *sql.DB
+	auth          *authService
+	provisioner   DeploymentProvisioner
+	runtime       deploymentRuntime
+	providerMu    sync.RWMutex
+	activeContext string
+	githubApp     *githubAppService
+	workerMu      sync.Mutex
+	activeRuns    map[int64]context.CancelFunc
+	lookupTXT     func(context.Context, string) ([]string, error)
 }
 
 type deployment struct {
@@ -158,6 +160,8 @@ type deployment struct {
 }
 
 func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/cluster/contexts", s.clusterContexts)
+	mux.HandleFunc("POST /api/v1/cluster/connect", s.connectCluster)
 	mux.HandleFunc("GET /api/v1/cluster/resources", s.clusterResources)
 	mux.HandleFunc("POST /api/v1/deployments", s.create)
 	mux.HandleFunc("GET /api/v1/deployments", s.list)
@@ -178,6 +182,86 @@ func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/deployments/{id}/cancel", s.cancel)
 }
 
+func (s *deploymentService) currentProvisioner() DeploymentProvisioner {
+	s.providerMu.RLock()
+	defer s.providerMu.RUnlock()
+	return s.provisioner
+}
+
+func (s *deploymentService) currentRuntime() deploymentRuntime {
+	s.providerMu.RLock()
+	defer s.providerMu.RUnlock()
+	return s.runtime
+}
+
+func (s *deploymentService) setCluster(provisioner DeploymentProvisioner, contextName string) {
+	s.providerMu.Lock()
+	defer s.providerMu.Unlock()
+	s.provisioner = provisioner
+	s.runtime, _ = provisioner.(deploymentRuntime)
+	s.activeContext = contextName
+}
+
+func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.authenticate(r); err != nil {
+		writeError(w, http.StatusUnauthorized, "Sign in to connect a cluster")
+		return
+	}
+	contexts, current, err := loadKubeconfigContexts()
+	if err != nil && !errors.Is(err, errKubernetesNotConfigured) {
+		log.Printf("load cluster contexts: %v", err)
+		writeError(w, http.StatusBadGateway, "Could not read the server kubeconfig")
+		return
+	}
+	if contexts == nil {
+		contexts = []string{}
+	}
+	s.providerMu.RLock()
+	active := s.activeContext
+	s.providerMu.RUnlock()
+	if active == "" {
+		active = current
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"contexts":   contexts,
+		"active":     active,
+		"in_cluster": len(contexts) == 0 && s.currentProvisioner() != nil,
+	})
+}
+
+func (s *deploymentService) connectCluster(w http.ResponseWriter, r *http.Request) {
+	principal, err := s.authenticate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Sign in to connect a cluster")
+		return
+	}
+	if principal.isSession && !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	var input struct {
+		Context string `json:"context"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.Context) == "" {
+		writeError(w, http.StatusBadRequest, "Choose a kubeconfig context")
+		return
+	}
+	input.Context = strings.TrimSpace(input.Context)
+	provisioner, err := newKubernetesProvisionerForContext(input.Context)
+	if err != nil {
+		log.Printf("build Kubernetes client for context %q: %v", input.Context, err)
+		writeError(w, http.StatusBadRequest, "Could not load that kubeconfig context")
+		return
+	}
+	if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
+		log.Printf("connect Kubernetes context %q: %v", input.Context, err)
+		writeError(w, http.StatusBadGateway, "Could not reach that Kubernetes cluster with the configured credentials")
+		return
+	}
+	s.setCluster(provisioner, input.Context)
+	writeJSON(w, http.StatusOK, map[string]string{"context": input.Context, "status": "connected"})
+}
+
 func (s *deploymentService) clusterResources(w http.ResponseWriter, r *http.Request) {
 	principal, err := s.authenticate(r)
 	if err != nil {
@@ -188,7 +272,7 @@ func (s *deploymentService) clusterResources(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusForbidden, "Token requires the resources:read scope")
 		return
 	}
-	reader, ok := s.provisioner.(workspaceResourceReader)
+	reader, ok := s.currentProvisioner().(workspaceResourceReader)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Kubernetes cluster is not configured")
 		return
@@ -384,7 +468,7 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ?`,
 		writeError(w, http.StatusConflict, "Domain verification TXT record does not match")
 		return
 	}
-	provisioner, ok := s.provisioner.(customDomainProvisioner)
+	provisioner, ok := s.currentProvisioner().(customDomainProvisioner)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Custom domain routing is not supported by the deployment provider")
 		return
@@ -450,7 +534,7 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ?`,
 		return
 	}
 	if status == "active" {
-		provisioner, ok := s.provisioner.(customDomainProvisioner)
+		provisioner, ok := s.currentProvisioner().(customDomainProvisioner)
 		if !ok {
 			writeError(w, http.StatusServiceUnavailable, "Custom domain routing is not supported by the deployment provider")
 			return
@@ -539,7 +623,7 @@ func (s *deploymentService) configure(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "Request origin is not allowed")
 		return
 	}
-	configurator, ok := s.provisioner.(deploymentConfigurator)
+	configurator, ok := s.currentProvisioner().(deploymentConfigurator)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "Application configuration is not supported by the deployment provider")
 		return
@@ -822,7 +906,7 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "App resources must be at least 100m CPU and 128 MB memory")
 		return
 	}
-	if s.provisioner == nil {
+	if s.currentProvisioner() == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "Deployment provider is not configured",
 			"code":  "provisioner_unavailable",
@@ -1084,10 +1168,11 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 		return s.updateRunProgress(runCtx, runID, deploymentID, status)
 	}
 	var provisioned ProvisionedDeployment
-	if provider, ok := s.provisioner.(deploymentProgressProvisioner); ok {
+	provisioner := s.currentProvisioner()
+	if provider, ok := provisioner.(deploymentProgressProvisioner); ok {
 		provisioned, err = provider.DeployWithProgress(runCtx, workspaceID, request, progress)
 	} else {
-		provisioned, err = s.provisioner.Deploy(runCtx, workspaceID, request)
+		provisioned, err = provisioner.Deploy(runCtx, workspaceID, request)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -1105,7 +1190,7 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 	if runCtx.Err() != nil {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cleanupCancel()
-		if err := s.provisioner.Delete(cleanupCtx, workspaceID, request.Name); err != nil {
+		if err := provisioner.Delete(cleanupCtx, workspaceID, request.Name); err != nil {
 			log.Printf("clean up cancelled application %q: %v", request.Name, err)
 		}
 		return s.finishRun(runID, deploymentID, "cancelled", "Cancelled by user")
@@ -1133,7 +1218,7 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 }
 
 func (s *deploymentService) reconcileDeploying(ctx context.Context) error {
-	readiness, ok := s.provisioner.(deploymentReadiness)
+	readiness, ok := s.currentProvisioner().(deploymentReadiness)
 	if !ok {
 		return nil
 	}
@@ -1176,7 +1261,7 @@ LIMIT 1`, time.Now().UTC().Add(-5*time.Second).Format(time.RFC3339Nano)).
 }
 
 func (s *deploymentService) reconcileRunning(ctx context.Context) error {
-	health, ok := s.provisioner.(deploymentHealth)
+	health, ok := s.currentProvisioner().(deploymentHealth)
 	if !ok {
 		return nil
 	}
@@ -1425,11 +1510,12 @@ func (s *deploymentService) resources(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.runtime == nil {
+	runtime := s.currentRuntime()
+	if runtime == nil {
 		writeError(w, http.StatusServiceUnavailable, "Runtime resource access is not configured")
 		return
 	}
-	result, err := s.runtime.ApplicationResources(r.Context(), principal.workspaceID, item.Name)
+	result, err := runtime.ApplicationResources(r.Context(), principal.workspaceID, item.Name)
 	if err != nil {
 		log.Printf("load runtime resources for workspace %d: %v", principal.workspaceID, err)
 		writeError(w, http.StatusBadGateway, "Could not load runtime resources")
@@ -1443,7 +1529,8 @@ func (s *deploymentService) logs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.runtime == nil {
+	runtime := s.currentRuntime()
+	if runtime == nil {
 		writeError(w, http.StatusServiceUnavailable, "Application log access is not configured")
 		return
 	}
@@ -1456,7 +1543,7 @@ func (s *deploymentService) logs(w http.ResponseWriter, r *http.Request) {
 		}
 		tail = value
 	}
-	logs, err := s.runtime.ApplicationLogs(r.Context(), principal.workspaceID, item.Name, tail)
+	logs, err := runtime.ApplicationLogs(r.Context(), principal.workspaceID, item.Name, tail)
 	if err != nil {
 		log.Printf("load app logs for workspace %d: %v", principal.workspaceID, err)
 		writeError(w, http.StatusBadGateway, "Could not load application logs")
@@ -1558,14 +1645,15 @@ func (s *deploymentService) delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Wait for the active deployment to finish before deleting the application")
 		return
 	}
-	if s.provisioner == nil {
+	provisioner := s.currentProvisioner()
+	if provisioner == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "Deployment provider is not configured",
 			"code":  "provisioner_unavailable",
 		})
 		return
 	}
-	if err := s.provisioner.Delete(r.Context(), principal.workspaceID, name); err != nil {
+	if err := provisioner.Delete(r.Context(), principal.workspaceID, name); err != nil {
 		log.Printf("delete deployment for workspace %d: %v", principal.workspaceID, err)
 		writeError(w, http.StatusBadGateway, "Deployment provider could not delete this app")
 		return

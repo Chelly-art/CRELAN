@@ -4,7 +4,7 @@ Crelan is a small Kubernetes demo to browse pods, ConfigMaps, and Secret metadat
 
 ## Connect a local cluster
 
-The server connects with the credentials in `KUBECONFIG`. When running inside Kubernetes, it uses the pod's ServiceAccount instead. For Minikube:
+The dashboard's **Connect a cluster** control lists contexts from the server's `KUBECONFIG`. Choose a context and select **Connect cluster**; the server checks access and switches its Kubernetes client. Credentials stay in the server-side kubeconfig. Add remote clusters to that kubeconfig first. When Crelan runs inside Kubernetes, it uses the pod's ServiceAccount instead. For Minikube:
 
 ```sh
 minikube start

@@ -51,24 +51,26 @@ func main() {
 		provisioner = clusterProvisioner
 		log.Printf("Kubernetes deployment provisioner configured")
 	}
+	activeContext := ""
+	if _, current, contextErr := loadKubeconfigContexts(); contextErr == nil {
+		activeContext = current
+	}
 	var runtime deploymentRuntime
 	if cluster, ok := provisioner.(deploymentRuntime); ok {
 		runtime = cluster
 	}
 	deployments := &deploymentService{
-		db: auth.db, auth: auth, provisioner: provisioner, runtime: runtime, githubApp: githubApp,
+		db: auth.db, auth: auth, provisioner: provisioner, runtime: runtime, activeContext: activeContext, githubApp: githubApp,
 	}
 	githubApp.deployments = deployments
 	deployments.registerRoutes(mux)
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
-	if provisioner != nil {
-		go func() {
-			if err := deployments.runWorkers(workerCtx, 2); err != nil {
-				log.Printf("deployment workers stopped: %v", err)
-			}
-		}()
-	}
+	go func() {
+		if err := deployments.runWorkers(workerCtx, 2); err != nil {
+			log.Printf("deployment workers stopped: %v", err)
+		}
+	}()
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(staticFiles))))
 
 	host := ""

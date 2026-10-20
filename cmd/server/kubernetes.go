@@ -93,6 +93,47 @@ func newKubernetesProvisioner() (*kubernetesProvisioner, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newKubernetesProvisionerWithRESTConfig(config)
+}
+
+func newKubernetesProvisionerForContext(contextName string) (*kubernetesProvisioner, error) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loaded, err := rules.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig: %w", err)
+	}
+	if loaded == nil || loaded.Contexts[contextName] == nil {
+		return nil, fmt.Errorf("kubeconfig context %q was not found", contextName)
+	}
+	config, err := clientcmd.NewNonInteractiveClientConfig(*loaded, contextName, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig context %q: %w", contextName, err)
+	}
+	return newKubernetesProvisionerWithRESTConfig(config)
+}
+
+func loadKubeconfigContexts() ([]string, string, error) {
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loaded, err := rules.Load()
+	if err != nil {
+		return nil, "", fmt.Errorf("load kubeconfig: %w", err)
+	}
+	if loaded == nil || len(loaded.Contexts) == 0 {
+		return nil, "", errKubernetesNotConfigured
+	}
+	contexts := make([]string, 0, len(loaded.Contexts))
+	for name := range loaded.Contexts {
+		contexts = append(contexts, name)
+	}
+	sort.Strings(contexts)
+	return contexts, loaded.CurrentContext, nil
+}
+
+func newKubernetesProvisionerWithRESTConfig(config *rest.Config) (*kubernetesProvisioner, error) {
+	config = rest.CopyConfig(config)
+	if config.Timeout == 0 {
+		config.Timeout = 15 * time.Second
+	}
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes client: %w", err)

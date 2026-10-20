@@ -90,6 +90,69 @@ async function loadClusterResources() {
   }
 }
 
+async function loadClusterContexts() {
+  const select = $("#cluster-context");
+  const help = $("#cluster-connect-help");
+  const error = $("#cluster-connect-error");
+  error.hidden = true;
+  try {
+    const result = await api("/api/v1/cluster/contexts");
+    select.replaceChildren();
+    if (!result.contexts.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = result.in_cluster ? "Using the in-cluster ServiceAccount" : "No kubeconfig contexts available";
+      option.disabled = true;
+      option.selected = true;
+      select.append(option);
+      help.textContent = result.in_cluster
+        ? "Crelan is using its Kubernetes ServiceAccount. To switch clusters, configure a kubeconfig for the server."
+        : "No contexts were found. Add a cluster to the kubeconfig used by this server, then refresh contexts.";
+      return;
+    }
+    result.contexts.forEach((contextName) => {
+      const option = document.createElement("option");
+      option.value = contextName;
+      option.textContent = contextName;
+      select.append(option);
+    });
+    if (result.active) select.value = result.active;
+    help.textContent = result.active
+      ? `Active context: ${result.active}. Choose another context to switch clusters.`
+      : "Choose the cluster context Crelan should use.";
+  } catch (cause) {
+    select.replaceChildren(new Option("Could not load kubeconfig contexts", ""));
+    error.textContent = cause.message;
+    error.hidden = false;
+  }
+}
+
+$("#cluster-connect-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#cluster-connect-error");
+  const button = $("#connect-cluster");
+  const contextName = $("#cluster-context").value;
+  if (!contextName) return;
+  error.hidden = true;
+  button.disabled = true;
+  button.textContent = "Connecting…";
+  try {
+    const result = await api("/api/v1/cluster/connect", {
+      method: "POST",
+      body: JSON.stringify({ context: contextName }),
+    });
+    $("#cluster-status").textContent = `Connected: ${result.context}`;
+    await loadClusterResources();
+    await loadClusterContexts();
+  } catch (cause) {
+    error.textContent = cause.message;
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Connect cluster";
+  }
+});
+
 async function loadDeployments() {
   const list = $("#deployment-list");
   $("#deployment-status").textContent = "Loading deployments…";
@@ -198,6 +261,7 @@ function navigate(hash) {
 document.querySelectorAll(".nav-link").forEach((link) => link.addEventListener("click", () => navigate(link.hash)));
 window.addEventListener("hashchange", () => navigate(window.location.hash));
 $("#refresh-cluster").addEventListener("click", loadClusterResources);
+$("#refresh-contexts").addEventListener("click", loadClusterContexts);
 $("#refresh-deployments").addEventListener("click", loadDeployments);
 $("#signout-button").addEventListener("click", async () => {
   await api("/auth/logout", { method: "POST" });
@@ -207,4 +271,5 @@ $("#signout-button").addEventListener("click", async () => {
 loadAccount().catch((cause) => {
   if (cause.message !== "Sign in required") window.location.assign("/login");
 });
+loadClusterContexts();
 loadClusterResources();
