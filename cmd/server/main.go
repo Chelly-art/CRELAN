@@ -55,12 +55,19 @@ func main() {
 	if _, current, contextErr := loadKubeconfigContexts(); contextErr == nil {
 		activeContext = current
 	}
+	providers := make(map[string]DeploymentProvisioner)
+	if provisioner != nil {
+		if activeContext == "" {
+			activeContext = "in-cluster"
+		}
+		providers[activeContext] = provisioner
+	}
 	var runtime deploymentRuntime
 	if cluster, ok := provisioner.(deploymentRuntime); ok {
 		runtime = cluster
 	}
 	deployments := &deploymentService{
-		db: auth.db, auth: auth, provisioner: provisioner, runtime: runtime, activeContext: activeContext, githubApp: githubApp,
+		db: auth.db, auth: auth, provisioner: provisioner, runtime: runtime, activeContext: activeContext, providers: providers, githubApp: githubApp,
 	}
 	githubApp.deployments = deployments
 	deployments.registerRoutes(mux)

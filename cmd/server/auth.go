@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS deployments (
 	name TEXT NOT NULL,
 	repository_url TEXT NOT NULL,
 	branch TEXT NOT NULL DEFAULT '',
+	cluster_context TEXT NOT NULL DEFAULT '',
 	dockerfile TEXT NOT NULL,
 	port INTEGER NOT NULL DEFAULT 8080,
 	cpu_millicores INTEGER NOT NULL DEFAULT 1000,
@@ -239,6 +240,7 @@ func ensureDeploymentColumns(db *sql.DB) error {
 		name, statement string
 	}{
 		{"port", `ALTER TABLE deployments ADD COLUMN port INTEGER NOT NULL DEFAULT 8080`},
+		{"cluster_context", `ALTER TABLE deployments ADD COLUMN cluster_context TEXT NOT NULL DEFAULT ''`},
 		{"status_message", `ALTER TABLE deployments ADD COLUMN status_message TEXT NOT NULL DEFAULT ''`},
 		{"latest_run_id", `ALTER TABLE deployments ADD COLUMN latest_run_id INTEGER`},
 		{"cpu_millicores", `ALTER TABLE deployments ADD COLUMN cpu_millicores INTEGER NOT NULL DEFAULT 1000`},

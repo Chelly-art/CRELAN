@@ -4,7 +4,7 @@ Crelan is a small Kubernetes demo to browse pods, ConfigMaps, and Secret metadat
 
 ## Connect a local cluster
 
-The dashboard's **Connect a cluster** control lists contexts from the server's `KUBECONFIG`; choose one and select **Connect cluster**. You can also upload a self-contained kubeconfig in the dashboard. Uploaded credentials stay in memory and are not written to disk. Exec plugins and credential file paths are not supported in uploaded kubeconfigs; include embedded certificate and token data. When Crelan runs inside Kubernetes, it uses the pod's ServiceAccount unless you connect another context. For Minikube:
+The dashboard's **Connect a cluster** control lists contexts from the server's `KUBECONFIG`; choose one and select **Connect cluster**. You can also upload a self-contained kubeconfig in the dashboard. Uploaded credentials stay in memory and are not written to disk. Exec plugins and credential file paths are not supported in uploaded kubeconfigs; include embedded certificate and token data. When Crelan runs inside Kubernetes, it uses the pod's ServiceAccount unless you connect another context. The deployment form has its own target-cluster selector, and each deployment remembers that target for viewing and deletion. For Minikube:
 
 ```sh
 minikube start

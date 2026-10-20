@@ -26,6 +26,7 @@ var (
 
 var errProvisionerNotConfigured = errors.New("deployment provider is not configured")
 var (
+	errDeploymentClusterConflict = errors.New("an app with this name already exists on another cluster")
 	errWorkspaceAppLimit         = errors.New("workspace has reached its app limit")
 	errWorkspaceConcurrencyLimit = errors.New("workspace has reached its active build limit")
 	errWorkspaceResourceLimit    = errors.New("requested CPU or memory exceeds this workspace's per-app limit")
@@ -34,6 +35,7 @@ var (
 type DeploymentRequest struct {
 	Name                      string `json:"name"`
 	RepositoryURL             string `json:"repository_url"`
+	ClusterContext            string `json:"cluster_context,omitempty"`
 	Branch                    string `json:"branch,omitempty"`
 	Dockerfile                string `json:"dockerfile,omitempty"`
 	Port                      int    `json:"port,omitempty"`
@@ -136,6 +138,7 @@ type deploymentService struct {
 	runtime       deploymentRuntime
 	providerMu    sync.RWMutex
 	activeContext string
+	providers     map[string]DeploymentProvisioner
 	githubApp     *githubAppService
 	workerMu      sync.Mutex
 	activeRuns    map[int64]context.CancelFunc
@@ -143,20 +146,21 @@ type deploymentService struct {
 }
 
 type deployment struct {
-	ID            int64     `json:"id"`
-	Name          string    `json:"name"`
-	RepositoryURL string    `json:"repository_url"`
-	Branch        string    `json:"branch,omitempty"`
-	Dockerfile    string    `json:"dockerfile"`
-	Port          int       `json:"port"`
-	CPUMillicores int       `json:"cpu_millicores"`
-	MemoryMB      int       `json:"memory_mb"`
-	Status        string    `json:"status"`
-	StatusMessage string    `json:"status_message,omitempty"`
-	URL           string    `json:"url,omitempty"`
-	LatestRunID   int64     `json:"latest_run_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	RepositoryURL  string    `json:"repository_url"`
+	ClusterContext string    `json:"cluster_context,omitempty"`
+	Branch         string    `json:"branch,omitempty"`
+	Dockerfile     string    `json:"dockerfile"`
+	Port           int       `json:"port"`
+	CPUMillicores  int       `json:"cpu_millicores"`
+	MemoryMB       int       `json:"memory_mb"`
+	Status         string    `json:"status"`
+	StatusMessage  string    `json:"status_message,omitempty"`
+	URL            string    `json:"url,omitempty"`
+	LatestRunID    int64     `json:"latest_run_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
@@ -185,6 +189,11 @@ func (s *deploymentService) registerRoutes(mux *http.ServeMux) {
 func (s *deploymentService) currentProvisioner() DeploymentProvisioner {
 	s.providerMu.RLock()
 	defer s.providerMu.RUnlock()
+	if s.providers != nil {
+		if provider := s.providers[s.activeContext]; provider != nil {
+			return provider
+		}
+	}
 	return s.provisioner
 }
 
@@ -197,9 +206,50 @@ func (s *deploymentService) currentRuntime() deploymentRuntime {
 func (s *deploymentService) setCluster(provisioner DeploymentProvisioner, contextName string) {
 	s.providerMu.Lock()
 	defer s.providerMu.Unlock()
+	if s.providers == nil {
+		s.providers = make(map[string]DeploymentProvisioner)
+	}
+	s.providers[contextName] = provisioner
 	s.provisioner = provisioner
 	s.runtime, _ = provisioner.(deploymentRuntime)
 	s.activeContext = contextName
+}
+
+func (s *deploymentService) provisionerForContext(contextName string) (DeploymentProvisioner, error) {
+	s.providerMu.RLock()
+	if contextName == "" {
+		contextName = s.activeContext
+	}
+	provider := s.providers[contextName]
+	if provider == nil && contextName == s.activeContext {
+		provider = s.provisioner
+	}
+	s.providerMu.RUnlock()
+	if provider != nil {
+		return provider, nil
+	}
+	if contextName == "" {
+		return nil, errKubernetesNotConfigured
+	}
+	created, err := newKubernetesProvisionerForContext(contextName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := created.client.Discovery().ServerVersion(); err != nil {
+		return nil, err
+	}
+	s.providerMu.Lock()
+	if s.providers == nil {
+		s.providers = make(map[string]DeploymentProvisioner)
+	}
+	selected := DeploymentProvisioner(created)
+	if existing := s.providers[contextName]; existing != nil {
+		selected = existing
+	} else {
+		s.providers[contextName] = created
+	}
+	s.providerMu.Unlock()
+	return selected, nil
 }
 
 func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +268,18 @@ func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Reque
 	}
 	s.providerMu.RLock()
 	active := s.activeContext
+	for name := range s.providers {
+		found := false
+		for _, contextName := range contexts {
+			if contextName == name {
+				found = true
+				break
+			}
+		}
+		if name != "" && !found {
+			contexts = append(contexts, name)
+		}
+	}
 	s.providerMu.RUnlock()
 	if active == "" {
 		active = current
@@ -500,8 +562,9 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ?`,
 		writeError(w, http.StatusConflict, "Domain verification TXT record does not match")
 		return
 	}
-	provisioner, ok := s.currentProvisioner().(customDomainProvisioner)
-	if !ok {
+	cluster, clusterErr := s.provisionerForContext(item.ClusterContext)
+	provisioner, ok := cluster.(customDomainProvisioner)
+	if clusterErr != nil || !ok {
 		writeError(w, http.StatusServiceUnavailable, "Custom domain routing is not supported by the deployment provider")
 		return
 	}
@@ -566,8 +629,9 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ?`,
 		return
 	}
 	if status == "active" {
-		provisioner, ok := s.currentProvisioner().(customDomainProvisioner)
-		if !ok {
+		cluster, clusterErr := s.provisionerForContext(item.ClusterContext)
+		provisioner, ok := cluster.(customDomainProvisioner)
+		if clusterErr != nil || !ok {
 			writeError(w, http.StatusServiceUnavailable, "Custom domain routing is not supported by the deployment provider")
 			return
 		}
@@ -626,6 +690,10 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ? AND status = 'running'`,
 	}
 	id, runID, now, err := s.queueDeployment(r.Context(), principal.workspaceID, request)
 	if err != nil {
+		if errors.Is(err, errDeploymentClusterConflict) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, errWorkspaceAppLimit) || errors.Is(err, errWorkspaceConcurrencyLimit) ||
 			errors.Is(err, errWorkspaceResourceLimit) {
 			writeError(w, http.StatusTooManyRequests, err.Error())
@@ -639,7 +707,7 @@ WHERE id = ? AND deployment_id = ? AND workspace_id = ? AND status = 'running'`,
 		log.Printf("audit deployment rollback: %v", err)
 	}
 	writeJSON(w, http.StatusAccepted, deployment{
-		ID: id, Name: request.Name, RepositoryURL: request.RepositoryURL, Branch: request.Branch,
+		ID: id, Name: request.Name, RepositoryURL: request.RepositoryURL, ClusterContext: request.ClusterContext, Branch: request.Branch,
 		Dockerfile: request.Dockerfile, Port: request.Port, CPUMillicores: request.CPUMillicores,
 		MemoryMB: request.MemoryMB, Status: "queued",
 		StatusMessage: "Rollback queued", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
@@ -655,8 +723,9 @@ func (s *deploymentService) configure(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "Request origin is not allowed")
 		return
 	}
-	configurator, ok := s.currentProvisioner().(deploymentConfigurator)
-	if !ok {
+	provisioner, err := s.provisionerForContext(item.ClusterContext)
+	configurator, ok := provisioner.(deploymentConfigurator)
+	if err != nil || !ok {
 		writeError(w, http.StatusServiceUnavailable, "Application configuration is not supported by the deployment provider")
 		return
 	}
@@ -900,6 +969,7 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Name = strings.TrimSpace(input.Name)
+	input.ClusterContext = strings.TrimSpace(input.ClusterContext)
 	input.Branch = strings.TrimSpace(input.Branch)
 	input.Dockerfile = strings.TrimSpace(input.Dockerfile)
 	if !deploymentNamePattern.MatchString(input.Name) {
@@ -938,9 +1008,14 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "App resources must be at least 100m CPU and 128 MB memory")
 		return
 	}
-	if s.currentProvisioner() == nil {
+	if input.ClusterContext == "" {
+		s.providerMu.RLock()
+		input.ClusterContext = s.activeContext
+		s.providerMu.RUnlock()
+	}
+	if _, err := s.provisionerForContext(input.ClusterContext); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"error": "Deployment provider is not configured",
+			"error": "Selected Kubernetes cluster is not connected or unavailable",
 			"code":  "provisioner_unavailable",
 		})
 		return
@@ -948,6 +1023,10 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 
 	id, runID, now, err := s.queueDeployment(r.Context(), principal.workspaceID, input)
 	if err != nil {
+		if errors.Is(err, errDeploymentClusterConflict) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, errWorkspaceAppLimit) || errors.Is(err, errWorkspaceConcurrencyLimit) ||
 			errors.Is(err, errWorkspaceResourceLimit) {
 			writeError(w, http.StatusTooManyRequests, err.Error())
@@ -958,7 +1037,7 @@ func (s *deploymentService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, deployment{
-		ID: id, Name: input.Name, RepositoryURL: input.RepositoryURL, Branch: input.Branch,
+		ID: id, Name: input.Name, RepositoryURL: input.RepositoryURL, ClusterContext: input.ClusterContext, Branch: input.Branch,
 		Dockerfile: input.Dockerfile, Port: input.Port, Status: "queued",
 		CPUMillicores: input.CPUMillicores, MemoryMB: input.MemoryMB,
 		StatusMessage: "Waiting for a build worker", LatestRunID: runID, CreatedAt: now, UpdatedAt: now,
@@ -999,10 +1078,11 @@ FROM workspace_limits WHERE workspace_id = ?`, workspaceID).
 		return 0, 0, time.Time{}, fmt.Errorf("encode deployment request: %w", err)
 	}
 	var existingID int64
+	var existingContext string
 	err = tx.QueryRowContext(ctx, `
-SELECT id FROM deployments
+SELECT id, cluster_context FROM deployments
 WHERE workspace_id = ? AND name = ? AND status != 'deleted'`,
-		workspaceID, input.Name).Scan(&existingID)
+		workspaceID, input.Name).Scan(&existingID, &existingContext)
 	if errors.Is(err, sql.ErrNoRows) {
 		var appsCount int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM deployments WHERE workspace_id = ? AND status != 'deleted'`, workspaceID).Scan(&appsCount); err != nil {
@@ -1013,6 +1093,8 @@ WHERE workspace_id = ? AND name = ? AND status != 'deleted'`,
 		}
 	} else if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("check existing app: %w", err)
+	} else if existingContext != input.ClusterContext {
+		return 0, 0, time.Time{}, errDeploymentClusterConflict
 	}
 	var activeBuilds int
 	if err := tx.QueryRowContext(ctx, `
@@ -1027,11 +1109,12 @@ WHERE workspace_id = ? AND status IN ('building', 'deploying')`,
 
 	var id int64
 	err = tx.QueryRowContext(ctx, `
-INSERT INTO deployments (workspace_id, name, repository_url, branch, dockerfile, port, cpu_millicores, memory_mb, status, status_message, url, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
+INSERT INTO deployments (workspace_id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, url, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 'Waiting for a build worker', NULL, ?, ?)
 ON CONFLICT(workspace_id, name) DO UPDATE SET
 	repository_url = excluded.repository_url,
 	branch = excluded.branch,
+	cluster_context = excluded.cluster_context,
 	dockerfile = excluded.dockerfile,
 	port = excluded.port,
 	cpu_millicores = excluded.cpu_millicores,
@@ -1040,7 +1123,7 @@ ON CONFLICT(workspace_id, name) DO UPDATE SET
 	status_message = 'Waiting for a build worker',
 	updated_at = excluded.updated_at
 RETURNING id`,
-		workspaceID, input.Name, input.RepositoryURL, input.Branch,
+		workspaceID, input.Name, input.RepositoryURL, input.Branch, input.ClusterContext,
 		input.Dockerfile, input.Port, input.CPUMillicores, input.MemoryMB, nowText, nowText).Scan(&id)
 	if err != nil {
 		return 0, 0, time.Time{}, fmt.Errorf("persist deployment: %w", err)
@@ -1196,11 +1279,15 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 			return s.finishRun(runID, deploymentID, "failed", "Could not access the connected GitHub installation")
 		}
 	}
+	provisioner, err := s.provisionerForContext(request.ClusterContext)
+	if err != nil {
+		log.Printf("load target cluster %q for deployment run %d: %v", request.ClusterContext, runID, err)
+		return s.finishRun(runID, deploymentID, "failed", "The selected cluster is no longer available")
+	}
 	progress := func(status string) error {
 		return s.updateRunProgress(runCtx, runID, deploymentID, status)
 	}
 	var provisioned ProvisionedDeployment
-	provisioner := s.currentProvisioner()
 	if provider, ok := provisioner.(deploymentProgressProvisioner); ok {
 		provisioned, err = provider.DeployWithProgress(runCtx, workspaceID, request, progress)
 	} else {
@@ -1250,25 +1337,29 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 }
 
 func (s *deploymentService) reconcileDeploying(ctx context.Context) error {
-	readiness, ok := s.currentProvisioner().(deploymentReadiness)
-	if !ok {
-		return nil
-	}
 	var runID, deploymentID, workspaceID int64
-	var name, lastChecked string
+	var name, lastChecked, clusterContext string
 	err := s.db.QueryRowContext(ctx, `
-SELECT r.id, d.id, r.workspace_id, d.name, r.updated_at
+SELECT r.id, d.id, r.workspace_id, d.name, d.cluster_context, r.updated_at
 FROM deployment_runs r
 JOIN deployments d ON d.id = r.deployment_id AND d.latest_run_id = r.id
 WHERE r.status = 'deploying' AND r.updated_at < ?
 ORDER BY r.id
 LIMIT 1`, time.Now().UTC().Add(-5*time.Second).Format(time.RFC3339Nano)).
-		Scan(&runID, &deploymentID, &workspaceID, &name, &lastChecked)
+		Scan(&runID, &deploymentID, &workspaceID, &name, &clusterContext, &lastChecked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("find deploying application: %w", err)
+	}
+	provider, err := s.provisionerForContext(clusterContext)
+	if err != nil {
+		return nil
+	}
+	readiness, ok := provider.(deploymentReadiness)
+	if !ok {
+		return nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	claimed, err := s.db.ExecContext(ctx, `UPDATE deployment_runs SET updated_at = ? WHERE id = ? AND status = 'deploying' AND updated_at = ?`, now, runID, lastChecked)
@@ -1293,24 +1384,28 @@ LIMIT 1`, time.Now().UTC().Add(-5*time.Second).Format(time.RFC3339Nano)).
 }
 
 func (s *deploymentService) reconcileRunning(ctx context.Context) error {
-	health, ok := s.currentProvisioner().(deploymentHealth)
-	if !ok {
-		return nil
-	}
 	var deploymentID, workspaceID int64
-	var name, previousUpdatedAt string
+	var name, previousUpdatedAt, clusterContext string
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, workspace_id, name, updated_at
+SELECT id, workspace_id, name, cluster_context, updated_at
 FROM deployments
 WHERE status IN ('running', 'degraded') AND updated_at < ?
 ORDER BY updated_at
 LIMIT 1`, time.Now().UTC().Add(-20*time.Second).Format(time.RFC3339Nano)).
-		Scan(&deploymentID, &workspaceID, &name, &previousUpdatedAt)
+		Scan(&deploymentID, &workspaceID, &name, &clusterContext, &previousUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("find running application: %w", err)
+	}
+	provider, err := s.provisionerForContext(clusterContext)
+	if err != nil {
+		return nil
+	}
+	health, ok := provider.(deploymentHealth)
+	if !ok {
+		return nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	claimed, err := s.db.ExecContext(ctx, `
@@ -1414,7 +1509,7 @@ func (s *deploymentService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.QueryContext(r.Context(), `
-SELECT id, name, repository_url, branch, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE workspace_id = ? ORDER BY created_at DESC, id DESC`, principal.workspaceID)
 	if err != nil {
 		log.Printf("list deployments: %v", err)
@@ -1450,7 +1545,7 @@ func scanDeployment(row deploymentScanner) (deployment, error) {
 	var appURL sql.NullString
 	var statusMessage sql.NullString
 	var runID sql.NullInt64
-	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Branch,
+	err := row.Scan(&item.ID, &item.Name, &item.RepositoryURL, &item.Branch, &item.ClusterContext,
 		&item.Dockerfile, &item.Port, &item.CPUMillicores, &item.MemoryMB, &item.Status,
 		&statusMessage, &runID, &appURL, &createdAt, &updatedAt)
 	if err != nil {
@@ -1542,8 +1637,9 @@ func (s *deploymentService) resources(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	runtime := s.currentRuntime()
-	if runtime == nil {
+	provider, providerErr := s.provisionerForContext(item.ClusterContext)
+	runtime, _ := provider.(deploymentRuntime)
+	if providerErr != nil || runtime == nil {
 		writeError(w, http.StatusServiceUnavailable, "Runtime resource access is not configured")
 		return
 	}
@@ -1561,8 +1657,9 @@ func (s *deploymentService) logs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	runtime := s.currentRuntime()
-	if runtime == nil {
+	provider, providerErr := s.provisionerForContext(item.ClusterContext)
+	runtime, _ := provider.(deploymentRuntime)
+	if providerErr != nil || runtime == nil {
 		writeError(w, http.StatusServiceUnavailable, "Application log access is not configured")
 		return
 	}
@@ -1609,7 +1706,7 @@ func (s *deploymentService) authorizedDeployment(w http.ResponseWriter, r *http.
 
 func (s *deploymentService) loadDeployment(ctx context.Context, id string, workspaceID int64) (deployment, error) {
 	return scanDeployment(s.db.QueryRowContext(ctx, `
-SELECT id, name, repository_url, branch, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
+SELECT id, name, repository_url, branch, cluster_context, dockerfile, port, cpu_millicores, memory_mb, status, status_message, latest_run_id, url, created_at, updated_at
 FROM deployments WHERE id = ? AND workspace_id = ?`, id, workspaceID))
 }
 
@@ -1661,9 +1758,9 @@ func (s *deploymentService) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	var name, status string
+	var name, status, clusterContext string
 	err = s.db.QueryRowContext(r.Context(),
-		`SELECT name, status FROM deployments WHERE id = ? AND workspace_id = ?`, id, principal.workspaceID).Scan(&name, &status)
+		`SELECT name, status, cluster_context FROM deployments WHERE id = ? AND workspace_id = ?`, id, principal.workspaceID).Scan(&name, &status, &clusterContext)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Deployment not found")
 		return
@@ -1677,10 +1774,10 @@ func (s *deploymentService) delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Wait for the active deployment to finish before deleting the application")
 		return
 	}
-	provisioner := s.currentProvisioner()
-	if provisioner == nil {
+	provisioner, err := s.provisionerForContext(clusterContext)
+	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"error": "Deployment provider is not configured",
+			"error": "The deployment's Kubernetes cluster is not connected",
 			"code":  "provisioner_unavailable",
 		})
 		return

@@ -65,6 +65,8 @@
             <section class="panel token-builder">
               <div class="panel-heading"><div><h2>Deploy a repository</h2><p>Enter a public GitHub repository URL.</p></div></div>
               <form id="deployment-form">
+                <label class="form-label" for="deployment-cluster">Deploy to cluster</label>
+                <select class="text-input deployment-input" id="deployment-cluster" name="cluster_context" required><option value="">Load cluster choices first</option></select>
                 <label class="form-label" for="app-name">Deployment name</label>
                 <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
                 <label class="form-label" for="app-repository">Public GitHub repository</label>

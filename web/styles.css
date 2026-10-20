@@ -211,6 +211,7 @@ footer span { color: #495464; }
 .token-row-details { display: grid; gap: 4px; }
 .token-row-details strong { font-size: 10px; font-weight: 600; }
 .token-row-details code { color: #8491a2; font: 9px monospace; }
+.deployment-cluster-name { color: #929cac; font-size: 8px; }
 .token-scope-list { color: #98a4b4; font: 9px monospace; overflow-wrap: anywhere; }
 .token-row-state { border: 1px solid #39414d; border-radius: 20px; padding: 4px 7px; font-size: 8px; white-space: nowrap; }
 .token-row-state.active { border-color: #315545; color: #80d6ad; background: #20382f; }
@@ -405,6 +406,7 @@ footer span { color: #aab2bd; }
 .token-row { border-color: #e6e9ee; }
 .token-row-details strong { color: #344054; }
 .token-row-details code, .token-scope-list { color: #667085; }
+.deployment-cluster-name { color: #667085; }
 .token-row-state { border-color: #dfe4ea; color: #475467; background: #f8f9fb; }
 .token-row-state.active { border-color: #b9e2c8; color: #167044; background: #e8f6ee; }
 .revoke-token-button { border-color: #ebcaca; color: #a12d2d; background: #fff5f4; }

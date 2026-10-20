@@ -97,6 +97,19 @@ async function loadClusterContexts() {
   error.hidden = true;
   try {
     const result = await api("/api/v1/cluster/contexts");
+    const deploymentSelect = $("#deployment-cluster");
+    deploymentSelect.replaceChildren();
+    if (result.contexts.length) {
+      result.contexts.forEach((contextName) => {
+        const targetOption = document.createElement("option");
+        targetOption.value = contextName;
+        targetOption.textContent = contextName;
+        deploymentSelect.append(targetOption);
+      });
+      if (result.active) deploymentSelect.value = result.active;
+    } else {
+      deploymentSelect.append(new Option("No clusters connected", ""));
+    }
     select.replaceChildren();
     if (!result.contexts.length) {
       const option = document.createElement("option");
@@ -183,7 +196,10 @@ async function loadDeployments() {
       name.textContent = item.name;
       const repo = document.createElement("code");
       repo.textContent = item.repository_url;
-      details.append(name, repo);
+      const cluster = document.createElement("small");
+      cluster.className = "deployment-cluster-name";
+      cluster.textContent = `Cluster: ${item.cluster_context || "unknown"}`;
+      details.append(name, repo, cluster);
       const status = document.createElement("span");
       status.className = `token-row-state ${item.status === "ready" ? "active" : ""}`;
       status.textContent = item.status;
