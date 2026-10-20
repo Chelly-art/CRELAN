@@ -1,0 +1,68 @@
+name: Deploy to Crelan
+description: Deploy a GitHub repository to a Crelan workspace.
+inputs:
+  api-url:
+    description: Base URL of the Crelan API.
+    required: true
+  token:
+    description: Workspace token with deployments:write and deployments:read scopes.
+    required: true
+  app-name:
+    description: Lowercase app name to create or redeploy.
+    required: true
+  repository-url:
+    description: GitHub repository URL (private repositories require a connected GitHub App).
+    required: false
+  branch:
+    description: Repository branch (defaults to the triggering ref).
+    required: false
+  dockerfile:
+    description: Dockerfile path in the repository.
+    required: false
+    default: Dockerfile
+  port:
+    description: HTTP port exposed by the application.
+    required: false
+    default: "8080"
+  cpu-millicores:
+    description: App CPU limit in millicores (workspace cap applies).
+    required: false
+    default: "1000"
+  memory-mib:
+    description: App memory limit in MiB (workspace cap applies).
+    required: false
+    default: "512"
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.26.9"
+    - name: Deploy with Crelan
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      env:
+        CRELAN_API_URL: ${{ inputs.api-url }}
+        CRELAN_TOKEN: ${{ inputs.token }}
+        CRELAN_APP_NAME: ${{ inputs.app-name }}
+        CRELAN_REPOSITORY_URL: ${{ inputs.repository-url }}
+        CRELAN_BRANCH: ${{ inputs.branch }}
+        CRELAN_DOCKERFILE: ${{ inputs.dockerfile }}
+        CRELAN_PORT: ${{ inputs.port }}
+        CRELAN_CPU_MILLICORES: ${{ inputs.cpu-millicores }}
+        CRELAN_MEMORY_MIB: ${{ inputs.memory-mib }}
+      run: |
+        set -euo pipefail
+        repository="${CRELAN_REPOSITORY_URL:-${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}}"
+        branch="${CRELAN_BRANCH:-${GITHUB_REF_NAME}}"
+        go run ./cmd/crelan deploy \
+          --name "$CRELAN_APP_NAME" \
+          --repo "$repository" \
+          --branch "$branch" \
+          --dockerfile "$CRELAN_DOCKERFILE" \
+          --port "$CRELAN_PORT" \
+          --cpu-millicores "$CRELAN_CPU_MILLICORES" \
+          --memory-mib "$CRELAN_MEMORY_MIB" \
+          --wait \
+          --wait-timeout 60m

@@ -43,3 +43,23 @@ Repository deployments also need an image registry and a `kubernetes.io/dockerco
 - `CRELAN_KPACK_BUILDER_IMAGE`: kpack builder image for repositories without a Dockerfile.
 
 Repositories with a Dockerfile use rootless BuildKit Jobs. Repositories without one use kpack/Buildpacks and need the `kpack.io/v1alpha2` Build CRD and a compatible builder. Install an Ingress controller and set `CRELAN_APP_BASE_DOMAIN` if deployed apps need public URLs.
+
+## CLI and GitHub Actions
+
+The `crelan` CLI automates deployment workflows against the Crelan API. Build it with:
+
+```sh
+go build -o crelan ./cmd/crelan
+```
+
+Set `CRELAN_API_URL` and `CRELAN_TOKEN` to the Crelan URL and a workspace API token with the required scopes, then use commands such as:
+
+```sh
+./crelan deploy --name storefront --repo https://github.com/example/storefront --branch main --wait
+./crelan deployments
+./crelan status 1
+./crelan logs 1
+./crelan delete 1
+```
+
+The composite GitHub Action at `.github/actions/deploy` runs the CLI in a workflow. Configure `CRELAN_API_URL` as a repository variable and `CRELAN_TOKEN` as a repository secret, then adapt [examples/crelan-deploy.yml](examples/crelan-deploy.yml) to your repository and action release. Private source repositories require a connected GitHub App.

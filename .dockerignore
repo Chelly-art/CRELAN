@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+README.md
+crelan
+crelan.db
+crelan.db-shm
+crelan.db-wal
+*.db
+*.db-shm
+*.db-wal
+**/*_test.go
