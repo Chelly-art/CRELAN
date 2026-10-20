@@ -28,12 +28,12 @@ import {
 
 # --- EKS Add-ons ---
 import {
-  to = aws_eks_addon.vpc_cni
+  to = module.eks.aws_eks_addon.vpc_cni
   id = "dev-cluster:vpc-cni"
 }
 
 import {
-  to = aws_eks_addon.kube_proxy
+  to = module.eks.aws_eks_addon.kube_proxy
   id = "dev-cluster:kube-proxy"
 }
 
