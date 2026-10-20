@@ -14,10 +14,27 @@ import {
   id = "dev-cluster-node-group-role"
 }
 
+# --- IAM OIDC Provider ---
+import {
+  to = module.iam.aws_iam_openid_connect_provider.eks
+  id = "arn:aws:iam::049637491884:oidc-provider/oidc.eks.eu-west-2.amazonaws.com/id/EFA40968B933AA786E7DEB5C0B897F97"
+}
+
 # --- EKS Cluster ---
 import {
   to = module.eks.aws_eks_cluster.main
   id = "dev-cluster"
+}
+
+# --- EKS Add-ons ---
+import {
+  to = aws_eks_addon.vpc_cni
+  id = "dev-cluster:vpc-cni"
+}
+
+import {
+  to = aws_eks_addon.kube_proxy
+  id = "dev-cluster:kube-proxy"
 }
 
 # --- VPC & Networking ---
