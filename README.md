@@ -4,7 +4,16 @@ Crelan lets users browse Pods, ConfigMaps, and Secret metadata, deploy apps from
 
 ## Kubernetes access
 
-When Crelan runs outside Kubernetes, it lists contexts from the server process's `KUBECONFIG`. Users choose from those contexts in the dashboard; kubeconfig credentials are configured by the operator and cannot be uploaded through the UI. When Crelan runs inside Kubernetes, it uses its pod's ServiceAccount. Each deployment remembers its selected cluster for status checks and deletion.
+Kubeconfig credentials are configured by the operator and cannot be uploaded through the UI. When Crelan runs outside Kubernetes, it lists contexts from `CRELAN_KUBECONFIG_DATA` (a kubeconfig YAML secret) or, if unset, from the server process's `KUBECONFIG` file. When Crelan runs inside Kubernetes without either setting, it uses its pod's ServiceAccount. Users choose an available context in the dashboard, and each deployment remembers its selected cluster for status checks and deletion.
+
+For a hosted Crelan instance, add `CRELAN_KUBECONFIG_DATA` as a private, multiline environment variable in the hosting provider's runtime settings, using a kubeconfig that contains both cluster contexts. Restart/redeploy Crelan after changing it. Do not put the kubeconfig in the repository or a public build argument. Lens normally uses the same kubeconfig as `kubectl`. Check the context names and create a flattened local copy (which embeds referenced certificate files) without printing credentials into the terminal:
+
+```sh
+kubectl config get-contexts
+kubectl config view --raw --flatten > /tmp/crelan-kubeconfig.yaml
+```
+
+Then copy `/tmp/crelan-kubeconfig.yaml` directly into the hosting provider's secret environment variable. The kubeconfig's API servers must be reachable from the hosted Crelan service. Contexts that authenticate through a local `exec` plugin (for example, cloud CLI login helpers) will not work in the standard Crelan container unless that plugin and its credentials are also configured there; use credentials supported directly by kubeconfig or extend the server image for that provider.
 
 Crelan expects the workspace namespace `crelan-ws-1` to exist in each cluster and to carry the tenant label used by the deployment policy. Create it in each cluster before connecting Crelan:
 

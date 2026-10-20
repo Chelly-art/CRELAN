@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 const (
@@ -97,8 +98,7 @@ func newKubernetesProvisioner() (*kubernetesProvisioner, error) {
 }
 
 func newKubernetesProvisionerForContext(contextName string) (*kubernetesProvisioner, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	loaded, err := rules.Load()
+	loaded, err := loadConfiguredKubeconfig()
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}
@@ -113,8 +113,7 @@ func newKubernetesProvisionerForContext(contextName string) (*kubernetesProvisio
 }
 
 func loadKubeconfigContexts() ([]string, string, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	loaded, err := rules.Load()
+	loaded, err := loadConfiguredKubeconfig()
 	if err != nil {
 		return nil, "", fmt.Errorf("load kubeconfig: %w", err)
 	}
@@ -156,6 +155,21 @@ func newKubernetesProvisionerWithRESTConfig(config *rest.Config) (*kubernetesPro
 }
 
 func loadKubernetesRESTConfig() (*rest.Config, error) {
+	if strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")) != "" {
+		loaded, err := loadConfiguredKubeconfig()
+		if err != nil {
+			return nil, fmt.Errorf("load CRELAN_KUBECONFIG_DATA: %w", err)
+		}
+		if loaded.CurrentContext == "" {
+			return nil, errors.New("CRELAN_KUBECONFIG_DATA must set a current-context")
+		}
+		config, err := clientcmd.NewNonInteractiveClientConfig(*loaded, loaded.CurrentContext, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("load kubeconfig context %q: %w", loaded.CurrentContext, err)
+		}
+		return config, nil
+	}
+
 	if kubeconfig := strings.TrimSpace(getenv("KUBECONFIG")); kubeconfig != "" {
 		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
@@ -182,6 +196,24 @@ func loadKubernetesRESTConfig() (*rest.Config, error) {
 		return nil, fmt.Errorf("load default kubeconfig: %w", err)
 	}
 	return config, nil
+}
+
+// loadConfiguredKubeconfig loads operator-provided kubeconfig YAML when set,
+// otherwise it uses client-go's normal KUBECONFIG/default-path resolution.
+func loadConfiguredKubeconfig() (*clientcmdapi.Config, error) {
+	if data := strings.TrimSpace(getenv("CRELAN_KUBECONFIG_DATA")); data != "" {
+		loaded, err := clientcmd.Load([]byte(data))
+		if err != nil {
+			return nil, fmt.Errorf("parse CRELAN_KUBECONFIG_DATA: %w", err)
+		}
+		return loaded, nil
+	}
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loaded, err := rules.Load()
+	if err != nil {
+		return nil, err
+	}
+	return loaded, nil
 }
 
 func loadKubernetesProvisionerConfig() (kubernetesProvisionerConfig, error) {
