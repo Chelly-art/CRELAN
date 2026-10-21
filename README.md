@@ -14,7 +14,7 @@ openssl rand -base64 32
 
 Store the generated key separately from the database and keep it stable; Crelan uses it to encrypt the kubeconfig before storing it in SQLite and to restore the connection after restart. Do not put either value in the repository or a public build argument. Keep database backups and the encryption key under separate access controls. The cluster API must be reachable from Crelan. Kubeconfigs that reference local certificate files or use local `exec` authentication plugins may not work in the hosted service.
 
-For local development, Crelan can also use `CRELAN_KUBECONFIG_DATA_B64`, `CRELAN_KUBECONFIG_DATA`, the process's `KUBECONFIG`, or in-cluster ServiceAccount credentials. Lens normally uses the same kubeconfig as `kubectl`; flatten it to embed referenced certificate files before pasting it into the admin page.
+For local development, Crelan can also use `CRELAN_KUBECONFIG_DATA_B64`, `CRELAN_KUBECONFIG_DATA`, the process's `KUBECONFIG`, or in-cluster ServiceAccount credentials. Tools normally use the same kubeconfig as `kubectl`; flatten it to embed referenced certificate files before pasting it into the admin page.
 
 Each Crelan workspace maps to a Capsule Tenant and a workspace namespace named `crelan-ws-<workspace-id>`. If that namespace does not exist, Crelan creates the Capsule Tenant and namespace on first provisioning. Configure `CRELAN_CAPSULE_TENANT_OWNER` with the Capsule user name that should own the tenant. The cluster must have Capsule's `capsule.clastix.io/v1beta2` Tenant CRD installed, and Crelan's identity needs permission to create/get Tenants and Namespaces. Existing namespaces must carry the matching `capsule.clastix.io/tenant=crelan-ws-<workspace-id>` label.
 

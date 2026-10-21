@@ -288,7 +288,7 @@ type eventSummary struct {
 }
 
 // -------------------------------------------------------------
-// Advanced Lens Models: AI Diagnosis, Security, Efficiency
+// Platform Intelligence Models: AI Diagnosis, Security, Efficiency
 // -------------------------------------------------------------
 
 type aiDiagnosticReport struct {

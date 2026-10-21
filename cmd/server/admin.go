@@ -72,12 +72,12 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/clusters/connect", s.connectCluster)
 	mux.HandleFunc("POST /api/v1/admin/control-plane-backup", s.downloadControlPlaneBackup)
 
-	// Lens Core & Cluster
+	// Cluster & Node Management
 	mux.HandleFunc("GET /api/v1/admin/cluster/info", s.getClusterInfo)
 	mux.HandleFunc("GET /api/v1/admin/nodes", s.getNodes)
 	mux.HandleFunc("GET /api/v1/admin/nodes/{name}", s.getNodeDetail)
 
-	// Lens Workloads
+	// Workload Management
 	mux.HandleFunc("GET /api/v1/admin/pods", s.getPods)
 	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}", s.getPodDetail)
 	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}/logs", s.getPodLogs)
@@ -95,12 +95,12 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/jobs", s.getJobs)
 	mux.HandleFunc("GET /api/v1/admin/cronjobs", s.getCronJobs)
 
-	// Lens Networking
+	// Networking
 	mux.HandleFunc("GET /api/v1/admin/services", s.getServices)
 	mux.HandleFunc("GET /api/v1/admin/ingresses", s.getIngresses)
 	mux.HandleFunc("GET /api/v1/admin/networkpolicies", s.getNetworkPolicies)
 
-	// Lens Config & Storage
+	// Configuration & Storage
 	mux.HandleFunc("GET /api/v1/admin/configmaps", s.getConfigMaps)
 	mux.HandleFunc("GET /api/v1/admin/configmaps/{namespace}/{name}", s.getConfigMapDetail)
 	mux.HandleFunc("GET /api/v1/admin/secrets", s.getSecrets)
@@ -110,14 +110,14 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/pvs", s.getPVs)
 	mux.HandleFunc("GET /api/v1/admin/storageclasses", s.getStorageClasses)
 
-	// Lens Namespaces & Events & YAML
+	// Namespaces, Events & YAML
 	mux.HandleFunc("GET /api/v1/admin/namespaces", s.getNamespaces)
 	mux.HandleFunc("POST /api/v1/admin/namespaces", s.createNamespace)
 	mux.HandleFunc("DELETE /api/v1/admin/namespaces/{name}", s.deleteNamespace)
 	mux.HandleFunc("GET /api/v1/admin/events", s.getEvents)
 	mux.HandleFunc("GET /api/v1/admin/resource/yaml", s.getResourceYAML)
 
-	// Advanced Super-Lens Endpoints
+	// Platform Intelligence & Diagnostics
 	mux.HandleFunc("GET /api/v1/admin/workspaces/mapping", s.getWorkspaceMappings)
 	mux.HandleFunc("GET /api/v1/admin/security/audit", s.getSecurityAudit)
 	mux.HandleFunc("GET /api/v1/admin/databases/topology", s.getDatabaseTopology)
@@ -422,7 +422,7 @@ func loadPlatformOverview(ctx context.Context, db *sql.DB) (platformOverview, er
 }
 
 // -------------------------------------------------------------
-// Lens API Handlers
+// Cluster & Resource API Handlers
 // -------------------------------------------------------------
 
 func (s *adminService) getClusterInfo(w http.ResponseWriter, r *http.Request) {
@@ -1238,7 +1238,7 @@ func (s *adminService) getResourceYAML(w http.ResponseWriter, r *http.Request) {
 }
 
 // -------------------------------------------------------------
-// Advanced Super-Lens Handlers
+// Platform Intelligence & Diagnostics Handlers
 // -------------------------------------------------------------
 
 func (s *adminService) getWorkspaceMappings(w http.ResponseWriter, r *http.Request) {

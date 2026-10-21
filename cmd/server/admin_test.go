@@ -13,31 +13,31 @@ import (
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
-func TestAdminHTMLContainsLensLayout(t *testing.T) {
+func TestAdminHTMLContainsLayout(t *testing.T) {
 	page, err := assets.Web.ReadFile("web/admin.html")
 	if err != nil {
 		t.Fatalf("failed to read admin.html from embedded assets: %v", err)
 	}
 	content := string(page)
 	expectedMarkers := []string{
-		"lens-app",
-		"lens-rail",
-		"lens-sidebar",
-		"lens-topbar",
-		"lens-namespace-select",
-		"lens-search-input",
-		"lens-inspector-drawer",
-		"lens-terminal-drawer",
-		"lens-ai-modal",
+		"admin-app",
+		"admin-rail",
+		"admin-sidebar",
+		"admin-topbar",
+		"admin-namespace-select",
+		"admin-search-input",
+		"admin-inspector-drawer",
+		"admin-terminal-drawer",
+		"admin-ai-modal",
 	}
 	for _, marker := range expectedMarkers {
 		if !strings.Contains(content, marker) {
-			t.Errorf("admin.html missing expected Lens marker: %q", marker)
+			t.Errorf("admin.html missing expected admin marker: %q", marker)
 		}
 	}
 }
 
-func TestLensDataFetchers(t *testing.T) {
+func TestAdminK8sDataFetchers(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-1",
