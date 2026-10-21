@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestImageVulnerabilityScanning(t *testing.T) {
@@ -116,6 +118,9 @@ func TestEnterpriseEndpointsAuth(t *testing.T) {
 		{"GET", "/api/v1/admin/crds"},
 		{"POST", "/api/v1/admin/security/can-i"},
 		{"GET", "/api/v1/admin/clusters/fleet"},
+		{"POST", "/api/v1/admin/clusters/switch-context"},
+		{"GET", "/api/v1/admin/clusters/customizations"},
+		{"POST", "/api/v1/admin/clusters/customizations"},
 	}
 
 	for _, ep := range endpoints {
@@ -132,9 +137,112 @@ func TestEnterpriseEndpointsAuth(t *testing.T) {
 			admin.checkCanI(rec, req)
 		case "/api/v1/admin/clusters/fleet":
 			admin.getClusterFleet(rec, req)
+		case "/api/v1/admin/clusters/switch-context":
+			admin.switchClusterContext(rec, req)
+		case "/api/v1/admin/clusters/customizations":
+			if ep.method == "GET" {
+				admin.getClusterCustomizations(rec, req)
+			} else {
+				admin.saveClusterCustomization(rec, req)
+			}
 		}
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s got status %d, want %d", ep.method, ep.path, rec.Code, http.StatusUnauthorized)
 		}
+	}
+}
+
+func TestClusterFleetAndCustomizations(t *testing.T) {
+	t.Setenv("CRELAN_DEMO_LOGIN", "true")
+	auth, err := newAuthService()
+	if err != nil {
+		t.Fatalf("newAuthService: %v", err)
+	}
+	defer auth.db.Close()
+	auth.demoLoginEnabled = true
+
+	// Seed admin user and session
+	sessionToken := "admin-test-token"
+	now := time.Now().UTC()
+	if _, err := auth.db.Exec(`INSERT INTO users (id, name, email, created_at) VALUES (1, 'Admin', 'admin@crelan.local', ?)`, now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert admin user: %v", err)
+	}
+	if _, err := auth.db.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, 1, ?, ?)`,
+		hashToken(sessionToken), now.Add(time.Hour).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+
+	admin := newAdminService(auth)
+
+	targetContext := "in-cluster"
+	if contexts, _, err := loadKubeconfigContexts(); err == nil && len(contexts) > 0 {
+		targetContext = contexts[0]
+	}
+
+	// 1. Save customization
+	customPayload := fmt.Sprintf(`{"context_name": %q, "color": "#ef4444", "alias": "Production US-East", "environment": "production"}`, targetContext)
+	req := httptest.NewRequest("POST", "/api/v1/admin/clusters/customizations", bytes.NewBufferString(customPayload))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	rec := httptest.NewRecorder()
+	admin.saveClusterCustomization(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save customization status %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. Fetch customizations
+	reqGet := httptest.NewRequest("GET", "/api/v1/admin/clusters/customizations", nil)
+	reqGet.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	recGet := httptest.NewRecorder()
+	admin.getClusterCustomizations(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("get customizations status %d: %s", recGet.Code, recGet.Body.String())
+	}
+
+	var customMap map[string]clusterCustomization
+	if err := json.Unmarshal(recGet.Body.Bytes(), &customMap); err != nil {
+		t.Fatalf("unmarshal customizations: %v", err)
+	}
+	if customMap[targetContext].Color != "#ef4444" {
+		t.Errorf("expected color #ef4444, got %s", customMap[targetContext].Color)
+	}
+	if customMap[targetContext].Alias != "Production US-East" {
+		t.Errorf("expected alias 'Production US-East', got %s", customMap[targetContext].Alias)
+	}
+
+	// 3. Fetch cluster fleet and verify customization merged
+	reqFleet := httptest.NewRequest("GET", "/api/v1/admin/clusters/fleet", nil)
+	reqFleet.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	recFleet := httptest.NewRecorder()
+	admin.getClusterFleet(recFleet, reqFleet)
+
+	if recFleet.Code != http.StatusOK {
+		t.Fatalf("get fleet status %d: %s", recFleet.Code, recFleet.Body.String())
+	}
+
+	var fleet []clusterFleetMember
+	if err := json.Unmarshal(recFleet.Body.Bytes(), &fleet); err != nil {
+		t.Fatalf("unmarshal fleet: %v", err)
+	}
+	if len(fleet) == 0 {
+		t.Fatalf("expected at least 1 fleet member, got 0")
+	}
+
+	found := false
+	for _, m := range fleet {
+		if m.Name == targetContext {
+			found = true
+			if m.Color != "#ef4444" {
+				t.Errorf("expected fleet member color #ef4444, got %s", m.Color)
+			}
+			if m.Alias != "Production US-East" {
+				t.Errorf("expected fleet member alias 'Production US-East', got %s", m.Alias)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected %s in fleet, but not found", targetContext)
 	}
 }
