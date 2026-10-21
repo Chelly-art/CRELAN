@@ -2297,3 +2297,368 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   margin-right: 6px;
   margin-bottom: 4px;
 }
+
+/* ==========================================================================
+   Multi-Cluster Rail & ClickUp Fleet Management
+   ========================================================================== */
+
+/* Multi-Cluster Switcher Rail Avatars */
+.admin-rail-cluster-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0;
+  scrollbar-width: none;
+}
+.admin-rail-cluster-section::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-rail-clusters {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.admin-cluster-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.2px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+  user-select: none;
+  border: 0;
+  outline: none;
+}
+
+.admin-cluster-avatar:hover {
+  transform: scale(1.08);
+  border-radius: 8px;
+}
+
+.admin-cluster-avatar.active {
+  box-shadow: 0 0 0 2px var(--admin-rail-bg), 0 0 0 4px var(--admin-accent);
+  border-radius: 8px;
+}
+
+.admin-cluster-avatar.active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 20px;
+  border-radius: 0 4px 4px 0;
+  background-color: var(--admin-accent);
+}
+
+.admin-cluster-add-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px dashed var(--admin-border-strong);
+  background: transparent;
+  color: var(--admin-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.admin-cluster-add-btn:hover {
+  background: var(--admin-surface-hover);
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+  transform: scale(1.05);
+}
+
+.admin-rail-divider {
+  width: 28px;
+  height: 1px;
+  background-color: var(--admin-border);
+  margin: 2px 0 6px;
+  flex-shrink: 0;
+}
+
+/* ClickUp-Style View Switcher Segmented Control */
+.clickup-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: #f1f5f9;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.clickup-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.clickup-view-btn:hover {
+  color: var(--admin-text);
+}
+
+.clickup-view-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ClickUp Cluster Grid Card Styles */
+.fleet-grid-card {
+  background: #ffffff;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.fleet-grid-card:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  border-color: var(--admin-border-strong);
+  transform: translateY(-2px);
+}
+
+.fleet-grid-card.is-active {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 1px var(--admin-accent), 0 4px 12px rgba(37, 99, 235, 0.12);
+}
+
+.fleet-card-color-stripe {
+  height: 6px;
+  width: 100%;
+}
+
+.fleet-card-body {
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.fleet-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.fleet-cluster-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.fleet-card-env-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.2px;
+}
+.fleet-card-env-badge.env-production {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+.fleet-card-env-badge.env-staging {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+.fleet-card-env-badge.env-development {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+.fleet-card-env-badge.env-testing {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+}
+.fleet-card-env-badge.env-dr {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.fleet-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 14px 0;
+  border: 1px solid #edf2f7;
+}
+
+.fleet-metric-item {
+  display: flex;
+  flex-direction: column;
+}
+.fleet-metric-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--admin-text-muted);
+  letter-spacing: 0.3px;
+}
+.fleet-metric-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--admin-text);
+  margin-top: 2px;
+}
+
+/* ClickUp-Style List View Table */
+.clickup-fleet-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #ffffff;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.clickup-fleet-table th {
+  background: #f8fafc;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--admin-text-muted);
+  border-bottom: 1px solid var(--admin-border);
+  text-align: left;
+}
+
+.clickup-fleet-table td {
+  padding: 12px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--admin-border-subtle);
+  vertical-align: middle;
+}
+
+.clickup-fleet-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.clickup-fleet-table tr:hover td {
+  background-color: #f8fafc;
+}
+
+.clickup-fleet-table tr.row-active td {
+  background-color: #f0f7ff;
+}
+
+.clickup-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-block;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px var(--admin-border-strong);
+  transition: transform 0.15s ease;
+  vertical-align: middle;
+}
+
+.clickup-color-dot:hover {
+  transform: scale(1.25);
+}
+
+/* Color Customization Palette Modal */
+.clickup-color-palette {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.clickup-palette-swatch {
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.clickup-palette-swatch:hover {
+  transform: scale(1.12);
+}
+
+.clickup-palette-swatch.selected {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0f172a;
+}
+
+.cluster-preview-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 17px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: #3b82f6;
+  transition: background 0.15s ease;
+}

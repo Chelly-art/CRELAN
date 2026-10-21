@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -894,14 +895,59 @@ func evaluateLocalRBAC(ctx context.Context, client kubernetes.Interface, input c
 // ============================================================================
 
 type clusterFleetMember struct {
-	Name      string `json:"name"`
-	ServerURL string `json:"server_url"`
-	Status    string `json:"status"` // active, connected, unreachable
-	IsActive  bool   `json:"is_active"`
-	Version   string `json:"version"`
-	NodeCount int    `json:"node_count"`
-	TotalPods int    `json:"total_pods"`
-	Provider  string `json:"provider"`
+	Name          string `json:"name"`
+	ServerURL     string `json:"server_url"`
+	Server        string `json:"server"`
+	Status        string `json:"status"` // active, connected, unreachable
+	IsActive      bool   `json:"is_active"`
+	IsCurrent     bool   `json:"is_current"`
+	Version       string `json:"version"`
+	ServerVersion string `json:"server_version"`
+	NodeCount     int    `json:"node_count"`
+	NodesCount    int    `json:"nodes_count"`
+	TotalPods     int    `json:"total_pods"`
+	Provider      string `json:"provider"`
+	Color         string `json:"color"`
+	Alias         string `json:"alias"`
+	Environment   string `json:"environment"`
+}
+
+type clusterCustomization struct {
+	ContextName string `json:"context_name"`
+	Color       string `json:"color"`
+	Alias       string `json:"alias"`
+	Environment string `json:"environment"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+var defaultClusterColors = []string{
+	"#3b82f6", // Blue
+	"#8b5cf6", // Purple
+	"#10b981", // Emerald
+	"#f59e0b", // Amber
+	"#ef4444", // Red
+	"#06b6d4", // Cyan
+	"#ec4899", // Pink
+	"#6366f1", // Indigo
+}
+
+func (s *adminService) loadAllClusterCustomizations() map[string]clusterCustomization {
+	results := make(map[string]clusterCustomization)
+	if s.auth == nil || s.auth.db == nil {
+		return results
+	}
+	rows, err := s.auth.db.Query(`SELECT context_name, color, alias, environment, updated_at FROM cluster_customizations`)
+	if err != nil {
+		return results
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c clusterCustomization
+		if err := rows.Scan(&c.ContextName, &c.Color, &c.Alias, &c.Environment, &c.UpdatedAt); err == nil {
+			results[c.ContextName] = c
+		}
+	}
+	return results
 }
 
 func (s *adminService) getClusterFleet(w http.ResponseWriter, r *http.Request) {
@@ -912,27 +958,58 @@ func (s *adminService) getClusterFleet(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	contexts, current, _ := loadKubeconfigContexts()
+	if s.deployments != nil && s.deployments.activeClusterContext() != "" {
+		current = s.deployments.activeClusterContext()
+	}
+
+	customMap := s.loadAllClusterCustomizations()
 	var fleet []clusterFleetMember
 
 	p := s.currentKubernetesProvisioner()
 
-	for _, ctxName := range contexts {
+	for i, ctxName := range contexts {
 		isActive := (ctxName == current)
+		color := defaultClusterColors[i%len(defaultClusterColors)]
+		alias := ctxName
+		env := "production"
+
+		if custom, ok := customMap[ctxName]; ok {
+			if custom.Color != "" {
+				color = custom.Color
+			}
+			if custom.Alias != "" {
+				alias = custom.Alias
+			}
+			if custom.Environment != "" {
+				env = custom.Environment
+			}
+		}
+
 		member := clusterFleetMember{
-			Name:      ctxName,
-			Status:    "connected",
-			IsActive:  isActive,
-			Provider:  detectClusterProvider(ctxName),
-			NodeCount: 0,
-			TotalPods: 0,
-			Version:   "v1.28+",
+			Name:          ctxName,
+			ServerURL:     "Direct Kubeconfig Context",
+			Server:        "Direct Kubeconfig Context",
+			Status:        "connected",
+			IsActive:      isActive,
+			IsCurrent:     isActive,
+			Provider:      detectClusterProvider(ctxName),
+			NodeCount:     0,
+			NodesCount:    0,
+			TotalPods:     0,
+			Version:       "v1.28+",
+			ServerVersion: "v1.28+",
+			Color:         color,
+			Alias:         alias,
+			Environment:   env,
 		}
 
 		if isActive && p != nil && p.client != nil {
 			if nodes, err := p.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 20}); err == nil {
 				member.NodeCount = len(nodes.Items)
+				member.NodesCount = len(nodes.Items)
 				if len(nodes.Items) > 0 {
 					member.Version = nodes.Items[0].Status.NodeInfo.KubeletVersion
+					member.ServerVersion = nodes.Items[0].Status.NodeInfo.KubeletVersion
 				}
 			}
 			if pods, err := p.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{Limit: 200}); err == nil {
@@ -944,19 +1021,136 @@ func (s *adminService) getClusterFleet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(fleet) == 0 {
+		color := defaultClusterColors[0]
+		alias := "In-Cluster"
+		env := "production"
+		if custom, ok := customMap["in-cluster"]; ok {
+			if custom.Color != "" {
+				color = custom.Color
+			}
+			if custom.Alias != "" {
+				alias = custom.Alias
+			}
+			if custom.Environment != "" {
+				env = custom.Environment
+			}
+		}
+
 		fleet = append(fleet, clusterFleetMember{
-			Name:      "in-cluster",
-			ServerURL: "https://kubernetes.default.svc",
-			Status:    "active",
-			IsActive:  true,
-			Version:   "v1.28.0",
-			NodeCount: 1,
-			TotalPods: 5,
-			Provider:  "Kubernetes Local",
+			Name:          "in-cluster",
+			ServerURL:     "https://kubernetes.default.svc",
+			Server:        "https://kubernetes.default.svc",
+			Status:        "active",
+			IsActive:      true,
+			IsCurrent:     true,
+			Version:       "v1.28.0",
+			ServerVersion: "v1.28.0",
+			NodeCount:     1,
+			NodesCount:    1,
+			TotalPods:     5,
+			Provider:      "Kubernetes Local",
+			Color:         color,
+			Alias:         alias,
+			Environment:   env,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, fleet)
+}
+
+func (s *adminService) switchClusterContext(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	var input struct {
+		Context string `json:"context"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.Context) == "" {
+		writeError(w, http.StatusBadRequest, "Cluster context is required")
+		return
+	}
+	input.Context = strings.TrimSpace(input.Context)
+
+	provisioner, err := newKubernetesProvisionerForContext(input.Context)
+	if err != nil {
+		log.Printf("switch cluster context %q: %v", input.Context, err)
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Could not load cluster context %q: %v", input.Context, err))
+		return
+	}
+	if provisioner.client != nil {
+		if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
+			log.Printf("reach cluster context %q: %v", input.Context, err)
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not reach cluster %q: %v", input.Context, err))
+			return
+		}
+	}
+
+	if s.deployments != nil {
+		s.deployments.setCluster(provisioner, input.Context)
+	}
+	s.provisioner = provisioner
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "connected",
+		"context": input.Context,
+		"message": fmt.Sprintf("Active cluster switched to %s", input.Context),
+	})
+}
+
+func (s *adminService) getClusterCustomizations(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	customizations := s.loadAllClusterCustomizations()
+	writeJSON(w, http.StatusOK, customizations)
+}
+
+func (s *adminService) saveClusterCustomization(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	var input struct {
+		ContextName string `json:"context_name"`
+		Color       string `json:"color"`
+		Alias       string `json:"alias"`
+		Environment string `json:"environment"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.ContextName) == "" {
+		writeError(w, http.StatusBadRequest, "context_name is required")
+		return
+	}
+	input.ContextName = strings.TrimSpace(input.ContextName)
+	input.Color = strings.TrimSpace(input.Color)
+	if input.Color == "" || !strings.HasPrefix(input.Color, "#") {
+		input.Color = "#3b82f6"
+	}
+	input.Alias = strings.TrimSpace(input.Alias)
+	input.Environment = strings.TrimSpace(input.Environment)
+	if input.Environment == "" {
+		input.Environment = "production"
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.auth.db.ExecContext(r.Context(), `
+		INSERT INTO cluster_customizations (context_name, color, alias, environment, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(context_name) DO UPDATE SET
+			color = excluded.color,
+			alias = excluded.alias,
+			environment = excluded.environment,
+			updated_at = excluded.updated_at
+	`, input.ContextName, input.Color, input.Alias, input.Environment, now)
+	if err != nil {
+		log.Printf("save cluster customization: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to save cluster customization")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"context_name": input.ContextName,
+		"color":        input.Color,
+		"alias":        input.Alias,
+		"environment":  input.Environment,
+		"updated_at":   now,
+	})
 }
 
 func detectClusterProvider(contextName string) string {

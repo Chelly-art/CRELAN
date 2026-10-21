@@ -157,6 +157,7 @@ const VIEW_TO_DOMAIN = {
   rbac: "security",
   "can-i": "security",
   "isolation-matrix": "security",
+  "access-control": "security",
   certificates: "security",
   audit: "security",
 
@@ -267,9 +268,68 @@ async function loadClusterHeader() {
     $("#badge-pods").textContent = isConn ? (info.pods_count || 0) : 0;
     $("#badge-namespaces").textContent = isConn ? (info.namespaces_count || 0) : 0;
     $("#badge-events").textContent = isConn ? (info.warning_events_count || 0) : 0;
+
+    await loadClusterFleetRail();
   } catch (err) {
     console.warn("Could not load cluster header:", err);
   }
+}
+
+function getClusterMonogram(name, alias) {
+  const text = (alias || name || "K8").trim();
+  const parts = text.split(/[\s\-_.:/]+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return text.substring(0, 2).toUpperCase();
+}
+
+async function loadClusterFleetRail() {
+  try {
+    const fleet = await request("/api/v1/admin/clusters/fleet");
+    state.fleet = fleet;
+    renderRailClusterList(fleet);
+  } catch (err) {
+    console.warn("Could not load cluster fleet for rail:", err);
+  }
+}
+
+function renderRailClusterList(fleet) {
+  const container = $("#rail-cluster-list");
+  if (!container) return;
+  if (!fleet || fleet.length === 0) {
+    container.innerHTML = `
+      <button class="admin-cluster-avatar active" style="background-color: #3b82f6;" type="button" title="Default Cluster">K8</button>
+    `;
+    return;
+  }
+
+  container.innerHTML = fleet.map(c => {
+    const monogram = getClusterMonogram(c.name, c.alias);
+    const color = c.color || "#3b82f6";
+    const isActive = Boolean(c.is_active || c.is_current);
+    const displayName = c.alias ? `${c.alias} (${c.name})` : c.name;
+    const tooltip = `${displayName}\nTier: ${c.environment || "production"}\nStatus: ${c.status || "connected"}\nNodes: ${c.nodes_count || c.node_count || 0}`;
+    return `
+      <button class="admin-cluster-avatar ${isActive ? 'active' : ''}"
+        style="background-color: ${escapeHTML(color)};"
+        type="button"
+        title="${escapeHTML(tooltip)}"
+        data-context="${escapeHTML(c.name)}"
+        onclick="handleRailClusterClick('${escapeHTML(c.name)}')">
+        ${escapeHTML(monogram)}
+      </button>
+    `;
+  }).join("");
+}
+
+async function handleRailClusterClick(contextName) {
+  const current = state.cluster && state.cluster.context;
+  if (current === contextName) {
+    setRoute("cluster-fleet");
+    return;
+  }
+  await switchClusterContext(contextName);
 }
 
 async function loadNamespacesDropdown() {
@@ -2978,6 +3038,41 @@ function setupEventListeners() {
   });
 
   $("#rail-refresh-btn").addEventListener("click", () => $("#admin-refresh-btn").click());
+
+  // Cluster Rail & Customization Modal
+  const railAddBtn = $("#rail-add-cluster-btn");
+  if (railAddBtn) {
+    railAddBtn.addEventListener("click", () => setRoute("cluster-connect"));
+  }
+  const modalClose = $("#modal-cluster-close-btn");
+  if (modalClose) modalClose.addEventListener("click", closeClusterColorModal);
+  const modalCancel = $("#modal-cluster-cancel-btn");
+  if (modalCancel) modalCancel.addEventListener("click", closeClusterColorModal);
+  const modalSave = $("#modal-cluster-save-btn");
+  if (modalSave) modalSave.addEventListener("click", saveClusterCustomization);
+  const modalAlias = $("#modal-cluster-alias");
+  if (modalAlias) modalAlias.addEventListener("input", updateModalClusterPreview);
+  const modalHex = $("#modal-cluster-color-hex");
+  if (modalHex) {
+    modalHex.addEventListener("input", (e) => {
+      const val = e.target.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        selectedClusterCustomColor = val;
+        $("#modal-cluster-color-native").value = val;
+        updateModalClusterPreview();
+        renderClickUpColorPalette();
+      }
+    });
+  }
+  const modalNat = $("#modal-cluster-color-native");
+  if (modalNat) {
+    modalNat.addEventListener("input", (e) => {
+      selectedClusterCustomColor = e.target.value;
+      $("#modal-cluster-color-hex").value = e.target.value;
+      updateModalClusterPreview();
+      renderClickUpColorPalette();
+    });
+  }
 
   // Auto-Refresh
   $("#admin-auto-refresh-select").addEventListener("change", (e) => {
@@ -5952,23 +6047,56 @@ async function handleCanISubmit(e) {
 }
 
 // -------------------------------------------------------------
-// Multi-Cluster Fleet Dashboard
+// Multi-Cluster Fleet Dashboard (ClickUp-Style List & Grid)
 // -------------------------------------------------------------
+
+const CLICKUP_PRESET_COLORS = [
+  "#ef4444", "#f43f5e", "#f97316", "#f59e0b",
+  "#10b981", "#14b8a6", "#06b6d4", "#3b82f6",
+  "#6366f1", "#8b5cf6", "#d946ef", "#64748b"
+];
+
+let selectedClusterCustomContext = null;
+let selectedClusterCustomColor = "#3b82f6";
+
+function setFleetViewMode(mode) {
+  state.fleetViewMode = mode;
+  localStorage.setItem("crelan_fleet_view_mode", mode);
+  const container = $("#admin-content-area");
+  if (container) renderClusterFleet(container);
+}
+
 async function renderClusterFleet(container) {
   container.innerHTML = `<div class="admin-empty-state">Loading cluster fleet status…</div>`;
   const fleet = await request("/api/v1/admin/clusters/fleet");
+  state.fleet = fleet;
 
   const totalClusters = fleet.length;
-  const currentCluster = fleet.find(c => c.is_current);
+  const currentCluster = fleet.find(c => c.is_current || c.is_active);
+  const totalNodes = fleet.reduce((acc, c) => acc + (c.nodes_count || c.node_count || 0), 0);
+  const totalPods = fleet.reduce((acc, c) => acc + (c.total_pods || 0), 0);
+
+  const viewMode = state.fleetViewMode || localStorage.getItem("crelan_fleet_view_mode") || "grid";
 
   container.innerHTML = `
     <div class="admin-view-header">
       <div class="admin-view-title">
-        <h1>Multi-Cluster Fleet Dashboard</h1>
-        <p class="admin-view-subtitle">Centralized multi-cluster fleet management with instant context switching and live health telemetry.</p>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h1>Multi-Cluster Fleet</h1>
+          <span class="admin-badge admin-badge-ready">${totalClusters} ${totalClusters === 1 ? 'Cluster' : 'Clusters'}</span>
+        </div>
+        <p class="admin-view-subtitle">Centralized multi-cluster fleet management with instant context switching, custom environment palettes, and live health telemetry.</p>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect New Cluster</a>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="clickup-view-toggle">
+          <button class="clickup-view-btn ${viewMode === 'grid' ? 'active' : ''}" type="button" onclick="setFleetViewMode('grid')">
+            <span>⊞</span> Grid View
+          </button>
+          <button class="clickup-view-btn ${viewMode === 'list' ? 'active' : ''}" type="button" onclick="setFleetViewMode('list')">
+            <span>☰</span> List View
+          </button>
+        </div>
+        <a class="admin-btn admin-btn-primary" href="#cluster-connect">+ Connect Cluster</a>
       </div>
     </div>
 
@@ -5980,59 +6108,174 @@ async function renderClusterFleet(container) {
       </div>
       <div class="admin-stat-card">
         <div class="admin-stat-header"><span>Active Context</span><span style="color: var(--admin-green);">Connected</span></div>
-        <div class="admin-stat-value" style="font-size: 20px; font-family: monospace;">${escapeHTML(currentCluster ? currentCluster.name : "None")}</div>
-        <div class="admin-stat-subtext">${currentCluster ? currentCluster.server_version : "Disconnected"}</div>
-      </div>
-      <div class="admin-stat-card">
-        <div class="admin-stat-header"><span>Active Nodes</span><span>Capacity</span></div>
-        <div class="admin-stat-value">${currentCluster ? currentCluster.nodes_count : 0}</div>
-        <div class="admin-stat-subtext">Nodes in active context</div>
-      </div>
-      <div class="admin-stat-card">
-        <div class="admin-stat-header"><span>Fleet Health</span><span>Status</span></div>
-        <div class="admin-stat-value" style="color: var(--admin-green);">100%</div>
-        <div class="admin-stat-subtext">All reachable contexts healthy</div>
-      </div>
-    </div>
-
-    <h2 style="font-size: 15px; margin: 28px 0 14px;">Available Cluster Contexts</h2>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;">
-      ${fleet.map(c => `
-        <div class="admin-card" style="padding: 20px; border: ${c.is_current ? "2px solid var(--admin-accent)" : "1px solid var(--admin-border)"}; position: relative;">
-          ${c.is_current ? `<span class="admin-badge admin-badge-ready" style="position: absolute; top: 16px; right: 16px;">ACTIVE CONTEXT</span>` : ""}
-          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-            <span style="font-size: 22px;">☸️</span>
-            <div>
-              <h3 style="margin: 0; font-size: 16px;">${escapeHTML(c.name)}</h3>
-              <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
-            </div>
-          </div>
-
-          <div style="font-size: 12px; color: var(--admin-text-muted); margin-bottom: 14px; font-family: monospace; word-break: break-all;">
-            ${escapeHTML(c.server || "In-Cluster Endpoint")}
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; background: var(--admin-bg-secondary); border-radius: var(--admin-radius-sm); margin-bottom: 16px; font-size: 12px;">
-            <div>
-              <span style="color: var(--admin-text-muted);">Version:</span>
-              <strong>${escapeHTML(c.server_version || "—")}</strong>
-            </div>
-            <div>
-              <span style="color: var(--admin-text-muted);">Nodes:</span>
-              <strong>${c.nodes_count !== undefined ? c.nodes_count : "—"}</strong>
-            </div>
-          </div>
-
-          <div>
-            ${c.is_current ? `
-              <button class="admin-btn admin-btn-sm" style="width: 100%; opacity: 0.7;" disabled>Currently Active</button>
-            ` : `
-              <button class="admin-btn admin-btn-primary admin-btn-sm" style="width: 100%;" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch Context to ${escapeHTML(c.name)}</button>
-            `}
-          </div>
+        <div class="admin-stat-value" style="font-size: 18px; font-family: monospace; display: flex; align-items: center; gap: 8px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background-color: ${escapeHTML(currentCluster ? (currentCluster.color || '#3b82f6') : '#94a3b8')}; display: inline-block;"></span>
+          ${escapeHTML(currentCluster ? (currentCluster.alias || currentCluster.name) : "None")}
         </div>
-      `).join("")}
+        <div class="admin-stat-subtext">${currentCluster ? (currentCluster.server_version || currentCluster.version || "Active") : "Disconnected"}</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Fleet Capacity</span><span>Nodes</span></div>
+        <div class="admin-stat-value">${totalNodes}</div>
+        <div class="admin-stat-subtext">Total worker & control nodes</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Active Pods</span><span>Workloads</span></div>
+        <div class="admin-stat-value" style="color: var(--admin-green);">${totalPods > 0 ? totalPods : (currentCluster ? currentCluster.total_pods || 0 : 0)}</div>
+        <div class="admin-stat-subtext">Running across fleet</div>
+      </div>
     </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; margin: 28px 0 14px;">
+      <h2 style="font-size: 15px; font-weight: 700; margin: 0;">Connected Environments (${totalClusters})</h2>
+      <div style="font-size: 12px; color: var(--admin-text-muted);">
+        Tip: Click any cluster icon or swatch to customize its background color.
+      </div>
+    </div>
+
+    ${viewMode === "grid" ? `
+      <!-- ClickUp-Style Grid View -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px;">
+        ${fleet.map(c => {
+          const isActive = Boolean(c.is_current || c.is_active);
+          const color = c.color || "#3b82f6";
+          const monogram = getClusterMonogram(c.name, c.alias);
+          const env = (c.environment || "production").toLowerCase();
+          return `
+            <div class="fleet-grid-card ${isActive ? 'is-active' : ''}">
+              <div class="fleet-card-color-stripe" style="background-color: ${escapeHTML(color)};"></div>
+              <div class="fleet-card-body">
+                <div class="fleet-card-header">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="fleet-cluster-badge" style="background-color: ${escapeHTML(color)};">
+                      ${escapeHTML(monogram)}
+                    </div>
+                    <div>
+                      <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                        ${escapeHTML(c.alias || c.name)}
+                      </h3>
+                      <div style="display: flex; align-items: center; gap: 6px; margin-top: 3px;">
+                        <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
+                        <span class="fleet-card-env-badge env-${escapeHTML(env)}">${escapeHTML(c.environment || "Production")}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    ${isActive ? `<span class="admin-badge admin-badge-ready">ACTIVE</span>` : ""}
+                  </div>
+                </div>
+
+                <div style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace; word-break: break-all; margin-bottom: 12px; background: #f8fafc; padding: 6px 10px; border-radius: 6px; border: 1px solid #edf2f7;">
+                  context: <strong>${escapeHTML(c.name)}</strong>
+                </div>
+
+                <div class="fleet-metrics-grid">
+                  <div class="fleet-metric-item">
+                    <span class="fleet-metric-label">Nodes</span>
+                    <span class="fleet-metric-val">${c.nodes_count ?? c.node_count ?? 0}</span>
+                  </div>
+                  <div class="fleet-metric-item">
+                    <span class="fleet-metric-label">Pods</span>
+                    <span class="fleet-metric-val">${c.total_pods ?? 0}</span>
+                  </div>
+                  <div class="fleet-metric-item">
+                    <span class="fleet-metric-label">Version</span>
+                    <span class="fleet-metric-val" style="font-size: 12px; font-family: monospace;">${escapeHTML(c.server_version || c.version || "v1.28+")}</span>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                  ${isActive ? `
+                    <button class="admin-btn admin-btn-sm" style="flex: 1; background: #ecfdf5; color: #059669; border-color: #a7f3d0; cursor: default;" disabled>
+                      ✓ Active Cluster
+                    </button>
+                  ` : `
+                    <button class="admin-btn admin-btn-primary admin-btn-sm" style="flex: 1;" onclick="switchClusterContext('${escapeHTML(c.name)}')">
+                      Switch Context
+                    </button>
+                  `}
+                  <button class="admin-btn admin-btn-sm" type="button" title="Customize Cluster Color & Name" onclick="openClusterColorModal('${escapeHTML(c.name)}')">
+                    🎨 Color
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    ` : `
+      <!-- ClickUp-Style List View -->
+      <table class="clickup-fleet-table">
+        <thead>
+          <tr>
+            <th>Cluster / Context</th>
+            <th style="width: 60px; text-align: center;">Color</th>
+            <th>Environment</th>
+            <th>Status</th>
+            <th>Provider</th>
+            <th style="text-align: right;">Nodes</th>
+            <th style="text-align: right;">Pods</th>
+            <th>K8s Version</th>
+            <th style="text-align: right; width: 140px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${fleet.map(c => {
+            const isActive = Boolean(c.is_current || c.is_active);
+            const color = c.color || "#3b82f6";
+            const monogram = getClusterMonogram(c.name, c.alias);
+            const env = (c.environment || "production").toLowerCase();
+            return `
+              <tr class="${isActive ? 'row-active' : ''}">
+                <td>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="fleet-cluster-badge" style="width: 28px; height: 28px; font-size: 11px; background-color: ${escapeHTML(color)};">
+                      ${escapeHTML(monogram)}
+                    </div>
+                    <div>
+                      <strong style="display: block; font-size: 13px;">${escapeHTML(c.alias || c.name)}</strong>
+                      ${c.alias ? `<span style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">${escapeHTML(c.name)}</span>` : ""}
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: center;">
+                  <span class="clickup-color-dot" style="background-color: ${escapeHTML(color)};" title="Click to customize cluster color" onclick="openClusterColorModal('${escapeHTML(c.name)}')"></span>
+                </td>
+                <td>
+                  <span class="fleet-card-env-badge env-${escapeHTML(env)}">
+                    ${escapeHTML(c.environment || "Production")}
+                  </span>
+                </td>
+                <td>
+                  <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
+                    <span class="status-dot" style="background-color: ${isActive ? 'var(--admin-green)' : '#94a3b8'};"></span>
+                    ${isActive ? 'Active' : 'Connected'}
+                  </span>
+                </td>
+                <td>
+                  <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
+                </td>
+                <td style="text-align: right; font-weight: 600;">${c.nodes_count ?? c.node_count ?? 0}</td>
+                <td style="text-align: right; font-weight: 600;">${c.total_pods ?? 0}</td>
+                <td>
+                  <span style="font-family: monospace; font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(c.server_version || c.version || "v1.28+")}</span>
+                </td>
+                <td style="text-align: right;">
+                  <div style="display: inline-flex; gap: 6px;">
+                    ${isActive ? `
+                      <span class="admin-badge admin-badge-ready" style="font-size: 11px;">Active</span>
+                    ` : `
+                      <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch</button>
+                    `}
+                    <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">🎨</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `}
   `;
 }
 
@@ -6043,12 +6286,104 @@ async function switchClusterContext(contextName) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ context: contextName }),
     });
-    alert(`Switched active context to '${contextName}'.`);
     await loadClusterHeader();
-    await renderClusterFleet($("#admin-content-area"));
+    if (state.activeView === "cluster-fleet") {
+      await renderClusterFleet($("#admin-content-area"));
+    } else {
+      await renderCurrentView();
+    }
   } catch (err) {
     alert(`Failed to switch context: ${err.message}`);
   }
+}
+
+function openClusterColorModal(contextName) {
+  const fleet = state.fleet || [];
+  const cluster = fleet.find(c => c.name === contextName) || { name: contextName, color: "#3b82f6", alias: "", environment: "production" };
+  selectedClusterCustomContext = contextName;
+  selectedClusterCustomColor = cluster.color || "#3b82f6";
+
+  const modal = $("#cluster-custom-modal");
+  if (!modal) return;
+
+  $("#modal-cluster-context-name").textContent = cluster.name;
+  $("#modal-cluster-alias").value = cluster.alias && cluster.alias !== cluster.name ? cluster.alias : "";
+  $("#modal-cluster-env").value = (cluster.environment || "production").toLowerCase();
+  $("#modal-cluster-color-hex").value = selectedClusterCustomColor;
+  $("#modal-cluster-color-native").value = selectedClusterCustomColor;
+
+  updateModalClusterPreview();
+  renderClickUpColorPalette();
+
+  modal.style.display = "flex";
+}
+
+function closeClusterColorModal() {
+  const modal = $("#cluster-custom-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function updateModalClusterPreview() {
+  const alias = $("#modal-cluster-alias")?.value || "";
+  const preview = $("#modal-cluster-preview");
+  if (preview) {
+    preview.style.backgroundColor = selectedClusterCustomColor;
+    preview.textContent = getClusterMonogram(selectedClusterCustomContext || "K8", alias);
+  }
+}
+
+function renderClickUpColorPalette() {
+  const container = $("#modal-cluster-palette");
+  if (!container) return;
+  container.innerHTML = CLICKUP_PRESET_COLORS.map(color => {
+    const isSelected = (selectedClusterCustomColor.toLowerCase() === color.toLowerCase());
+    return `
+      <div class="clickup-palette-swatch ${isSelected ? 'selected' : ''}"
+        style="background-color: ${color};"
+        title="${color}"
+        onclick="selectClusterCustomColor('${color}')">
+        ${isSelected ? '✓' : ''}
+      </div>
+    `;
+  }).join("");
+}
+
+function selectClusterCustomColor(color) {
+  selectedClusterCustomColor = color;
+  const hexInput = $("#modal-cluster-color-hex");
+  const natInput = $("#modal-cluster-color-native");
+  if (hexInput) hexInput.value = color;
+  if (natInput) natInput.value = color;
+  updateModalClusterPreview();
+  renderClickUpColorPalette();
+}
+
+async function saveClusterCustomization() {
+  if (!selectedClusterCustomContext) return;
+  const alias = ($("#modal-cluster-alias")?.value || "").trim();
+  const env = $("#modal-cluster-env")?.value || "production";
+  const color = selectedClusterCustomColor;
+
+  try {
+    await request("/api/v1/admin/clusters/customizations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        context_name: selectedClusterCustomContext,
+        color: color,
+        alias: alias,
+        environment: env
+      })
+    });
+    closeClusterColorModal();
+    await loadClusterHeader();
+    if (state.activeView === "cluster-fleet") {
+      await renderClusterFleet($("#admin-content-area"));
+    }
+  } catch (err) {
+    alert(`Failed to save cluster customization: ${err.message}`);
+  }
+}
 // -------------------------------------------------------------
 // Site Reliability Engineering (SRE) Operations Suite
 // -------------------------------------------------------------

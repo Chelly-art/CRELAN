@@ -176,6 +176,9 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/crds/{group}/{version}/{resource}", s.getCustomResourceInstances)
 	mux.HandleFunc("POST /api/v1/admin/security/can-i", s.checkCanI)
 	mux.HandleFunc("GET /api/v1/admin/clusters/fleet", s.getClusterFleet)
+	mux.HandleFunc("POST /api/v1/admin/clusters/switch-context", s.switchClusterContext)
+	mux.HandleFunc("GET /api/v1/admin/clusters/customizations", s.getClusterCustomizations)
+	mux.HandleFunc("POST /api/v1/admin/clusters/customizations", s.saveClusterCustomization)
 
 	// Site Reliability Engineering (SRE) Operations Suite
 	mux.HandleFunc("GET /api/v1/admin/sre/slos", s.getSRESLOs)

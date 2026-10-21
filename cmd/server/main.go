@@ -101,7 +101,12 @@ func main() {
 			log.Printf("deployment workers stopped: %v", err)
 		}
 	}()
-	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(staticFiles))))
+
+	fileServer := http.FileServer(http.FS(staticFiles))
+	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		fileServer.ServeHTTP(w, r)
+	})))
 
 	host := ""
 	if auth.demoLoginEnabled {

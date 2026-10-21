@@ -236,6 +236,13 @@ CREATE TABLE IF NOT EXISTS platform_cluster_config (
 	encrypted_kubeconfig BLOB NOT NULL,
 	updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cluster_customizations (
+	context_name TEXT PRIMARY KEY,
+	color TEXT NOT NULL DEFAULT '#3b82f6',
+	alias TEXT NOT NULL DEFAULT '',
+	environment TEXT NOT NULL DEFAULT 'production',
+	updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS platform_audit_logs (
 	id INTEGER PRIMARY KEY,
 	operator_email TEXT NOT NULL,

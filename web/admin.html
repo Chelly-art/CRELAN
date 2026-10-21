@@ -5,14 +5,99 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f5f7fa">
     <title>Crelan — Cluster Console</title>
-    <link rel="stylesheet" href="/assets/styles.css">
-    <link rel="stylesheet" href="/assets/admin.css">
-    <script src="/assets/admin.js" defer></script>
+    <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
+    <link rel="stylesheet" href="/assets/admin.css?v=3.0.0">
+    <script src="/assets/admin.js?v=3.0.0" defer></script>
+    <style>
+      /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
+      button.admin-rail-domain-btn,
+      button.admin-rail-icon-btn,
+      button.admin-cluster-avatar,
+      button.admin-cluster-add-btn,
+      .clickup-view-btn,
+      .clickup-color-swatch {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        border: 0;
+        outline: none;
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        color: inherit;
+      }
+      .admin-rail-domains {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+      }
+      .admin-rail-domain-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 9px;
+        background: transparent;
+        border: 1px solid transparent;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        padding: 4px 2px;
+      }
+      .admin-rail-domain-btn:hover {
+        background-color: rgba(0, 0, 0, 0.04);
+      }
+      .admin-rail-domain-btn.active {
+        background-color: #ffffff !important;
+        border-color: #e2e8f0 !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+      }
+      .admin-rail-domain-btn .admin-rail-domain-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+      .admin-rail-domain-btn.active .admin-rail-domain-label {
+        color: #0f172a !important;
+      }
+
+      /* Strict Domain Group Filtering: guarantees only active domain groups show */
+      .admin-tree-group {
+        display: none !important;
+      }
+      body[data-active-domain="k8s"] .admin-tree-group[data-domain="k8s"],
+      body[data-active-domain="sre"] .admin-tree-group[data-domain="sre"],
+      body[data-active-domain="security"] .admin-tree-group[data-domain="security"],
+      body[data-active-domain="ops"] .admin-tree-group[data-domain="ops"],
+      body:not([data-active-domain]) .admin-tree-group[data-domain="k8s"] {
+        display: block !important;
+      }
+    </style>
   </head>
   <body class="admin-body">
     <div class="admin-app">
       <aside class="admin-rail" aria-label="Cluster Rail">
         <a class="admin-rail-brand" href="/dashboard" title="Crelan Platform">C</a>
+
+        <!-- ClickUp-Style Multi-Cluster Switcher Rail -->
+        <div class="admin-rail-cluster-section">
+          <div class="admin-rail-clusters" id="rail-cluster-list">
+            <!-- Dynamically populated cluster avatars with individual background colors -->
+            <div class="admin-cluster-avatar active" style="background-color: #3b82f6;" title="Default Cluster">K8</div>
+          </div>
+          <button class="admin-cluster-add-btn" id="rail-add-cluster-btn" type="button" title="Connect New Cluster (Fleet)">
+            <span>+</span>
+          </button>
+        </div>
+
+        <div class="admin-rail-divider"></div>
 
         <!-- 4 Primary Operational Domain Switchers -->
         <div class="admin-rail-domains">
@@ -36,7 +121,6 @@
 
         <div class="admin-rail-bottom">
           <div class="admin-cluster-badge" id="rail-cluster-badge" title="Kubernetes Cluster Connection Status">
-            K8s
             <span class="status-dot" id="rail-status-dot"></span>
           </div>
           <a class="admin-rail-icon-btn" href="/dashboard" title="Switch to Customer Workspaces">App</a>
@@ -958,6 +1042,56 @@
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- ClickUp-Style Cluster Customization & Color Picker Modal -->
+    <div class="admin-modal-backdrop" id="cluster-custom-modal" style="display: none;">
+      <div class="admin-modal-card" style="max-width: 480px;">
+        <div class="admin-modal-header">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="cluster-preview-avatar" id="modal-cluster-preview">K8</div>
+            <div>
+              <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Cluster Appearance</h3>
+              <p style="margin: 0; font-size: 12px; color: var(--admin-text-muted);" id="modal-cluster-context-name">context-name</p>
+            </div>
+          </div>
+          <button class="admin-modal-close" id="modal-cluster-close-btn" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="admin-modal-body" style="padding: 20px;">
+          <div style="margin-bottom: 16px;">
+            <label class="admin-label" for="modal-cluster-alias" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Cluster Display Alias</label>
+            <input class="admin-form-input" id="modal-cluster-alias" type="text" placeholder="e.g. Production US-East, Staging EU" style="width: 100%;">
+            <div style="font-size: 11px; color: var(--admin-text-muted); margin-top: 4px;">Friendly name displayed on cluster cards, rail avatar, and topbar.</div>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label class="admin-label" for="modal-cluster-env" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Environment Tier</label>
+            <select class="admin-form-input" id="modal-cluster-env" style="width: 100%;">
+              <option value="production">Production</option>
+              <option value="staging">Staging</option>
+              <option value="development">Development</option>
+              <option value="testing">Testing / QA</option>
+              <option value="dr">Disaster Recovery (DR)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 16px;">
+            <label class="admin-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Cluster Background Color</label>
+            <div class="clickup-color-palette" id="modal-cluster-palette">
+              <!-- ClickUp 12 preset swatches populated dynamically or via CSS -->
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px;">
+              <input type="color" id="modal-cluster-color-native" style="width: 36px; height: 34px; padding: 0; border: 1px solid var(--admin-border); border-radius: 6px; cursor: pointer; background: transparent;">
+              <input class="admin-form-input" id="modal-cluster-color-hex" type="text" placeholder="#3b82f6" style="font-family: monospace; width: 130px;">
+              <span style="font-size: 11px; color: var(--admin-text-muted);">Custom Hex</span>
+            </div>
+          </div>
+        </div>
+        <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--admin-border);">
+          <button class="admin-btn" id="modal-cluster-cancel-btn" type="button">Cancel</button>
+          <button class="admin-btn admin-btn-primary" id="modal-cluster-save-btn" type="button">Save Customization</button>
+        </div>
+      </div>
     </div>
   </body>
 </html>
