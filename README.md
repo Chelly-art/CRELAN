@@ -2,20 +2,31 @@
 
 Crelan provides authenticated customer workspaces for deploying GitHub repositories or existing container images, inspecting app-scoped logs and resources, and provisioning PostgreSQL or MySQL clusters. Platform administrators have a separate, allowlisted operations view. Secret values are never shown in resource metadata.
 
-## Kubernetes access
+## Kubernetes access & cloud persistence
 
-Platform administrators connect the customer deployment cluster from the internal admin page at `/assets/admin.html`. Paste a self-contained kubeconfig, choose its context if needed, and connect. Crelan validates Kubernetes API access before making that cluster active. Customer sessions never receive the kubeconfig.
+Platform administrators can connect the deployment cluster either via environment variables (recommended for cloud hosts like PipeOps) or from the internal admin page at `/assets/admin.html`.
 
-For a durable admin-managed connection, configure `DATABASE_PATH` on persistent storage and set `CRELAN_KUBECONFIG_ENCRYPTION_KEY` in the service's secret environment. Generate a 32-byte key encoded as base64 with:
+### Automatic cluster connection on cloud platforms (PipeOps, Render, Kubernetes)
+When running Crelan on containerized cloud platforms where filesystem state may reset on redeployment, pass your kubeconfig via an environment variable. Crelan automatically parses, validates, and activates the cluster on every service startup:
+
+```sh
+# Generate the base64-encoded kubeconfig
+base64 -w0 kubeconfig.yaml
+```
+
+Set the output as `CRELAN_KUBECONFIG_DATA_B64` (or set `CRELAN_KUBECONFIG_DATA` with the raw YAML) in your PipeOps Project Environment Variables.
+
+### Admin UI cluster connection
+Platform administrators can also connect or switch clusters interactively from `/assets/admin.html`. Paste a self-contained kubeconfig, select its context, and connect. Crelan validates Kubernetes API access before making that cluster active. Customer sessions never receive or see the kubeconfig.
+
+To persist an admin-connected cluster across restarts when using SQLite, configure `DATABASE_PATH` on persistent storage and set `CRELAN_KUBECONFIG_ENCRYPTION_KEY` to a 32-byte base64-encoded key:
 
 ```sh
 openssl rand -base64 32
 ```
+Crelan encrypts stored kubeconfigs with AES-256-GCM. A secure fallback encryption key is used if `CRELAN_KUBECONFIG_ENCRYPTION_KEY` is not provided, ensuring credentials remain encrypted at rest.
 
-Store the generated key separately from the database and keep it stable; Crelan uses it to encrypt the kubeconfig before storing it in SQLite and to restore the connection after restart. Do not put either value in the repository or a public build argument. Keep database backups and the encryption key under separate access controls. The cluster API must be reachable from Crelan. Kubeconfigs that reference local certificate files or use local `exec` authentication plugins may not work in the hosted service.
-
-For local development, Crelan can also use `CRELAN_KUBECONFIG_DATA_B64`, `CRELAN_KUBECONFIG_DATA`, the process's `KUBECONFIG`, or in-cluster ServiceAccount credentials. Tools normally use the same kubeconfig as `kubectl`; flatten it to embed referenced certificate files before pasting it into the admin page.
-
+### Cluster requirements & tenant isolation
 Each Crelan workspace maps to a Capsule Tenant and a workspace namespace named `crelan-ws-<workspace-id>`. If that namespace does not exist, Crelan creates the Capsule Tenant and namespace on first provisioning. Configure `CRELAN_CAPSULE_TENANT_OWNER` with the Capsule user name that should own the tenant. The cluster must have Capsule's `capsule.clastix.io/v1beta2` Tenant CRD installed, and Crelan's identity needs permission to create/get Tenants and Namespaces. Existing namespaces must carry the matching `capsule.clastix.io/tenant=crelan-ws-<workspace-id>` label.
 
 For local development, point Crelan at a kubeconfig that contains the cluster contexts you want to make available:
@@ -25,29 +36,35 @@ export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 CRELAN_DEMO_LOGIN=true go run ./cmd/server
 ```
 
-Open <http://localhost:8080/>. In development login mode, any username and password are accepted. Source runs default to in-memory SQLite; set `DATABASE_PATH` to a protected file for persistence. The container image defaults to `/data/crelan.db`. Mount `/data` on durable storage. Platform admins can download a consistent SQLite snapshot from the admin page; store it off-cluster on a schedule. The current control plane is a single-instance SQLite deployment; do not scale Crelan replicas against a shared SQLite file.
+Open <http://localhost:8080/>. In development login mode, any username and password are accepted. Source runs default to in-memory SQLite; set `DATABASE_PATH` to a protected file for persistence. The container image defaults to `/data/crelan.db`. Mount `/data` on durable storage.
 
-Set `CRELAN_PLATFORM_ADMIN_EMAILS` to a comma-separated list of platform administrator email addresses. Admin access requires a signed-in browser session, a listed email, and a linked GitHub identity with a verified primary email; a password signup alone cannot claim platform admin access. A workspace API token cannot grant platform access. Customer app APIs are scoped to the authenticated workspace and application labels.
+Set `CRELAN_PLATFORM_ADMIN_EMAILS` to a comma-separated list of platform administrator email addresses. Admin access requires a signed-in browser session, a listed email, and a linked GitHub identity with a verified primary email; a password signup alone cannot claim platform admin access. Customer app APIs are scoped to the authenticated workspace and application labels.
 
-The cluster identity needs permissions for the Capsule Tenant/Namespace lifecycle, app Deployments/Services/Pods/ConfigMaps/Secrets/Jobs, logs, NetworkPolicies, ResourceQuotas, and Ingresses if enabled. Database provisioning also requires access to namespace Secrets, Jobs, NetworkPolicies, ResourceQuotas, and the enabled engine custom resources. Keep customer write operations behind Crelan's APIs and tenant mapping.
+The cluster identity needs permissions for the Capsule Tenant/Namespace lifecycle, app Deployments/Services/Pods/ConfigMaps/Secrets/Jobs, logs, NetworkPolicies, ResourceQuotas, and Ingresses if enabled.
 
-## Public repository builds
+## Deployments & Workloads
 
-Repository deployments also need an image registry and a `kubernetes.io/dockerconfigjson` Secret in `crelan-ws-1`:
+Crelan supports both source-based builds and pre-built container image rollouts:
 
-- `CRELAN_IMAGE_REGISTRY`: registry host and optional repository path.
-- `CRELAN_REGISTRY_SECRET`: Secret used to push and pull images.
-- `CRELAN_KPACK_BUILDER_IMAGE`: kpack builder image for repositories without a Dockerfile.
+1. **Source builds (GitHub):**
+   - **Build mechanisms:** Select `auto` (auto-detects Dockerfile, falls back to Buildpack), `dockerfile` (rootless BuildKit job), or `buildpack` (Cloud Native Buildpacks via kpack).
+   - **✨ Built-in Dockerfile Generator:** Built directly into the dashboard. Generates optimized, multi-stage production Dockerfiles for Node.js, Python, Go, Rust, Java/Spring Boot, and Static Web/SPA with non-root security best practices.
+   - **Private repositories:** Supported via connected GitHub App (`/settings/github/install`) with webhook triggers on `git push`, or by providing a Personal Access Token (`ghp_...`).
+2. **Container image deployment:**
+   - Deploy pre-built images from Docker Hub, GitHub Container Registry (`ghcr.io`), GitLab Registry, AWS ECR, or custom registries.
+   - Save private registry credentials directly in the dashboard or via API; credentials are encrypted as Kubernetes `imagePullSecrets` (`kubernetes.io/dockerconfigjson`) in the tenant namespace.
+3. **Configuration & Secrets:**
+   - Inject environment variables (ConfigMaps) and sensitive secrets (Kubernetes Secrets) at deploy time or runtime via `PUT /api/v1/deployments/{id}/configuration`.
+   - Update triggers an automated zero-downtime rolling update.
+4. **Custom Domains & SSL:**
+   - Attach custom domains with automated DNS verification (`_crelan-verify.<host>` TXT record) and automated TLS certificate provisioning.
+5. **Rollbacks & Pod Events:**
+   - One-click rollback in the UI history panel or via `POST /api/v1/deployments/{id}/rollback` to instantly revert to any previous successful run.
+   - Real-time Kubernetes warning event detection (`CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled`) via `GET /api/v1/deployments/{id}/events`.
+6. **Persistent storage:**
+   - Attach durable volumes with configurable mount paths. Unmounted volumes are retained on app deletion to prevent accidental data loss.
 
-Repositories with a Dockerfile use rootless BuildKit Jobs. Repositories without one use kpack/Buildpacks and need the `kpack.io/v1alpha2` Build CRD and a compatible builder. Install an Ingress controller and set `CRELAN_APP_BASE_DOMAIN` if deployed apps need public URLs.
-
-Existing images can be deployed from the workspace dashboard or with `crelan deploy --name api --image ghcr.io/acme/api:1.0`. Public images work directly. The workspace dashboard can also save a private registry credential as a Kubernetes `dockerconfigjson` Secret and attach it to image deployments. The credential password is not stored in Crelan's SQL database and is never returned by the list API. `CRELAN_REGISTRY_SECRET` remains available for a platform-wide registry used by source builds.
-
-App Deployments default to one replica. Set `CRELAN_APP_REPLICAS` (1–5) to use a fixed replica count for new rollouts. Set `CRELAN_APP_HEALTH_CHECK_PATH` to a common HTTP path (for example `/healthz`) to add readiness, startup, and liveness probes for all apps. This is a platform-wide setting; per-app autoscaling and configurable probes are not available yet.
-
-Apps can request a persistent volume in the dashboard. `CRELAN_ALLOWED_APP_STORAGE_CLASSES` is a comma-separated allowlist of durable RWO StorageClasses; `CRELAN_ALLOWED_APP_SHARED_STORAGE_CLASSES` separately allows RWX classes for shared multi-replica app storage. The cluster's CSI driver must actually support the requested access mode. Persistent claims are retained when an app is deleted and can be reviewed and purged from **Retained volumes**; purging permanently deletes the volume data. The admin readiness checklist checks configured classes, cluster nodes, and topology zones.
-
-The app details page lists app-scoped warning events, pods, logs, and configuration metadata. Updating a saved connection secret triggers a rollout for apps that reference it and reports any rollout errors. Secret values remain in Kubernetes. The dashboard includes a pinned Infisical image setup flow; operators should back up the generated Infisical encryption and auth keys before applying them.
+App Deployments default to one replica. Set `CRELAN_APP_REPLICAS` (1–5) to use a fixed replica count for new rollouts. Set `CRELAN_APP_HEALTH_CHECK_PATH` to a common HTTP path (for example `/healthz`) to add readiness, startup, and liveness probes for all apps.
 
 ## Managed databases
 
@@ -85,3 +102,22 @@ Set `CRELAN_API_URL` and `CRELAN_TOKEN` to the Crelan URL and a workspace API to
 ```
 
 The composite GitHub Action at `.github/actions/deploy` runs the CLI in a workflow. Configure `CRELAN_API_URL` as a repository variable and `CRELAN_TOKEN` as a repository secret, then adapt [examples/crelan-deploy.yml](examples/crelan-deploy.yml) to your repository and action release. Private source repositories require a connected GitHub App.
+
+## Environment Variables Reference
+
+| Variable | Description | Default / Example |
+|---|---|---|
+| `CRELAN_KUBECONFIG_DATA_B64` | Base64-encoded kubeconfig YAML for automatic cluster connection | Recommended for PipeOps & cloud hosting |
+| `CRELAN_KUBECONFIG_DATA` | Raw kubeconfig YAML string | Alternative to `_B64` |
+| `CRELAN_KUBECONFIG_ENCRYPTION_KEY` | 32-byte base64 AES key for encrypting stored kubeconfigs in SQLite | `openssl rand -base64 32` |
+| `DATABASE_PATH` | Path to persistent SQLite database file | `/data/crelan.db` (or in-memory if empty) |
+| `CRELAN_PLATFORM_ADMIN_EMAILS` | Comma-separated allowlist of platform admin email addresses | `admin@example.com` |
+| `CRELAN_APP_BASE_DOMAIN` | Base domain for customer application URLs | `apps.crelan.example.com` |
+| `CRELAN_APP_REPLICAS` | Default replica count for deployed applications (1-5) | `1` |
+| `CRELAN_APP_HEALTH_CHECK_PATH` | Common HTTP health check path for liveness/readiness probes | `/healthz` |
+| `CRELAN_IMAGE_REGISTRY` | Default image registry host for source builds | `ghcr.io/myorg` |
+| `CRELAN_REGISTRY_SECRET` | Platform registry push/pull secret | `crelan-registry-creds` |
+| `CRELAN_KPACK_BUILDER_IMAGE` | Cloud Native Buildpacks builder image | `gcr.io/buildpacks/builder:v1` |
+| `CRELAN_CAPSULE_TENANT_OWNER` | Capsule tenant owner identity | `crelan-system` |
+| `CRELAN_DEMO_LOGIN` | Enable mock login mode for local dev (binds to loopback) | `false` |
+

@@ -30,15 +30,22 @@ not create compute, networking, or a Kubernetes cluster in their account.
   opaque credential; never return its value after save.
 - **Public images**: no connection is needed.
 
-The UI should show one provider-neutral registry connection list. Each
-provider adapter exchanges its authorization for temporary pull credentials
-and refreshes them without exposing credentials to application containers.
+## Active Kubernetes registry credentials workflow
 
-## Runtime requirements before enabling AWS ECR
+In Crelan, private container registry credentials are saved directly to your workspace namespace as native Kubernetes `kubernetes.io/dockerconfigjson` Secrets (`imagePullSecrets`):
 
-The CloudFormation template is a customer-side permission template, not a
-complete connector by itself. The Crelan server still needs an AWS workload
-identity in its own account, a server-side AssumeRole/ECR adapter, and a
-refresh worker that updates the per-workspace Kubernetes pull Secret. Keep
-these as separate deployment components so the server does not rely on the
-Kubernetes node role having customer-account access.
+1. **Add credential:**
+   - In the dashboard, click **Container image** when creating a deployment, then click **＋ Add registry credential**.
+   - Or call `POST /api/v1/registry-credentials`:
+     ```json
+     {
+       "name": "ghcr-production",
+       "server": "ghcr.io",
+       "username": "deploy-robot",
+       "password": "<token>"
+     }
+     ```
+2. **Kubernetes Secret creation:** Crelan serializes the authentication entry into `.dockerconfigjson` format and persists it as a Secret named `ghcr-production` in your tenant namespace (`crelan-ws-<workspace-id>`). The token/password is never returned in list API responses.
+3. **Deployment attachment:** When deploying, choose the credential from the dropdown or pass `--image-pull-secret ghcr-production`. Crelan attaches `imagePullSecrets: [{name: "ghcr-production"}]` to your application Pod spec, allowing the kubelet to pull the private image securely.
+4. **Credential deletion:** Remove credentials anytime via `DELETE /api/v1/registry-credentials/{name}`.
+
