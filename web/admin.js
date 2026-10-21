@@ -38,7 +38,21 @@ async function request(path, options = {}) {
   const isJSON = (response.headers.get("content-type") || "").includes("application/json");
   const body = isJSON ? await response.json().catch(() => ({})) : await response.text();
   if (!response.ok) {
-    const errMsg = isJSON ? (body.error || `Request failed (${response.status})`) : body;
+    let errMsg = `Request failed (${response.status})`;
+    if (isJSON && body && body.error) {
+      errMsg = body.error;
+    } else if (!isJSON && typeof body === "string") {
+      if (body.includes("520: Web server is returning an unknown error")) {
+        errMsg = "Cloudflare Error (520): Server connection closed or timed out.";
+      } else if (body.includes("524: A timeout occurred")) {
+        errMsg = "Cloudflare Error (524): Request timed out waiting for server response.";
+      } else if (body.includes("<title>")) {
+        const titleMatch = body.match(/<title>(.*?)<\/title>/i);
+        errMsg = titleMatch ? titleMatch[1].trim() : `Server error (${response.status})`;
+      } else {
+        errMsg = body.slice(0, 180).trim();
+      }
+    }
     const err = new Error(errMsg);
     err.status = response.status;
     throw err;

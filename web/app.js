@@ -24,6 +24,13 @@ async function loadAccount() {
   $("#account-email").textContent = user.email || "";
   $("#top-avatar").textContent = displayName.charAt(0).toUpperCase();
   $(".user-avatar").textContent = displayName.charAt(0).toUpperCase();
+  if (user.platform_admin) {
+    const adminLink = $("#admin-console-shortcut");
+    if (adminLink) {
+      adminLink.hidden = false;
+      adminLink.style.display = "inline-block";
+    }
+  }
   const workspaceSelect = $("#workspace-select");
   const membershipResult = await api("/api/v1/workspaces");
   workspaceSelect.replaceChildren();
@@ -281,8 +288,32 @@ $("#deployment-form").addEventListener("submit", async (event) => {
   } else {
     delete payload.persistent_storage;
   }
+  const initialEnvRaw = $("#deploy-initial-env")?.value || "";
   try {
-    await api("/api/v1/deployments", { method: "POST", body: JSON.stringify(payload) });
+    const created = await api("/api/v1/deployments", { method: "POST", body: JSON.stringify(payload) });
+    if (initialEnvRaw.trim() && created?.id) {
+      const initialEnvMap = {};
+      for (const rawLine of initialEnvRaw.split("\n")) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("#")) continue;
+        const eqIdx = line.indexOf("=");
+        if (eqIdx > 0) {
+          const k = line.slice(0, eqIdx).trim();
+          const v = line.slice(eqIdx + 1).trim();
+          if (k) initialEnvMap[k] = v;
+        }
+      }
+      if (Object.keys(initialEnvMap).length > 0) {
+        try {
+          await api(`/api/v1/deployments/${encodeURIComponent(created.id)}/configuration`, {
+            method: "PUT",
+            body: JSON.stringify({ environment: initialEnvMap, secrets: {} }),
+          });
+        } catch (envErr) {
+          console.warn("Could not apply initial environment variables:", envErr);
+        }
+      }
+    }
     form.reset();
     $("#app-port").value = "8080";
     $("#image-port").value = "8080";
@@ -295,7 +326,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     error.hidden = false;
   } finally {
     submit.disabled = false;
-      submit.textContent = "Deploy application";
+    submit.textContent = "Deploy application";
   }
 });
 
@@ -304,17 +335,15 @@ let activeApplication = null;
 async function showApplication(item) {
   activeApplication = item;
   $("#app-runtime").hidden = false;
-  const isInfisicalImage = String(item.image || "").startsWith("infisical/infisical:");
-  $("#infisical-app-setup").hidden = !isInfisicalImage;
-  const waitingForWorkload = ["queued", "building", "deploying", "deleting"].includes(String(item.status || "").toLowerCase());
-  $("#infisical-app-submit").disabled = waitingForWorkload;
-  $("#infisical-app-status").textContent = waitingForWorkload
-    ? `Wait until this deployment finishes (${item.status}) before applying Infisical configuration.`
-    : "Choose ready PostgreSQL and Redis/Valkey connection records with connection URLs.";
-  if (!$("#infisical-site-url").value && String(item.url || "").startsWith("https://")) $("#infisical-site-url").value = item.url;
   $("#runtime-app-name").textContent = item.name;
   $("#runtime-app-summary").textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Application runtime details");
-  await Promise.all([loadApplicationResources(), loadApplicationLogs(), loadApplicationEvents(), loadConnections()]);
+  await Promise.all([
+    loadApplicationResources(),
+    loadApplicationLogs(),
+    loadApplicationEvents(),
+    loadConnections(),
+    loadCustomDomains(),
+  ]);
 }
 
 function closeApplication() {
@@ -778,7 +807,6 @@ async function loadConnections() {
     attachSelect.replaceChildren(new Option("Choose a saved connection", ""));
     workspaceConnections.forEach((item) => attachSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
     attachSelect.disabled = workspaceConnections.length === 0;
-    renderInfisicalConnectionOptions();
     $("#app-connection-submit").disabled = true;
     renderConnectionMappings();
     for (const item of workspaceConnections) {
@@ -851,26 +879,7 @@ async function loadConnections() {
     attachSelect.replaceChildren(new Option("Could not load saved connections", ""));
     attachSelect.disabled = true;
     $("#app-connection-submit").disabled = true;
-    renderInfisicalConnectionOptions();
   }
-}
-
-function renderInfisicalConnectionOptions() {
-  const databaseSelect = $("#infisical-database-connection");
-  const cacheSelect = $("#infisical-cache-connection");
-  if (!databaseSelect || !cacheSelect) return;
-  const databasePrevious = databaseSelect.value;
-  const cachePrevious = cacheSelect.value;
-  const hasConnectionURL = (item) => (item.secret_keys || []).some((key) => String(key).toUpperCase() === "CONNECTION_URL");
-  const sameCluster = (item) => !activeApplication?.cluster_context || !item.cluster_context || item.cluster_context === activeApplication.cluster_context;
-  const databases = workspaceConnections.filter((item) => String(item.type).toLowerCase() === "postgresql" && hasConnectionURL(item) && sameCluster(item));
-  const caches = workspaceConnections.filter((item) => ["redis", "valkey"].includes(String(item.type).toLowerCase()) && hasConnectionURL(item) && sameCluster(item));
-  databaseSelect.replaceChildren(new Option(databases.length ? "Choose PostgreSQL connection" : "No PostgreSQL URL connection saved", ""));
-  cacheSelect.replaceChildren(new Option(caches.length ? "Choose Redis / Valkey connection" : "No Redis-compatible URL connection saved", ""));
-  databases.forEach((item) => databaseSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
-  caches.forEach((item) => cacheSelect.append(new Option(`${item.name} · ${item.type}`, item.id)));
-  databaseSelect.value = databases.some((item) => String(item.id) === databasePrevious) ? databasePrevious : "";
-  cacheSelect.value = caches.some((item) => String(item.id) === cachePrevious) ? cachePrevious : "";
 }
 
 function suggestedEnvName(connectionType, secretKey) {
@@ -1176,6 +1185,8 @@ function renderRoute(route) {
   // Trigger page-specific data fetching
   if (activeRoute === "deploy") {
     $("#app-name")?.focus();
+    updateSourceFields();
+    updateVolumeFields();
     loadClusterContexts();
     checkGitHubInstallation();
   } else if (activeRoute === "tokens") {

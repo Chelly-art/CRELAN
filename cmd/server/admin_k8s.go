@@ -1543,19 +1543,25 @@ func fetchWorkspaceMappings(ctx context.Context, db *sql.DB) ([]workspaceMapping
 		m.OwnerEmail = ownerEmail.String
 		wsLookup[fmt.Sprint(m.ID)] = m.Name
 		wsLookup[m.Namespace] = m.Name
-
-		depRows, dErr := db.QueryContext(ctx, `SELECT name FROM deployments WHERE workspace_id = ?`, m.ID)
-		if dErr == nil {
-			for depRows.Next() {
-				var depName string
-				if err := depRows.Scan(&depName); err == nil {
-					m.Deployments = append(m.Deployments, depName)
-				}
-			}
-			depRows.Close()
-		}
-
 		mappings = append(mappings, m)
+	}
+	rows.Close()
+
+	// Query deployments without holding rows open on the connection
+	depRows, dErr := db.QueryContext(ctx, `SELECT workspace_id, name FROM deployments`)
+	if dErr == nil {
+		depMap := make(map[int64][]string)
+		for depRows.Next() {
+			var wsID int64
+			var depName string
+			if err := depRows.Scan(&wsID, &depName); err == nil {
+				depMap[wsID] = append(depMap[wsID], depName)
+			}
+		}
+		depRows.Close()
+		for i := range mappings {
+			mappings[i].Deployments = depMap[mappings[i].ID]
+		}
 	}
 
 	return mappings, wsLookup, nil

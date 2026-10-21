@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -138,6 +140,12 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("PANIC in HTTP handler %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+				writeError(w, http.StatusInternalServerError, fmt.Sprintf("Internal server error: %v", rec))
+			}
+		}()
 		next.ServeHTTP(w, r)
 		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
 	})

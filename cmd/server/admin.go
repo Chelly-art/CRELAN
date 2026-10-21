@@ -537,9 +537,11 @@ func (s *adminService) getPods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
 		return
 	}
-	_, wsMap, _ := fetchWorkspaceMappings(r.Context(), s.auth.db)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	_, wsMap, _ := fetchWorkspaceMappings(ctx, s.auth.db)
 	namespace := r.URL.Query().Get("namespace")
-	pods, err := fetchPodsList(r.Context(), provisioner.client, namespace, wsMap)
+	pods, err := fetchPodsList(ctx, provisioner.client, namespace, wsMap)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not list pods: "+err.Error())
 		return
@@ -1144,7 +1146,9 @@ func (s *adminService) getNamespaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
 		return
 	}
-	list, err := fetchNamespacesList(r.Context(), provisioner.client)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	list, err := fetchNamespacesList(ctx, provisioner.client)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

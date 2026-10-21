@@ -27,7 +27,11 @@
         <div class="sidebar-bottom">
           <div class="user-card">
             <span class="user-avatar">U</span>
-            <span class="user-details"><strong id="account-name">Loading account…</strong><small id="account-email"></small></span>
+            <span class="user-details">
+              <strong id="account-name">Loading account…</strong>
+              <small id="account-email"></small>
+              <a href="/admin" id="admin-console-shortcut" hidden style="display: none; font-size: 11px; color: #c45100; font-weight: 600; text-decoration: none; margin-top: 4px;">⚡ Admin console</a>
+            </span>
             <button class="signout-button" id="signout-button" type="button">Sign out</button>
           </div>
         </div>
@@ -53,15 +57,6 @@
             <section class="panel issued-tokens deployment-list-panel">
               <div class="panel-heading"><div><h2>Your applications</h2><p>Applications in this workspace.</p></div><div><a class="inline-action" href="#deploy" style="margin-right: 14px; text-decoration: none;">＋ Deploy an app</a> <button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div></div>
               <div class="token-list" id="deployment-list"><div class="token-empty">Loading deployments…</div></div>
-            </section>
-            <section class="panel infisical-template" id="infisical-template" style="margin-top: 20px;">
-              <div class="panel-heading"><div><div class="eyebrow">SERVICE TEMPLATE</div><h2>Self-host Infisical</h2><p>Prepare a pinned Infisical image deployment and connect workspace services.</p></div><span class="template-status">Setup flow</span></div>
-              <div class="infisical-template-grid">
-                <div><h3>1. Prepare the services</h3><ol><li>Create a PostgreSQL database in <a href="#databases" class="template-nav-link">Databases</a> and wait for it to be ready.</li><li>Create Redis or Valkey in <a href="#services" class="template-nav-link">Services & storage</a>. Infisical requires Redis; Valkey compatibility is not guaranteed by Infisical, so use Redis where available or verify compatibility yourself.</li><li>Save each ready service as a workspace connection with a connection URL. The app details page can attach <code>CONNECTION_URL</code> as <code>DB_CONNECTION_URI</code> or <code>REDIS_URL</code>.</li></ol></div>
-                <div><h3>2. Deploy and configure the app</h3><p>Infisical’s official Docker guide requires <code>ENCRYPTION_KEY</code>, <code>AUTH_SECRET</code>, <code>DB_CONNECTION_URI</code>, <code>REDIS_URL</code>, and <code>SITE_URL</code>. The app details flow stores the two keys as Kubernetes Secret values, sets the public URL, and attaches database/cache connection keys by reference.</p><code class="template-image">infisical/infisical:v0.166.8</code><button class="primary-button" id="prepare-infisical-deploy" type="button">Prepare pinned image deployment</button><p class="field-help">Deploy the app first. Open its details to apply Infisical configuration after the workload exists. You will need ready PostgreSQL and Redis/Valkey connections.</p></div>
-              </div>
-              <div class="template-gap"><strong>Deployment prerequisite:</strong> create PostgreSQL and Redis/Valkey first. After deploying the pinned image, configure it from app details. The UI applies settings and connection references; it does not claim an HA guarantee. Valkey compatibility with Infisical is not guaranteed by Infisical.</div>
-              <p class="template-reference">Official references: <a href="https://infisical.com/docs/self-hosting/deployment-options/standalone-infisical" target="_blank" rel="noopener noreferrer">Docker deployment and required variables</a> · <a href="https://github.com/Infisical/infisical/releases/tag/v0.166.8" target="_blank" rel="noopener noreferrer">pinned v0.166.8 release</a> · <a href="https://infisical.com/videos/self-host-infisical" target="_blank" rel="noopener noreferrer">Infisical setup walkthrough</a></p>
             </section>
           </div>
 
@@ -172,6 +167,10 @@
                       <input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080">
                     </div>
                   </div>
+                  <div style="margin-top: 12px;">
+                    <label class="form-label" for="deploy-initial-env">Environment variables <span>(optional, KEY=VALUE per line)</span></label>
+                    <textarea class="text-input deployment-input" id="deploy-initial-env" rows="3" placeholder="NODE_ENV=production&#10;PORT=8080" style="font-family: monospace; font-size: 11px;"></textarea>
+                  </div>
                   <label class="checkbox-label" style="margin-top: 12px;"><input type="checkbox" id="app-volume-enabled"> Attach persistent storage (single replica)</label>
                   <div id="app-volume-fields" class="app-volume-fields" hidden><p class="field-help">Single writer (RWO) storage requires one app replica. Shared (RWX) storage can be used by multiple replicas only when the platform has configured a compatible durable storage class. Persistent claims are retained after app deletion; use Retained volumes to permanently purge data.</p><div class="deployment-two-col"><div><label class="form-label" for="app-volume-size">Volume size</label><select class="text-input deployment-input" id="app-volume-size"><option value="5Gi">5 GiB</option><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option></select></div><div><label class="form-label" for="app-volume-access-mode">Volume access</label><select class="text-input deployment-input" id="app-volume-access-mode"><option value="single_writer">Single writer (RWO)</option><option value="shared">Shared (RWX, platform configured)</option></select></div></div><label class="form-label" for="app-volume-mount">Mount path</label><input class="text-input deployment-input" id="app-volume-mount" value="/data" placeholder="/data"></div>
                   <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
@@ -182,7 +181,11 @@
           </div>
           <section class="panel app-runtime-panel" id="app-runtime" hidden>
             <div class="panel-heading"><div><div class="eyebrow">APPLICATION DETAILS</div><h2 id="runtime-app-name">Application</h2><p id="runtime-app-summary">Resources and logs for this application.</p></div><button class="inline-action" id="close-runtime" type="button">Close details</button></div>
-            <div class="runtime-actions"><button class="inline-action" id="refresh-runtime" type="button">Refresh resources</button><button class="inline-action" id="refresh-logs" type="button">Refresh logs</button></div>
+            <div class="runtime-actions">
+              <button class="inline-action" id="rollback-app" type="button" style="color: #c45100; font-weight: 600;">↩ Rollback to previous version</button>
+              <button class="inline-action" id="refresh-runtime" type="button">Refresh resources</button>
+              <button class="inline-action" id="refresh-logs" type="button">Refresh logs</button>
+            </div>
             <p class="deployment-form-error" id="runtime-error" role="alert" hidden></p>
             <section class="app-connection-attach">
               <div class="panel-heading"><div><h3>Attach a saved connection</h3><p>Map connection secret fields to environment variable names. Secret values stay in Kubernetes and are never sent to the browser.</p></div></div>
@@ -193,17 +196,38 @@
               </form>
               <p class="field-help" id="app-connection-status" role="status"></p>
             </section>
-            <section class="app-connection-attach infisical-app-setup" id="infisical-app-setup" hidden>
-              <div class="panel-heading"><div><h3>Configure Infisical</h3><p>Set required configuration on this Infisical image. Database and cache values are attached from Kubernetes Secrets by reference and never sent to the browser.</p></div></div>
-              <form id="infisical-app-form" class="database-create-form">
-                <div class="deployment-two-col"><div><label class="form-label" for="infisical-database-connection">PostgreSQL connection</label><select class="text-input deployment-input" id="infisical-database-connection" required><option value="">Loading connections…</option></select></div><div><label class="form-label" for="infisical-cache-connection">Redis / Valkey connection</label><select class="text-input deployment-input" id="infisical-cache-connection" required><option value="">Loading connections…</option></select></div></div>
-                <label class="form-label" for="infisical-site-url">Public HTTPS site URL</label><input class="text-input deployment-input" id="infisical-site-url" type="url" placeholder="https://secrets.example.com" required>
-                <div class="deployment-two-col"><div><label class="form-label" for="infisical-encryption-key">ENCRYPTION_KEY <span>(32 hex characters)</span></label><input class="text-input deployment-input" id="infisical-encryption-key" type="password" autocomplete="new-password" minlength="32" maxlength="32" required></div><div><label class="form-label" for="infisical-auth-secret">AUTH_SECRET <span>(32 bytes, base64)</span></label><input class="text-input deployment-input" id="infisical-auth-secret" type="password" autocomplete="new-password" required></div></div>
-                <button class="inline-action" id="generate-infisical-app-keys" type="button">Generate both keys securely</button> <button class="inline-action" id="copy-infisical-app-keys" type="button" disabled>Copy keys for backup</button>
-                <p class="field-help">Back up these keys before applying. Infisical data can become unrecoverable if ENCRYPTION_KEY is lost. Crelan stores them as Kubernetes Secret values and never displays them again.</p>
-                <p class="deployment-form-error" id="infisical-app-error" role="alert" hidden></p><button class="primary-button" id="infisical-app-submit" type="submit">Apply Infisical configuration</button>
+            <section class="app-connection-attach" id="app-env-section">
+              <div class="panel-heading"><div><h3>Environment Variables & Secrets</h3><p>Configure runtime environment variables (ConfigMaps) and sensitive credentials (Kubernetes Secrets).</p></div></div>
+              <form id="app-env-form" class="database-create-form">
+                <div>
+                  <label class="form-label" for="app-env-vars">Environment variables <span>(KEY=VALUE per line, public ConfigMap)</span></label>
+                  <textarea class="text-input deployment-input" id="app-env-vars" rows="3" placeholder="NODE_ENV=production&#10;PORT=8080&#10;LOG_LEVEL=info" style="font-family: monospace; font-size: 11px;"></textarea>
+                </div>
+                <div style="margin-top: 10px;">
+                  <label class="form-label" for="app-secret-vars">Secrets <span>(KEY=VALUE per line, encrypted Kubernetes Secret)</span></label>
+                  <textarea class="text-input deployment-input" id="app-secret-vars" rows="3" placeholder="API_SECRET_KEY=sk_live_...&#10;STRIPE_TOKEN=..." style="font-family: monospace; font-size: 11px;"></textarea>
+                </div>
+                <p class="deployment-form-error" id="app-env-error" role="alert" hidden></p>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+                  <button class="primary-button" id="app-env-submit" type="submit" style="width: auto;">Save environment & secrets</button>
+                </div>
               </form>
-              <p class="field-help" id="infisical-app-status" role="status">Choose ready PostgreSQL and Redis/Valkey connection records with connection URLs.</p>
+              <p class="field-help" id="app-env-status" role="status"></p>
+            </section>
+            <section class="app-connection-attach" id="app-domains-section">
+              <div class="panel-heading">
+                <div><h3>Custom Domains & TLS</h3><p>Route public traffic through custom domain names with automated TLS certificates.</p></div>
+                <button class="inline-action" id="refresh-domains" type="button">Refresh domains</button>
+              </div>
+              <form id="app-domain-form" style="display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px;">
+                <div style="flex: 1;">
+                  <label class="form-label" for="new-custom-domain">Domain name</label>
+                  <input class="text-input deployment-input" id="new-custom-domain" placeholder="api.example.com" maxlength="253" required>
+                </div>
+                <button class="primary-button" id="add-domain-submit" type="submit" style="width: auto; height: 38px;">Add domain</button>
+              </form>
+              <p class="deployment-form-error" id="domain-error" role="alert" hidden></p>
+              <div id="app-domains-list" class="token-list" style="margin-top: 8px;"><div class="token-empty">No custom domains configured.</div></div>
             </section>
             <div class="resource-grid app-resource-grid">
               <section class="panel resource-panel"><div class="panel-heading"><div><h3>Application pods</h3><p>Pods associated with this app only</p></div><span class="resource-count" id="app-pod-count">—</span></div><div class="resource-table-wrap" id="app-pods-list"></div></section>
