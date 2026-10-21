@@ -1,0 +1,23 @@
+name: Deploy to Crelan
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy application
+        uses: OWNER/crelan/.github/actions/deploy@v1
+        with:
+          api-url: ${{ vars.CRELAN_API_URL }}
+          token: ${{ secrets.CRELAN_TOKEN }}
+          app-name: my-app
+          dockerfile: Dockerfile
+          port: 8080

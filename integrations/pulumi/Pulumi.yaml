@@ -1,0 +1,6 @@
+name: crelan-deployment
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: Deploy an application to Crelan from Pulumi

@@ -1,0 +1,96 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+build:image:
+  stage: build
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker build --pull -t "$IMAGE_TAG" .
+    - docker push "$IMAGE_TAG"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web"'
+
+deploy:image:
+  stage: deploy
+  image: alpine:3.21
+  needs:
+    - build:image
+  script:
+    - |
+      set -eu
+      apk add --no-cache curl jq
+      payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg image "$IMAGE_TAG" '{name:$name,image:$image,port:8080}')
+      if [ -n "${CRELAN_IMAGE_PULL_SECRET:-}" ]; then
+        payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg image "$IMAGE_TAG" --arg secret "$CRELAN_IMAGE_PULL_SECRET" '{name:$name,image:$image,image_pull_secret:$secret,port:8080}')
+      fi
+      response=$(curl --fail-with-body --silent --show-error \
+        -X POST "$CRELAN_API_URL/api/v1/deployments" \
+        -H "Authorization: Bearer $CRELAN_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "$payload")
+      id=$(printf '%s' "$response" | jq -er '.id')
+      attempt=0
+      while [ "$attempt" -lt 900 ]; do
+        status=$(curl --fail-with-body --silent --show-error \
+          -H "Authorization: Bearer $CRELAN_TOKEN" \
+          "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
+        case "$status" in
+          running) exit 0 ;;
+          failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
+        esac
+        sleep 3
+        attempt=$((attempt + 1))
+      done
+      echo "Timed out waiting for deployment $id" >&2
+      exit 1
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web"'
+
+# Optional Crelan-managed source build. Requires a public GitHub repository URL.
+deploy:source:
+  stage: deploy
+  image: alpine:3.21
+  when: manual
+  script:
+    - |
+      set -eu
+      apk add --no-cache curl jq
+      branch="${CRELAN_SOURCE_BRANCH:-main}"
+      payload=$(jq -n --arg name "$CRELAN_APP_NAME" --arg repo "$CRELAN_SOURCE_REPOSITORY" --arg branch "$branch" '{name:$name,repository_url:$repo,branch:$branch,dockerfile:"Dockerfile",port:8080}')
+      response=$(curl --fail-with-body --silent --show-error \
+        -X POST "$CRELAN_API_URL/api/v1/deployments" \
+        -H "Authorization: Bearer $CRELAN_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "$payload")
+      id=$(printf '%s' "$response" | jq -er '.id')
+      attempt=0
+      while [ "$attempt" -lt 900 ]; do
+        status=$(curl --fail-with-body --silent --show-error \
+          -H "Authorization: Bearer $CRELAN_TOKEN" \
+          "$CRELAN_API_URL/api/v1/deployments/$id" | jq -r '.status')
+        case "$status" in
+          running) exit 0 ;;
+          failed|deleted|cancelled) echo "Deployment $id finished with status $status" >&2; exit 1 ;;
+        esac
+        sleep 3
+        attempt=$((attempt + 1))
+      done
+      echo "Timed out waiting for deployment $id" >&2
+      exit 1
+  rules:
+    - if: '$CRELAN_SOURCE_REPOSITORY'
+      when: manual
+    - when: never

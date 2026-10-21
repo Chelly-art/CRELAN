@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fa">
+    <title>Crelan — Applications</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Crelan home"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a>
+        <div class="workspace-label">WORKSPACE</div>
+        <nav aria-label="Main navigation">
+          <a class="nav-link active" href="#applications"><span class="nav-icon">▦</span> Applications</a>
+          <a class="nav-link" href="#deploy"><span class="nav-icon">＋</span> Deploy an app</a>
+          <a class="nav-link" href="/docs"><span class="nav-icon">?</span> Customer docs</a>
+          <a class="nav-link" href="#databases"><span class="nav-icon">◉</span> Databases</a>
+          <a class="nav-link" href="#services"><span class="nav-icon">◇</span> Services & storage</a>
+          <a class="nav-link" href="#storage"><span class="nav-icon">▤</span> Retained volumes</a>
+          <a class="nav-link" href="#tokens"><span class="nav-icon">🔑</span> API tokens</a>
+          <a class="nav-link" href="#team"><span class="nav-icon">♙</span> Team</a>
+          <a class="nav-link" href="#usage"><span class="nav-icon">◷</span> Usage & audit</a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="user-card">
+            <span class="user-avatar">U</span>
+            <span class="user-details">
+              <strong id="account-name">Loading account…</strong>
+              <small id="account-email"></small>
+              <a href="/admin" id="admin-console-shortcut" hidden style="display: none; font-size: 11px; color: #c45100; font-weight: 600; text-decoration: none; margin-top: 4px;">⚡ Admin console</a>
+            </span>
+            <button class="signout-button" id="signout-button" type="button">Sign out</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="breadcrumbs"><select id="workspace-select" class="text-input" aria-label="Current workspace"></select><span class="crumb-divider">/</span><strong id="page-title">Applications</strong></div>
+          <span class="top-avatar" id="top-avatar">U</span>
+        </header>
+
+        <section class="content">
+          <!-- 1. Applications Page -->
+          <div class="dashboard-page" id="applications-page">
+            <div class="welcome">
+              <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
+              <div class="welcome-actions" style="display: flex; align-items: center; gap: 8px;">
+                <span class="token-row-state active" id="github-connected-badge" hidden style="font-size: 11px;">✓ GitHub: <strong id="github-account-name"></strong></span>
+                <a class="inline-action" id="github-connect-btn" href="/settings/github/install" style="font-size: 11px; text-decoration: none;">🔗 Connect GitHub</a>
+                <a class="primary-button" href="#deploy" style="text-decoration: none;"><span>＋</span> Deploy an app</a>
+              </div>
+            </div>
+            <section class="panel issued-tokens deployment-list-panel">
+              <div class="panel-heading"><div><h2>Your applications</h2><p>Applications in this workspace.</p></div><div><a class="inline-action" href="#deploy" style="margin-right: 14px; text-decoration: none;">＋ Deploy an app</a> <button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div></div>
+              <div class="token-list" id="deployment-list"><div class="token-empty">Loading deployments…</div></div>
+            </section>
+          </div>
+
+          <!-- 2. Deploy Page -->
+          <div class="dashboard-page" id="deploy-page" hidden>
+            <div class="welcome">
+              <div><div class="eyebrow">NEW DEPLOYMENT</div><h1>Deploy an application</h1><p>Deploy a Git repository or a pre-built container image into your workspace.</p></div>
+              <div class="welcome-actions">
+                <a class="inline-action" href="#applications" style="font-size: 11px; text-decoration: none;">← Back to applications</a>
+              </div>
+            </div>
+            <div class="deploy-card-wrapper">
+              <section class="panel token-builder" id="deploy-form-panel">
+                <div class="panel-heading"><div><h2>Deployment configuration</h2><p>Provide your source code repository or container image coordinates.</p></div></div>
+                <form id="deployment-form">
+                  <div class="deployment-two-col">
+                    <div>
+                      <label class="form-label" for="app-source">Source type</label>
+                      <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
+                    </div>
+                    <div>
+                      <label class="form-label" for="app-cluster">Deployment cluster / target</label>
+                      <select class="text-input deployment-input" id="app-cluster" name="cluster_context">
+                        <option value="">Default cluster (platform managed)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <label class="form-label" for="app-name">Deployment name</label>
+                  <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
+                  <div id="repository-source-fields">
+                    <label class="form-label" for="app-repository">GitHub repository URL</label>
+                    <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
+                    <div id="github-auto-deploy-hint" style="margin-top: 6px; font-size: 11px;">
+                      <span id="github-app-status-text" style="color: #667085;">💡 Connect GitHub to automatically trigger zero-downtime deployments on git push.</span>
+                      <a id="github-app-connect-link" href="/settings/github/install" target="_blank" style="color: #c45100; font-weight: 600; margin-left: 6px; text-decoration: none;">Connect GitHub App →</a>
+                    </div>
+                    <div class="deployment-two-col">
+                      <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
+                      <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
+                    </div>
+                    <div class="deployment-two-col">
+                      <div>
+                        <label class="form-label" for="app-build-strategy">Build mechanism</label>
+                        <select class="text-input deployment-input" id="app-build-strategy" name="build_strategy">
+                          <option value="auto">Auto-detect (Dockerfile or Buildpack)</option>
+                          <option value="dockerfile">Dockerfile (BuildKit)</option>
+                          <option value="buildpack">Cloud Native Buildpack (kpack)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="form-label" for="app-dockerfile">Dockerfile path</label>
+                        <input class="text-input deployment-input" id="app-dockerfile" name="dockerfile" value="Dockerfile" placeholder="Dockerfile">
+                      </div>
+                    </div>
+                    <div class="deployment-two-col" style="align-items: center; margin-top: 6px;">
+                      <div>
+                        <label class="form-label" for="app-git-token">Private repo token <span>(optional, for private GitHub repos)</span></label>
+                        <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
+                      </div>
+                      <div style="padding-top: 18px;">
+                        <button class="inline-action" id="open-dockerfile-generator" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="image-source-fields" hidden>
+                    <label class="form-label" for="app-image">Container image</label>
+                    <input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest">
+                    <div class="registry-credential-group">
+                      <div class="registry-credential-header">
+                        <label class="form-label" for="image-pull-secret" style="margin: 0;">Private registry credential <span>(optional)</span></label>
+                        <button class="inline-action" id="show-registry-form" type="button" style="font-weight: 600;">＋ Add registry credential</button>
+                      </div>
+                      <select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select>
+                    </div>
+                    <div id="registry-form" class="registry-form-panel" hidden>
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="font-size: 11px; color: #344054;">Add Private Registry Credential</strong>
+                        <span style="font-size: 9px; color: #667085;">Stores as K8s dockerconfigjson secret</span>
+                      </div>
+                      <div class="deployment-two-col">
+                        <div>
+                          <label class="form-label" for="registry-name">Credential name</label>
+                          <input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63">
+                        </div>
+                        <div>
+                          <label class="form-label" for="registry-server">Registry host</label>
+                          <input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io">
+                        </div>
+                      </div>
+                      <div class="deployment-two-col">
+                        <div>
+                          <label class="form-label" for="registry-username">Username <span>(leave blank for tokens)</span></label>
+                          <input class="text-input deployment-input" id="registry-username" autocomplete="username" placeholder="e.g. github username">
+                        </div>
+                        <div>
+                          <label class="form-label" for="registry-password">Personal Access Token / Password</label>
+                          <input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password" placeholder="ghp_... or registry access token">
+                        </div>
+                      </div>
+                      <p class="field-help" style="margin: 0;">Works with GitHub Container Registry (ghcr.io), Docker Hub, GitLab, and AWS ECR.</p>
+                      <p class="deployment-form-error" id="registry-error" role="alert" hidden></p>
+                      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px;">
+                        <button class="primary-button" id="registry-submit" type="button" style="width: auto;">Save credential securely</button>
+                      </div>
+                    </div>
+                    <div style="margin-top: 14px;">
+                      <label class="form-label" for="image-port">Application port</label>
+                      <input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080">
+                    </div>
+                  </div>
+                  <div style="margin-top: 12px;">
+                    <label class="form-label" for="deploy-initial-env">Environment variables <span>(optional, KEY=VALUE per line)</span></label>
+                    <textarea class="text-input deployment-input" id="deploy-initial-env" rows="3" placeholder="NODE_ENV=production&#10;PORT=8080" style="font-family: monospace; font-size: 11px;"></textarea>
+                  </div>
+                  <label class="checkbox-label" style="margin-top: 12px;"><input type="checkbox" id="app-volume-enabled"> Attach persistent storage (single replica)</label>
+                  <div id="app-volume-fields" class="app-volume-fields" hidden><p class="field-help">Single writer (RWO) storage requires one app replica. Shared (RWX) storage can be used by multiple replicas only when the platform has configured a compatible durable storage class. Persistent claims are retained after app deletion; use Retained volumes to permanently purge data.</p><div class="deployment-two-col"><div><label class="form-label" for="app-volume-size">Volume size</label><select class="text-input deployment-input" id="app-volume-size"><option value="5Gi">5 GiB</option><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option></select></div><div><label class="form-label" for="app-volume-access-mode">Volume access</label><select class="text-input deployment-input" id="app-volume-access-mode"><option value="single_writer">Single writer (RWO)</option><option value="shared">Shared (RWX, platform configured)</option></select></div></div><label class="form-label" for="app-volume-mount">Mount path</label><input class="text-input deployment-input" id="app-volume-mount" value="/data" placeholder="/data"></div>
+                  <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
+                  <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy application</button>
+                </form>
+              </section>
+            </div>
+          </div>
+          <section class="panel app-runtime-panel" id="app-runtime" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">APPLICATION DETAILS</div><h2 id="runtime-app-name">Application</h2><p id="runtime-app-summary">Resources and logs for this application.</p></div><button class="inline-action" id="close-runtime" type="button">Close details</button></div>
+            <div class="runtime-actions">
+              <button class="inline-action" id="rollback-app" type="button" style="color: #c45100; font-weight: 600;">↩ Rollback to previous version</button>
+              <button class="inline-action" id="refresh-runtime" type="button">Refresh resources</button>
+              <button class="inline-action" id="refresh-logs" type="button">Refresh logs</button>
+            </div>
+            <p class="deployment-form-error" id="runtime-error" role="alert" hidden></p>
+            <section class="app-connection-attach">
+              <div class="panel-heading"><div><h3>Attach a saved connection</h3><p>Map connection secret fields to environment variable names. Secret values stay in Kubernetes and are never sent to the browser.</p></div></div>
+              <form id="app-connection-form" class="database-create-form">
+                <label class="form-label" for="app-connection-select">Saved connection</label><select class="text-input deployment-input" id="app-connection-select" required><option value="">Loading connections…</option></select>
+                <div id="app-connection-mappings" class="connection-mappings"></div>
+                <p class="deployment-form-error" id="app-connection-error" role="alert" hidden></p><button class="primary-button" id="app-connection-submit" type="submit" disabled>Attach to app</button>
+              </form>
+              <p class="field-help" id="app-connection-status" role="status"></p>
+            </section>
+            <section class="app-connection-attach" id="app-env-section">
+              <div class="panel-heading"><div><h3>Environment Variables & Secrets</h3><p>Configure runtime environment variables (ConfigMaps) and sensitive credentials (Kubernetes Secrets).</p></div></div>
+              <form id="app-env-form" class="database-create-form">
+                <div>
+                  <label class="form-label" for="app-env-vars">Environment variables <span>(KEY=VALUE per line, public ConfigMap)</span></label>
+                  <textarea class="text-input deployment-input" id="app-env-vars" rows="3" placeholder="NODE_ENV=production&#10;PORT=8080&#10;LOG_LEVEL=info" style="font-family: monospace; font-size: 11px;"></textarea>
+                </div>
+                <div style="margin-top: 10px;">
+                  <label class="form-label" for="app-secret-vars">Secrets <span>(KEY=VALUE per line, encrypted Kubernetes Secret)</span></label>
+                  <textarea class="text-input deployment-input" id="app-secret-vars" rows="3" placeholder="API_SECRET_KEY=sk_live_...&#10;STRIPE_TOKEN=..." style="font-family: monospace; font-size: 11px;"></textarea>
+                </div>
+                <p class="deployment-form-error" id="app-env-error" role="alert" hidden></p>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+                  <button class="primary-button" id="app-env-submit" type="submit" style="width: auto;">Save environment & secrets</button>
+                </div>
+              </form>
+              <p class="field-help" id="app-env-status" role="status"></p>
+            </section>
+            <section class="app-connection-attach" id="app-domains-section">
+              <div class="panel-heading">
+                <div><h3>Custom Domains & TLS</h3><p>Route public traffic through custom domain names with automated TLS certificates.</p></div>
+                <button class="inline-action" id="refresh-domains" type="button">Refresh domains</button>
+              </div>
+              <form id="app-domain-form" style="display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px;">
+                <div style="flex: 1;">
+                  <label class="form-label" for="new-custom-domain">Domain name</label>
+                  <input class="text-input deployment-input" id="new-custom-domain" placeholder="api.example.com" maxlength="253" required>
+                </div>
+                <button class="primary-button" id="add-domain-submit" type="submit" style="width: auto; height: 38px;">Add domain</button>
+              </form>
+              <p class="deployment-form-error" id="domain-error" role="alert" hidden></p>
+              <div id="app-domains-list" class="token-list" style="margin-top: 8px;"><div class="token-empty">No custom domains configured.</div></div>
+            </section>
+            <div class="resource-grid app-resource-grid">
+              <section class="panel resource-panel"><div class="panel-heading"><div><h3>Application pods</h3><p>Pods associated with this app only</p></div><span class="resource-count" id="app-pod-count">—</span></div><div class="resource-table-wrap" id="app-pods-list"></div></section>
+              <section class="panel resource-panel"><div class="panel-heading"><div><h3>App configuration</h3><p>Configuration keys; secret values are never shown</p></div></div><div class="resource-table-wrap" id="app-config-list"></div></section>
+            </div>
+            <section class="panel resource-panel"><div class="panel-heading"><div><h3>Recent warnings</h3><p>Warning events for this app’s workload and owned resources</p></div><button class="inline-action" id="refresh-app-events" type="button">Refresh warnings</button></div><div class="resource-table-wrap" id="app-events-list"></div></section>
+            <section class="panel logs-panel"><div class="panel-heading"><div><h3>Recent logs</h3><p>Latest application output</p></div></div><pre class="app-logs" id="app-logs">Select an application to load its logs.</pre></section>
+          </section>
+          <section class="panel databases-panel" id="databases-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">MANAGED DATABASES</div><h2>Databases</h2><p>Managed PostgreSQL and MySQL clusters in your workspace.</p></div><button class="inline-action" id="refresh-databases" type="button">Refresh</button></div>
+            <form class="database-create-form" id="database-form">
+              <div class="deployment-two-col">
+                <div><label class="form-label" for="database-name">Database name</label><input class="text-input deployment-input" id="database-name" name="name" maxlength="48" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="customer-data" required></div>
+                <div><label class="form-label" for="database-engine">Engine</label><select class="text-input deployment-input" id="database-engine" name="engine" required><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option></select></div>
+              </div>
+              <div class="deployment-two-col">
+                <div><label class="form-label" for="database-version">Version <span>(operator default)</span></label><input class="text-input deployment-input" id="database-version" name="version" placeholder="Default version"></div>
+                <div><label class="form-label" for="database-storage">Storage</label><select class="text-input deployment-input" id="database-storage" name="storage"><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option><option value="100Gi">100 GiB</option></select></div>
+              </div>
+              <p class="field-help" id="database-backup-note">Backups require an operator schema and S3-compatible bucket configured by the platform. PostgreSQL restore creates a new database from the latest completed backup; MySQL restore is not currently exposed.</p>
+              <p class="deployment-form-error" id="database-error" role="alert" hidden></p>
+              <button class="primary-button" id="database-submit" type="submit">Create database cluster</button>
+            </form>
+            <div class="database-credentials" id="database-credentials" hidden><strong>Save these credentials now</strong><p>The password is shown only once. Store it securely before closing this view.</p><code id="database-credential-values"></code><button class="inline-action" id="copy-database-credentials" type="button">Copy credentials</button></div>
+            <div class="token-list" id="database-list"><div class="token-empty">Loading databases…</div></div>
+          </section>
+          <section class="panel databases-panel" id="workspace-storage-page" hidden><div class="panel-heading"><div><div class="eyebrow">PERSISTENT DATA</div><h2>Retained app volumes</h2><p>Volumes stay after app deletion so you can recover data. Purging a volume permanently deletes its contents.</p></div><button class="inline-action" id="refresh-workspace-storage" type="button">Refresh</button></div><div class="token-list" id="workspace-storage-list"><div class="token-empty">Loading retained volumes…</div></div></section>
+          <!-- Page: API Tokens -->
+          <div class="dashboard-page" id="tokens-page" hidden>
+            <div class="welcome">
+              <div>
+                <div class="eyebrow">API ACCESS</div>
+                <h1>Workspace API tokens</h1>
+                <p>Generate secure tokens for the Crelan CLI, GitHub Actions, GitLab CI, Terraform, and Pulumi.</p>
+              </div>
+              <div class="welcome-actions">
+                <button class="inline-action" id="refresh-tokens" type="button" style="font-size: 11px;">Refresh tokens</button>
+              </div>
+            </div>
+
+            <div style="display: grid; gap: 20px;">
+              <section class="panel token-builder">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Create a new API token</h2>
+                    <p>Issue an API token with granular access scopes for automated pipelines.</p>
+                  </div>
+                </div>
+                <form id="token-create-form" class="database-create-form" style="border-bottom: 0; padding-bottom: 0;">
+                  <div class="deployment-two-col">
+                    <div>
+                      <label class="form-label" for="token-name">Token name</label>
+                      <input class="text-input deployment-input" id="token-name" placeholder="github-actions-deployer" maxlength="80" required>
+                    </div>
+                    <div>
+                      <label class="form-label" for="token-expiry">Expiration</label>
+                      <select class="text-input deployment-input" id="token-expiry">
+                        <option value="30">30 days</option>
+                        <option value="7">7 days</option>
+                        <option value="90">90 days</option>
+                        <option value="365">1 year (365 days)</option>
+                        <option value="">No expiration</option>
+                      </select>
+                    </div>
+                  </div>
+                  <label class="form-label">Access scopes</label>
+                  <div class="token-scopes-grid">
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="deployments:write" checked> <div><strong>deployments:write</strong> <small>Create, update, and delete apps</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="deployments:read" checked> <div><strong>deployments:read</strong> <small>Read deployment and rollout status</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="logs:read" checked> <div><strong>logs:read</strong> <small>Stream live container logs</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="resources:read" checked> <div><strong>resources:read</strong> <small>Inspect Kubernetes pods & resources</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="usage:read"> <div><strong>usage:read</strong> <small>Read workspace quota consumption</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="audit:read"> <div><strong>audit:read</strong> <small>Inspect audit log trail</small></div></label>
+                  </div>
+                  <p class="deployment-form-error" id="token-error" role="alert" hidden></p>
+                  <div>
+                    <button class="primary-button" id="token-submit" type="submit" style="width: auto; min-width: 180px;">Generate API token</button>
+                  </div>
+                </form>
+                <div class="database-credentials" id="token-created-card" hidden style="margin-top: 18px;">
+                  <strong>Save your access token now</strong>
+                  <p>This token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
+                  <code id="token-secret-value" style="user-select: all; word-break: break-all; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #b8d4c2; display: block; font-size: 11px; margin: 8px 0;"></code>
+                  <button class="inline-action" id="copy-token-secret" type="button" style="font-weight: 600;">Copy token</button>
+                </div>
+              </section>
+
+              <section class="panel issued-tokens">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Active & revoked tokens</h2>
+                    <p>API tokens registered for this workspace.</p>
+                  </div>
+                </div>
+                <div class="token-list" id="tokens-list">
+                  <div class="token-empty">Loading workspace tokens…</div>
+                </div>
+              </section>
+
+              <section class="panel issued-tokens" style="margin-top: 20px;">
+                <div class="panel-heading">
+                  <div>
+                    <div class="eyebrow">AUTOMATION & CI/CD</div>
+                    <h2>Continuous deployment setup</h2>
+                    <p>Integrate your CI/CD pipelines to build and deploy applications automatically.</p>
+                  </div>
+                </div>
+                <div style="display: grid; gap: 14px; margin-top: 12px;">
+                  <div style="background: #f8f9fb; border: 1px solid #e2e7ee; border-radius: 8px; padding: 16px;">
+                    <strong style="display: block; font-size: 13px; color: #202938; margin-bottom: 6px;">1. GitHub Actions (Official Action)</strong>
+                    <p style="font-size: 12px; color: #667085; margin: 0 0 10px;">Save <code>CRELAN_TOKEN</code> in your repository secrets and <code>CRELAN_API_URL</code> in variables:</p>
+                    <pre style="background: #101923; color: #e9edf4; padding: 12px; border-radius: 6px; font: 11px/1.6 monospace; overflow-x: auto; margin: 0;"><code>name: Deploy to Crelan
+on:
+  push:
+    branches: [ main ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
+        with:
+          api-url: ${{ vars.CRELAN_API_URL }}
+          token: ${{ secrets.CRELAN_TOKEN }}
+          app-name: storefront
+          port: "8080"</code></pre>
+                  </div>
+                  <div style="background: #f8f9fb; border: 1px solid #e2e7ee; border-radius: 8px; padding: 16px;">
+                    <strong style="display: block; font-size: 13px; color: #202938; margin-bottom: 6px;">2. GitLab CI / Any CI Runner (Image Deploy)</strong>
+                    <p style="font-size: 12px; color: #667085; margin: 0 0 10px;">Build and push your container image in CI, then instruct Crelan to roll out the image:</p>
+                    <pre style="background: #101923; color: #e9edf4; padding: 12px; border-radius: 6px; font: 11px/1.6 monospace; overflow-x: auto; margin: 0;"><code>deploy:
+  stage: deploy
+  script:
+    - curl -X POST "$CRELAN_API_URL/api/v1/deployments" \
+        -H "Authorization: Bearer $CRELAN_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"name\":\"storefront\",\"image\":\"$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA\",\"port\":8080}"</code></pre>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <section class="panel databases-panel" id="services-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">WORKSPACE ADD-ONS</div><h2>Services & storage</h2><p>Provision managed services and save external connection details, including existing S3-compatible buckets.</p></div><button class="inline-action" id="refresh-services" type="button">Refresh</button></div>
+            <div class="service-panels">
+              <section class="service-card">
+                  <div class="panel-heading"><div><h3>Managed services</h3><p>Operator-backed Valkey preview and RabbitMQ resources.</p></div></div>
+                <form id="managed-service-form" class="database-create-form">
+                  <div class="deployment-two-col"><div><label class="form-label" for="managed-service-name">Service name</label><input class="text-input deployment-input" id="managed-service-name" name="name" maxlength="40" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="queue-cache" required></div><div><label class="form-label" for="managed-service-type">Type</label><select class="text-input deployment-input" id="managed-service-type" name="type" required disabled><option value="">Loading service catalog…</option></select></div></div>
+                  <p class="valkey-preview-note" id="valkey-preview-note" hidden><strong>Experimental preview.</strong> The Valkey operator is not production-ready; this service has no production HA or SLA guarantee.</p>
+                  <p class="field-help" id="managed-service-description"></p>
+                  <div class="deployment-two-col"><div><label class="form-label" for="managed-service-version">Version <span>(operator default)</span></label><select class="text-input deployment-input" id="managed-service-version" name="version"><option value="">Use catalog default</option></select></div><div><label class="form-label" for="managed-service-storage">Storage per node</label><select class="text-input deployment-input" id="managed-service-storage" name="storage"><option value="">Use platform default</option></select></div></div>
+                  <p class="field-help">Availability and durability depend on the installed operator, cluster storage, failure domains, and backups. Crelan does not currently offer an HA SLA for these services.</p>
+                  <p class="deployment-form-error" id="managed-service-error" role="alert" hidden></p><button class="primary-button" id="managed-service-submit" type="submit" disabled>Create service</button>
+                </form>
+                <div class="database-credentials" id="managed-service-credentials" hidden><strong>Save these credentials now</strong><p>They are shown only in this response. Keep them in your secure password manager.</p><code id="managed-service-credential-values"></code><button class="inline-action" id="copy-managed-service-credentials" type="button">Copy credentials</button></div>
+                <div class="token-list" id="managed-service-list"><div class="token-empty">Loading managed services…</div></div>
+              </section>
+              <section class="service-card">
+                <div class="panel-heading"><div><h3>External connections</h3><p>Keep endpoints and credentials for services hosted elsewhere.</p></div></div>
+                <form id="managed-connection-form" class="managed-connection-create">
+                  <h4>Create a connection from a managed service</h4><p class="field-help">Crelan copies the managed endpoint and credentials into a workspace secret; values are never returned to this page.</p>
+                  <label class="form-label" for="managed-connection-source">Managed database or service</label><select class="text-input deployment-input" id="managed-connection-source" required><option value="">Loading managed resources…</option></select>
+                  <label class="form-label" for="managed-connection-name">Connection name</label><input class="text-input deployment-input" id="managed-connection-name" maxlength="49" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
+                  <p class="deployment-form-error" id="managed-connection-error" role="alert" hidden></p><button class="primary-button" id="managed-connection-submit" type="submit" disabled>Create connection securely</button>
+                </form>
+                <form id="connection-form" class="database-create-form">
+                  <h4 id="connection-form-heading">Add a connection</h4>
+                  <p class="field-help" id="connection-edit-secret-note" hidden>Existing secret values are never shown. Leave a secret field blank to keep its saved value, or enter a replacement.</p>
+                  <div class="deployment-two-col"><div><label class="form-label" for="connection-name">Connection name</label><input class="text-input deployment-input" id="connection-name" name="name" maxlength="49" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required></div><div><label class="form-label" for="connection-type">Service type</label><select class="text-input deployment-input" id="connection-type" name="type"><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option><option value="valkey">Valkey (experimental)</option><option value="redis">Redis</option><option value="rabbitmq">RabbitMQ</option><option value="object_storage">S3-compatible object storage</option><option value="generic">Generic</option><option value="other">Other</option></select></div></div>
+                  <div id="connection-standard-fields"><label class="form-label" for="connection-url">Connection URL <span>(optional; stored securely)</span></label><input class="text-input deployment-input" id="connection-url" name="connection_url" type="url" placeholder="postgresql://user:password@host:5432/database"><div class="deployment-two-col"><div><label class="form-label" for="connection-host">Host <span>(if URL is empty)</span></label><input class="text-input deployment-input" id="connection-host" name="host" placeholder="db.example.com" required></div><div><label class="form-label" for="connection-port">Port <span>(if URL is empty)</span></label><input class="text-input deployment-input" id="connection-port" name="port" type="number" min="1" max="65535" required></div></div>
+                  <div class="deployment-two-col"><div><label class="form-label" for="connection-database">Database / vhost <span>(optional)</span></label><input class="text-input deployment-input" id="connection-database" name="database"></div><div><label class="form-label" for="connection-username">Username <span>(optional)</span></label><input class="text-input deployment-input" id="connection-username" name="username" autocomplete="username"></div></div>
+                  <label class="form-label" for="connection-password">Password <span>(stored securely; never shown again)</span></label><input class="text-input deployment-input" id="connection-password" name="password" type="password" autocomplete="new-password"></div>
+                  <div id="connection-object-storage-fields" hidden><label class="form-label" for="connection-endpoint">S3-compatible endpoint</label><input class="text-input deployment-input" id="connection-endpoint" name="endpoint" type="url" placeholder="https://s3.example.com"><div class="deployment-two-col"><div><label class="form-label" for="connection-bucket">Bucket name</label><input class="text-input deployment-input" id="connection-bucket" name="bucket"></div><div><label class="form-label" for="connection-region">Region</label><input class="text-input deployment-input" id="connection-region" name="region" placeholder="us-east-1"></div></div><div class="deployment-two-col"><div><label class="form-label" for="connection-access-key">Access key ID</label><input class="text-input deployment-input" id="connection-access-key" name="access_key_id" autocomplete="username" placeholder="Enter to replace saved key"></div><div><label class="form-label" for="connection-secret-key">Secret access key <span>(stored securely; never shown again)</span></label><input class="text-input deployment-input" id="connection-secret-key" name="secret_access_key" type="password" autocomplete="new-password" placeholder="Enter to replace saved key"></div></div></div>
+                  <p class="deployment-form-error" id="connection-error" role="alert" hidden></p><p class="field-help" id="connection-rollout-status" role="status"></p><div><button class="primary-button" id="connection-submit" type="submit">Save connection</button> <button class="inline-action" id="connection-cancel-edit" type="button" hidden>Cancel edit</button></div>
+                </form>
+                <div class="token-list" id="connection-list"><div class="token-empty">Loading external connections…</div></div>
+              </section>
+              <section class="service-card service-card-wide" id="object-storage-info">
+                <div class="panel-heading"><div><h3>Object storage</h3><p>Connect an existing S3-compatible bucket with credentials you control.</p></div></div>
+                <div class="object-storage-note"><strong>Bring your bucket</strong><p>Choose “S3-compatible object storage” under External connections and enter the endpoint, bucket, region, and access keys. Crelan stores the secret securely and never returns it in connection listings. Managed bucket creation will be available once provider-side credential delegation is configured.</p><button class="inline-action" id="open-object-storage-connection" type="button">Add S3 bucket connection</button></div>
+              </section>
+            </div>
+          </section>
+          <section class="panel databases-panel" id="team-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">WORKSPACE ACCESS</div><h2>Team</h2><p>Manage who can deploy and view this workspace.</p></div><button class="inline-action" id="refresh-team" type="button">Refresh</button></div>
+            <form id="invite-form" class="database-create-form">
+              <h3>Invite a teammate</h3>
+              <div class="deployment-two-col"><div><label class="form-label" for="invite-email">Email address</label><input class="text-input deployment-input" id="invite-email" type="email" required></div><div><label class="form-label" for="invite-role">Role</label><select class="text-input deployment-input" id="invite-role"><option value="developer">Developer</option><option value="viewer">Viewer</option></select></div></div>
+              <p class="deployment-form-error" id="invite-error" role="alert" hidden></p><button class="primary-button" id="invite-submit" type="submit">Create invite</button>
+              <div class="database-credentials" id="invite-result" hidden><strong>Share this one-time invite token</strong><p>Copy it and send it to the invited person. It expires in seven days.</p><code id="invite-token"></code></div>
+            </form>
+            <div class="token-list" id="workspace-members"><div class="token-empty">Loading workspace members…</div></div>
+            <form id="accept-invite-form" class="database-create-form"><h3>Accept an invite</h3><label class="form-label" for="accept-invite-token">Invite token</label><input class="text-input deployment-input" id="accept-invite-token" required><p class="deployment-form-error" id="accept-invite-error" role="alert" hidden></p><button class="inline-action" type="submit">Accept invite</button></form>
+          </section>
+          <section class="panel databases-panel" id="usage-page" hidden>
+            <div class="panel-heading"><div><div class="eyebrow">WORKSPACE OPERATIONS</div><h2>Usage & audit</h2><p>Current application limits, deployment activity, and recent workspace changes.</p></div><button class="inline-action" id="refresh-usage" type="button">Refresh</button></div>
+            <div class="token-list" id="workspace-usage"><div class="token-empty">Loading usage…</div></div>
+            <h3>Recent activity</h3><div class="resource-table-wrap" id="workspace-audit"></div>
+          </section>
+          <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Deployment API connecting</span></footer>
+        </section>
+      </main>
+    </div>
+    <!-- Dockerfile Generator Modal -->
+    <div class="admin-modal-overlay" id="dockerfile-gen-modal" hidden style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+      <div class="panel" style="width: min(720px, 95vw); max-height: 85vh; display: flex; flex-direction: column; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-radius: 12px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e8ed; padding-bottom: 14px; margin-bottom: 16px;">
+          <div>
+            <h2 style="margin: 0; font-size: 18px;">✨ Production Dockerfile Generator</h2>
+            <p style="margin: 4px 0 0; color: #667085; font-size: 12px;">Choose your language/framework to get an optimized, multi-stage, non-root Dockerfile.</p>
+          </div>
+          <button class="inline-action" id="close-dockerfile-gen" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">✕</button>
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label class="form-label" for="gen-preset">Language / Framework Preset</label>
+          <select class="text-input" id="gen-preset" style="width: 100%;">
+            <option value="nodejs">Node.js / Express / Fastify (Multi-stage Alpine)</option>
+            <option value="nextjs">Next.js (Standalone Multi-stage)</option>
+            <option value="python">Python (FastAPI / Flask / Django / Uvicorn)</option>
+            <option value="golang">Go (Golang Minimal Multi-stage)</option>
+            <option value="rust">Rust (Cargo Multi-stage Debian Slim)</option>
+            <option value="java">Java / Spring Boot (Eclipse Temurin JRE)</option>
+            <option value="static">Static Web (HTML / CSS / JS with Nginx)</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-height: 220px; display: flex; flex-direction: column;">
+          <label class="form-label">Generated Dockerfile</label>
+          <pre id="gen-dockerfile-code" style="flex: 1; overflow: auto; background: #1e293b; color: #f8fafc; padding: 14px; border-radius: 8px; font-family: monospace; font-size: 11px; line-height: 1.5; margin: 0; white-space: pre;"></pre>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; border-top: 1px solid #e5e8ed; padding-top: 14px;">
+          <button class="inline-action" id="copy-generated-dockerfile" type="button">Copy to clipboard</button>
+          <button class="primary-button" id="apply-generated-dockerfile" type="button">Use for deployment</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

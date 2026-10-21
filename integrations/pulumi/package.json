@@ -1,0 +1,23 @@
+{
+  "name": "crelan-pulumi-provider",
+  "version": "0.1.0",
+  "description": "Pulumi TypeScript dynamic resource for Crelan deployments",
+  "main": "dist/provider.js",
+  "types": "dist/provider.d.ts",
+  "files": ["dist/provider.js", "dist/provider.d.ts", "README.md"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "package": "tsc --outDir dist",
+    "test": "npm run package && node --test dist/test/provider.test.js"
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  }
+}

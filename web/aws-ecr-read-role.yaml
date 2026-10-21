@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create a read-only role for Crelan to access one Amazon ECR repository.
+Parameters:
+  CrelanAwsAccountId:
+    Type: String
+    AllowedPattern: '^[0-9]{12}$'
+    Description: AWS account that runs Crelan's registry connector.
+  CrelanExternalId:
+    Type: String
+    MinLength: 2
+    MaxLength: 1224
+    Description: Unique external ID shown in the Crelan registry connection flow.
+  RepositoryArn:
+    Type: String
+    AllowedPattern: '^arn:[^:]+:ecr:[^:]+:[0-9]{12}:repository/.+$'
+    Description: ARN of the ECR repository Crelan may pull from.
+Resources:
+  CrelanEcrReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Read-only Crelan access to the selected ECR repository.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${CrelanAwsAccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref CrelanExternalId
+      Policies:
+        - PolicyName: ReadSelectedEcrRepository
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AuthenticateToEcr
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: ReadSelectedRepository
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Ref RepositoryArn
+Outputs:
+  CrelanRoleArn:
+    Description: Add this role ARN to the Crelan registry connection.
+    Value: !GetAtt CrelanEcrReadRole.Arn
