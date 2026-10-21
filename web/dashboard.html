@@ -120,7 +120,7 @@
                         <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
                       </div>
                       <div style="padding-top: 18px;">
-                        <button class="inline-action" id="open-dockerfile-generator" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
+                        <button class="inline-action" id="open-dockerfile-generator" onclick="openDockerfileModal()" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
                       </div>
                     </div>
                   </div>
@@ -436,18 +436,18 @@ jobs:
       </main>
     </div>
     <!-- Dockerfile Generator Modal -->
-    <div class="admin-modal-overlay" id="dockerfile-gen-modal" hidden style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+    <div class="dockerfile-modal-overlay" id="dockerfile-gen-modal" hidden onclick="if(event.target===this)closeDockerfileModal()">
       <div class="panel" style="width: min(720px, 95vw); max-height: 85vh; display: flex; flex-direction: column; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-radius: 12px; background: #fff;">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e8ed; padding-bottom: 14px; margin-bottom: 16px;">
           <div>
             <h2 style="margin: 0; font-size: 18px;">✨ Production Dockerfile Generator</h2>
             <p style="margin: 4px 0 0; color: #667085; font-size: 12px;">Choose your language/framework to get an optimized, multi-stage, non-root Dockerfile.</p>
           </div>
-          <button class="inline-action" id="close-dockerfile-gen" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">✕</button>
+          <button class="inline-action" id="close-dockerfile-gen" onclick="closeDockerfileModal()" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">✕</button>
         </div>
         <div style="margin-bottom: 14px;">
           <label class="form-label" for="gen-preset">Language / Framework Preset</label>
-          <select class="text-input" id="gen-preset" style="width: 100%;">
+          <select class="text-input" id="gen-preset" onchange="updateGeneratedDockerfile()" style="width: 100%;">
             <option value="nodejs">Node.js / Express / Fastify (Multi-stage Alpine)</option>
             <option value="nextjs">Next.js (Standalone Multi-stage)</option>
             <option value="python">Python (FastAPI / Flask / Django / Uvicorn)</option>
@@ -462,8 +462,8 @@ jobs:
           <pre id="gen-dockerfile-code" style="flex: 1; overflow: auto; background: #1e293b; color: #f8fafc; padding: 14px; border-radius: 8px; font-family: monospace; font-size: 11px; line-height: 1.5; margin: 0; white-space: pre;"></pre>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; border-top: 1px solid #e5e8ed; padding-top: 14px;">
-          <button class="inline-action" id="copy-generated-dockerfile" type="button">Copy to clipboard</button>
-          <button class="primary-button" id="apply-generated-dockerfile" type="button">Use for deployment</button>
+          <button class="inline-action" id="copy-generated-dockerfile" onclick="copyGeneratedDockerfile()" type="button">Copy to clipboard</button>
+          <button class="primary-button" id="apply-generated-dockerfile" onclick="applyGeneratedDockerfile()" type="button">Use for deployment</button>
         </div>
       </div>
     </div>

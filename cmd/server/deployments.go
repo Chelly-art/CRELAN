@@ -1475,7 +1475,8 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 		if errors.Is(err, errPrivateBuildpacks) {
 			return s.finishRun(runID, deploymentID, "failed", "Private repositories without a Dockerfile are not supported by the Buildpacks fallback")
 		}
-		return s.finishRun(runID, deploymentID, "failed", "Build or rollout failed; check the repository and platform configuration")
+		errMsg := "Build or rollout failed: " + err.Error()
+		return s.finishRun(runID, deploymentID, "failed", errMsg)
 	}
 	if runCtx.Err() != nil {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1849,8 +1850,18 @@ func (s *deploymentService) logs(w http.ResponseWriter, r *http.Request) {
 	}
 	logs, err := runtime.ApplicationLogs(r.Context(), principal.workspaceID, item.Name, tail)
 	if err != nil {
+		if item.Status == "failed" || item.Status == "degraded" || item.Status == "building" || item.Status == "queued" {
+			statusInfo := fmt.Sprintf("Deployment Status: %s\n", strings.ToUpper(item.Status))
+			if item.StatusMessage != "" {
+				statusInfo += fmt.Sprintf("\nDetails / Failure Reason:\n%s\n", item.StatusMessage)
+			} else {
+				statusInfo += "\nNo container log output available (application failed or terminated before pod readiness).\n"
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"logs": statusInfo})
+			return
+		}
 		log.Printf("load app logs for workspace %d: %v", principal.workspaceID, err)
-		writeError(w, http.StatusBadGateway, "Could not load application logs")
+		writeError(w, http.StatusBadGateway, "Could not load application logs: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"logs": logs})

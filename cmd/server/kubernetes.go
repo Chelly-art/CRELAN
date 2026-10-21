@@ -1076,6 +1076,10 @@ func (p *kubernetesProvisioner) buildWithBuildKit(ctx context.Context, workspace
 			return imageTag + "@" + matches[1], nil
 		}
 		if latest.Status.Failed > 0 {
+			logs, _ := p.buildKitLogs(ctx, namespace, created.Name)
+			if logs != "" {
+				return "", fmt.Errorf("%w: %s", errBuildFailed, logs)
+			}
 			return "", errBuildFailed
 		}
 		select {
@@ -1101,13 +1105,13 @@ func (p *kubernetesProvisioner) buildKitLogs(ctx context.Context, namespace, job
 		return "", errors.New("no BuildKit pod was found")
 	}
 
-	request := p.client.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "build", TailLines: ptr(int64(30))})
+	request := p.client.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{Container: "build", TailLines: ptr(int64(100))})
 	stream, err := request.Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("open BuildKit pod logs: %w", err)
 	}
 	defer stream.Close()
-	data, err := io.ReadAll(io.LimitReader(stream, 8<<10))
+	data, err := io.ReadAll(io.LimitReader(stream, 64<<10))
 	if err != nil {
 		return "", fmt.Errorf("read BuildKit pod logs: %w", err)
 	}

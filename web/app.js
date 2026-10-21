@@ -348,6 +348,13 @@ async function showApplication(item) {
   $("#app-runtime").hidden = false;
   $("#runtime-app-name").textContent = item.name;
   $("#runtime-app-summary").textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Application runtime details");
+  const errBox = $("#runtime-error");
+  if (item.status === "failed") {
+    errBox.innerHTML = `<strong>Deployment Failed:</strong> ${escapeHTML(item.status_message || "The build or container rollout failed. Inspect logs below for details.")}`;
+    errBox.hidden = false;
+  } else {
+    errBox.hidden = true;
+  }
   await Promise.all([
     loadApplicationResources(),
     loadApplicationLogs(),
@@ -365,7 +372,9 @@ function closeApplication() {
 async function loadApplicationResources() {
   if (!activeApplication) return;
   const error = $("#runtime-error");
-  error.hidden = true;
+  if (activeApplication.status !== "failed") {
+    error.hidden = true;
+  }
   try {
     const result = await api(`/api/v1/deployments/${activeApplication.id}/resources`);
     const instances = result.instances || [];
@@ -388,20 +397,26 @@ async function loadApplicationResources() {
       { label: "Keys", value: (item) => item.keys },
     ], configurationRows, "No app configuration metadata is available.");
   } catch (cause) {
-    error.textContent = cause.message;
-    error.hidden = false;
+    if (activeApplication.status !== "failed") {
+      error.textContent = cause.message;
+      error.hidden = false;
+    }
   }
 }
 
 async function loadApplicationLogs() {
   if (!activeApplication) return;
   const output = $("#app-logs");
-  output.textContent = "Loading recent logs…";
+  output.textContent = "Loading logs…";
   try {
     const result = await api(`/api/v1/deployments/${activeApplication.id}/logs?tail=200`);
-    output.textContent = result.logs || "No log output is available.";
+    output.textContent = result.logs || (activeApplication.status === "failed" ? `Deployment failed:\n${activeApplication.status_message}` : "No log output is available.");
   } catch (cause) {
-    output.textContent = cause.message;
+    if (activeApplication.status === "failed") {
+      output.textContent = `Deployment Failed:\n${activeApplication.status_message || cause.message}`;
+    } else {
+      output.textContent = cause.message;
+    }
   }
 }
 
@@ -1827,36 +1842,47 @@ function updateGeneratedDockerfile() {
   if (code) code.textContent = dockerfileTemplates[preset] || "";
 }
 
-$("#open-dockerfile-generator")?.addEventListener("click", () => {
+function openDockerfileModal() {
   const modal = $("#dockerfile-gen-modal");
   if (modal) {
     modal.hidden = false;
     updateGeneratedDockerfile();
   }
-});
+}
 
-$("#close-dockerfile-gen")?.addEventListener("click", () => {
+function closeDockerfileModal() {
   const modal = $("#dockerfile-gen-modal");
   if (modal) modal.hidden = true;
-});
+}
 
-$("#gen-preset")?.addEventListener("change", updateGeneratedDockerfile);
-
-$("#copy-generated-dockerfile")?.addEventListener("click", () => {
-  const content = $("#gen-dockerfile-code").textContent;
+function copyGeneratedDockerfile() {
+  const content = $("#gen-dockerfile-code")?.textContent || "";
   navigator.clipboard.writeText(content);
   const btn = $("#copy-generated-dockerfile");
-  btn.textContent = "Copied to clipboard!";
-  setTimeout(() => { btn.textContent = "Copy to clipboard"; }, 2000);
-});
+  if (btn) {
+    btn.textContent = "Copied to clipboard!";
+    setTimeout(() => { btn.textContent = "Copy to clipboard"; }, 2000);
+  }
+}
 
-$("#apply-generated-dockerfile")?.addEventListener("click", () => {
+function applyGeneratedDockerfile() {
   const strat = $("#app-build-strategy");
   if (strat) strat.value = "dockerfile";
   const df = $("#app-dockerfile");
   if (df) df.value = "Dockerfile";
-  const modal = $("#dockerfile-gen-modal");
-  if (modal) modal.hidden = true;
-  alert("Dockerfile preset applied! Ensure the generated Dockerfile is saved to your repo root as 'Dockerfile'.");
-});
+  closeDockerfileModal();
+  alert("Dockerfile preset applied! Remember to save this Dockerfile in your repository root as 'Dockerfile'.");
+}
+
+window.openDockerfileModal = openDockerfileModal;
+window.closeDockerfileModal = closeDockerfileModal;
+window.updateGeneratedDockerfile = updateGeneratedDockerfile;
+window.copyGeneratedDockerfile = copyGeneratedDockerfile;
+window.applyGeneratedDockerfile = applyGeneratedDockerfile;
+
+$("#open-dockerfile-generator")?.addEventListener("click", openDockerfileModal);
+$("#close-dockerfile-gen")?.addEventListener("click", closeDockerfileModal);
+$("#gen-preset")?.addEventListener("change", updateGeneratedDockerfile);
+$("#copy-generated-dockerfile")?.addEventListener("click", copyGeneratedDockerfile);
+$("#apply-generated-dockerfile")?.addEventListener("click", applyGeneratedDockerfile);
 
