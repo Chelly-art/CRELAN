@@ -56,13 +56,13 @@ variable "node_disk_size" {
 variable "node_desired_size" {
   type        = number
   description = "Desired node count for the general node group"
-  default     = 2
+  default     = 1
 }
 
 variable "node_min_size" {
   type        = number
   description = "Minimum node count for the general node group"
-  default     = 2
+  default     = 1
 }
 
 variable "node_max_size" {

@@ -1,4 +1,3 @@
-
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -31,4 +30,11 @@ module "eks" {
   # Connect the IAM roles created by the iam module
   cluster_role_arn = module.iam.cluster_role_arn
   node_role_arn    = module.iam.node_role_arn
+
+  # TEMPORARY: fits the 2 vCPU free under the 8 vCPU quota.
+  # Remove these four lines once the 64 vCPU increase is approved.
+  node_instance_types = ["m6i.large"]
+  node_desired_size   = 1
+  node_min_size       = 1
+  node_max_size       = 1
 }
