@@ -92,6 +92,14 @@
             <a class="admin-tree-item" href="#secrets" data-view="secrets">
               <span>Secrets</span>
             </a>
+            <a class="admin-tree-item" href="#certificates" data-view="certificates">
+              <span>TLS Expiration Radar</span>
+              <span class="admin-item-badge" id="badge-certs">x509</span>
+            </a>
+            <a class="admin-tree-item" href="#dangling-configs" data-view="dangling-configs">
+              <span>Dangling Config Scanner</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-dangling" hidden>0</span>
+            </a>
           </div>
 
           <!-- STORAGE -->
@@ -181,6 +189,10 @@
             </a>
             <a class="admin-tree-item" href="#backup" data-view="backup">
               <span>Control-Plane Backup</span>
+            </a>
+            <a class="admin-tree-item" href="#webhooks" data-view="webhooks">
+              <span>Incident Webhooks</span>
+              <span class="admin-item-badge" id="badge-webhooks" style="color: var(--admin-accent); font-weight: 700;">Alerts</span>
             </a>
           </div>
         </div>
@@ -505,6 +517,104 @@
                 <button class="admin-btn admin-btn-primary" id="postmortem-modal-copy-btn" type="button">1-Click Copy Markdown</button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 13. Deployment Revision History & 1-Click Rollback Modal with Visual Diff -->
+        <div class="admin-modal-overlay" id="admin-rollback-modal">
+          <div class="admin-modal" style="width: 860px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge admin-badge-info">ROLLOUT</span>
+                <h2 id="rollback-modal-title" style="margin: 0; font-size: 16px;">Deployment Revision History & Visual Diff</h2>
+              </div>
+              <button class="admin-drawer-close" id="rollback-modal-close" type="button">Close</button>
+            </div>
+            <div class="admin-modal-body">
+              <p style="font-size: 12px; color: var(--admin-text-muted); margin-top: 0;">
+                Select a previous ReplicaSet revision to preview side-by-side spec differences and safely roll back live pods.
+              </p>
+              <div style="display: grid; grid-template-columns: 240px 1fr; gap: 16px; min-height: 320px;">
+                <!-- Left: Revision Selector List -->
+                <div style="border-right: 1px solid var(--admin-border); padding-right: 12px; overflow-y: auto; max-height: 400px;" id="rollback-revisions-list">
+                  <div class="admin-empty-state">Loading revisions…</div>
+                </div>
+                <!-- Right: Visual Diff Pane -->
+                <div id="rollback-diff-pane" style="overflow-y: auto; max-height: 400px;">
+                  <div class="admin-empty-state">Select a revision on the left to inspect differences.</div>
+                </div>
+              </div>
+            </div>
+            <div class="admin-modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+              <span id="rollback-modal-status" style="font-size: 12px; color: var(--admin-text-muted);"></span>
+              <div style="display: flex; gap: 8px;">
+                <button class="admin-btn" id="rollback-modal-dismiss" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-primary" id="rollback-modal-confirm-btn" type="button" disabled>1-Click Rollback</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 14. Node Drain & Maintenance Safety Simulator Modal -->
+        <div class="admin-modal-overlay" id="admin-drain-modal">
+          <div class="admin-modal" style="width: 820px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge" id="drain-modal-badge">SIMULATION</span>
+                <h2 id="drain-modal-title" style="margin: 0; font-size: 16px;">Node Drain & Maintenance Safety Simulator</h2>
+              </div>
+              <button class="admin-drawer-close" id="drain-modal-close" type="button">Close</button>
+            </div>
+            <div class="admin-modal-body" id="drain-modal-body">
+              <div class="admin-empty-state">Simulating node evacuation and cluster headroom…</div>
+            </div>
+            <div class="admin-modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+              <span id="drain-modal-status" style="font-size: 12px; color: var(--admin-text-muted);"></span>
+              <div style="display: flex; gap: 8px;">
+                <button class="admin-btn" id="drain-modal-dismiss" type="button">Close</button>
+                <button class="admin-btn admin-btn-danger" id="drain-modal-cordon-btn" type="button">Cordon Node</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 15. Incident Webhook Registration Modal -->
+        <div class="admin-modal-overlay" id="admin-webhook-modal">
+          <div class="admin-modal" style="width: 540px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <h2 style="margin: 0; font-size: 16px;">Register Incident Webhook Target</h2>
+              <button class="admin-drawer-close" id="webhook-modal-close" type="button">Close</button>
+            </div>
+            <form id="webhook-form">
+              <div class="admin-modal-body">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Destination Name</label>
+                    <input class="admin-form-input" id="webhook-name-input" type="text" placeholder="e.g. SRE Slack Channel, Ops Discord" required style="width: 100%;">
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Provider Format</label>
+                    <select class="admin-form-input" id="webhook-provider-select" style="width: 100%;">
+                      <option value="slack">Slack (Incoming Webhook / Block Kit)</option>
+                      <option value="discord">Discord (Webhooks / Embeds)</option>
+                      <option value="generic">Generic JSON (PagerDuty, OpsGenie, Webhook Receiver)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Webhook URL</label>
+                    <input class="admin-form-input" id="webhook-url-input" type="url" placeholder="https://hooks.slack.com/services/..." required style="width: 100%;">
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Alert Events (comma-separated)</label>
+                    <input class="admin-form-input" id="webhook-events-input" type="text" value="critical, pod_crash, node_pressure, cert_expiring" style="width: 100%;">
+                  </div>
+                </div>
+              </div>
+              <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="admin-btn" id="webhook-modal-dismiss" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-primary" type="submit">Save Webhook</button>
+              </div>
+            </form>
           </div>
         </div>
       </main>

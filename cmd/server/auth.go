@@ -247,7 +247,89 @@ CREATE TABLE IF NOT EXISTS platform_audit_logs (
 	created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS platform_audit_logs_idx ON platform_audit_logs(id DESC);
+CREATE TABLE IF NOT EXISTS platform_incident_webhooks (
+	id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	url TEXT NOT NULL,
+	provider TEXT NOT NULL,
+	events TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL
+);
 `
+
+type platformIncidentWebhookRecord struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Provider  string `json:"provider"`
+	Events    string `json:"events"`
+	Enabled   bool   `json:"enabled"`
+	CreatedAt string `json:"created_at"`
+}
+
+func fetchIncidentWebhooks(db *sql.DB) ([]platformIncidentWebhookRecord, error) {
+	if db == nil {
+		return []platformIncidentWebhookRecord{}, nil
+	}
+	rows, err := db.Query(`SELECT id, name, url, provider, events, enabled, created_at FROM platform_incident_webhooks ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []platformIncidentWebhookRecord
+	for rows.Next() {
+		var w platformIncidentWebhookRecord
+		var enabledInt int
+		if err := rows.Scan(&w.ID, &w.Name, &w.URL, &w.Provider, &w.Events, &enabledInt, &w.CreatedAt); err != nil {
+			return nil, err
+		}
+		w.Enabled = enabledInt == 1
+		webhooks = append(webhooks, w)
+	}
+	if webhooks == nil {
+		webhooks = []platformIncidentWebhookRecord{}
+	}
+	return webhooks, nil
+}
+
+func insertIncidentWebhook(db *sql.DB, name, url, provider, events string) (int64, error) {
+	if db == nil {
+		return 0, sql.ErrConnDone
+	}
+	res, err := db.Exec(`
+		INSERT INTO platform_incident_webhooks (name, url, provider, events, enabled, created_at)
+		VALUES (?, ?, ?, ?, 1, ?)
+	`, name, url, provider, events, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func deleteIncidentWebhook(db *sql.DB, id int64) error {
+	if db == nil {
+		return sql.ErrConnDone
+	}
+	_, err := db.Exec(`DELETE FROM platform_incident_webhooks WHERE id = ?`, id)
+	return err
+}
+
+func getIncidentWebhook(db *sql.DB, id int64) (*platformIncidentWebhookRecord, error) {
+	if db == nil {
+		return nil, sql.ErrConnDone
+	}
+	var w platformIncidentWebhookRecord
+	var enabledInt int
+	err := db.QueryRow(`SELECT id, name, url, provider, events, enabled, created_at FROM platform_incident_webhooks WHERE id = ?`, id).
+		Scan(&w.ID, &w.Name, &w.URL, &w.Provider, &w.Events, &enabledInt, &w.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	w.Enabled = enabledInt == 1
+	return &w, nil
+}
 
 func recordPlatformAudit(db *sql.DB, operatorEmail, actionType, resourceKind, namespace, name, details string) error {
 	if db == nil {

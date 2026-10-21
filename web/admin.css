@@ -1704,4 +1704,90 @@ body.admin-body {
   font-size: 12px;
 }
 
+/* Rollback & Visual Diff */
+.admin-rev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-rev-item {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-rev-item:hover {
+  background: #f1f5f9;
+  border-color: var(--admin-border-focus);
+}
+
+.admin-rev-item.active {
+  background: #fff7ed;
+  border-color: var(--admin-accent);
+}
+
+.admin-diff-change-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-family: var(--admin-mono);
+  font-size: 11px;
+}
+
+.admin-diff-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-diff-tag.modified {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.admin-diff-tag.added {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.admin-diff-tag.removed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Headroom Metric Bar */
+.admin-headroom-bar {
+  display: flex;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.admin-headroom-fill {
+  background: var(--admin-green);
+  transition: width 0.3s ease;
+}
+
+.admin-headroom-fill.warning {
+  background: var(--admin-amber);
+}
+
+.admin-headroom-fill.danger {
+  background: var(--admin-red);
+}
+
 

@@ -136,6 +136,20 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/cluster/upgrade-radar", s.getUpgradeRadar)
 	mux.HandleFunc("GET /api/v1/admin/network/topology", s.getNetworkTopology)
 	mux.HandleFunc("GET /api/v1/admin/network/matrix", s.getTenantNetworkMatrix)
+
+	// Day-2 Operational Superpowers (Rollback, TLS Radar, Drain Simulator, Webhooks, Dangling Configs)
+	mux.HandleFunc("GET /api/v1/admin/deployments/{namespace}/{name}/revisions", s.getDeploymentRevisions)
+	mux.HandleFunc("GET /api/v1/admin/deployments/{namespace}/{name}/revisions/{revision}/diff", s.getDeploymentRevisionDiff)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/rollback", s.rollbackDeployment)
+	mux.HandleFunc("GET /api/v1/admin/security/certificates", s.getTLSCertificates)
+	mux.HandleFunc("GET /api/v1/admin/nodes/{name}/drain-simulation", s.getNodeDrainSimulation)
+	mux.HandleFunc("POST /api/v1/admin/nodes/{name}/cordon", s.cordonNode)
+	mux.HandleFunc("POST /api/v1/admin/nodes/{name}/uncordon", s.uncordonNode)
+	mux.HandleFunc("GET /api/v1/admin/webhooks", s.getWebhooks)
+	mux.HandleFunc("POST /api/v1/admin/webhooks", s.createWebhook)
+	mux.HandleFunc("DELETE /api/v1/admin/webhooks/{id}", s.deleteWebhook)
+	mux.HandleFunc("POST /api/v1/admin/webhooks/{id}/test", s.testWebhook)
+	mux.HandleFunc("GET /api/v1/admin/security/dangling-configs", s.getDanglingConfigs)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
@@ -1607,6 +1621,287 @@ func (s *adminService) getTenantNetworkMatrix(w http.ResponseWriter, r *http.Req
 	report, err := calculateTenantNetworkMatrix(r.Context(), provisioner.client)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not calculate tenant network isolation matrix: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getDeploymentRevisions(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	revs, err := fetchDeploymentRevisions(r.Context(), provisioner.client, ns, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch deployment revisions: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, revs)
+}
+
+func (s *adminService) getDeploymentRevisionDiff(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	revStr := r.PathValue("revision")
+	rev, err := strconv.ParseInt(revStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid revision number")
+		return
+	}
+	diff, err := calculateRevisionDiff(r.Context(), provisioner.client, ns, name, rev)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not calculate revision diff: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, diff)
+}
+
+func (s *adminService) rollbackDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	var input struct {
+		TargetRevision int64 `json:"targetRevision"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid rollback payload")
+		return
+	}
+	if input.TargetRevision <= 0 {
+		writeError(w, http.StatusBadRequest, "Target revision must be positive")
+		return
+	}
+	if err := rollbackDeploymentRevision(r.Context(), provisioner.client, ns, name, input.TargetRevision); err != nil {
+		writeError(w, http.StatusInternalServerError, "Rollback failed: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "rollback", "Deployment", ns, name, fmt.Sprintf("Rolled back to revision %d", input.TargetRevision))
+	writeJSON(w, http.StatusOK, map[string]any{"status": "rolled_back", "deployment": name, "targetRevision": input.TargetRevision})
+}
+
+func (s *adminService) getTLSCertificates(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	certs, err := scanTLSCertificates(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not scan TLS certificates: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, certs)
+}
+
+func (s *adminService) getNodeDrainSimulation(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	nodeName := r.PathValue("name")
+	sim, err := simulateNodeDrain(r.Context(), provisioner.client, nodeName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not run node drain simulation: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sim)
+}
+
+func (s *adminService) cordonNode(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	nodeName := r.PathValue("name")
+	if err := toggleNodeCordon(r.Context(), provisioner.client, nodeName, true); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not cordon node: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "cordon", "Node", "", nodeName, "Node cordoned (marked unschedulable)")
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "cordoned", "node": nodeName})
+}
+
+func (s *adminService) uncordonNode(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	nodeName := r.PathValue("name")
+	if err := toggleNodeCordon(r.Context(), provisioner.client, nodeName, false); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not uncordon node: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "uncordon", "Node", "", nodeName, "Node uncordoned (marked schedulable)")
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "uncordoned", "node": nodeName})
+}
+
+func (s *adminService) getWebhooks(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	webhooks, err := fetchIncidentWebhooks(s.auth.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch webhooks: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, webhooks)
+}
+
+func (s *adminService) createWebhook(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	var input struct {
+		Name     string `json:"name"`
+		URL      string `json:"url"`
+		Provider string `json:"provider"`
+		Events   string `json:"events"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid webhook payload")
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.URL) == "" {
+		writeError(w, http.StatusBadRequest, "Name and Webhook URL are required")
+		return
+	}
+	if input.Provider == "" {
+		input.Provider = "generic"
+	}
+	id, err := insertIncidentWebhook(s.auth.db, input.Name, input.URL, input.Provider, input.Events)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not create webhook: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "create", "Webhook", "", input.Name, fmt.Sprintf("Created incident webhook target (%s)", input.Provider))
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": input.Name, "url": input.URL, "provider": input.Provider, "events": input.Events, "enabled": true})
+}
+
+func (s *adminService) deleteWebhook(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid webhook ID")
+		return
+	}
+	wh, _ := getIncidentWebhook(s.auth.db, id)
+	if err := deleteIncidentWebhook(s.auth.db, id); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not delete webhook: "+err.Error())
+		return
+	}
+	name := idStr
+	if wh != nil {
+		name = wh.Name
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "delete", "Webhook", "", name, "Deleted incident webhook target")
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "id": id})
+}
+
+func (s *adminService) testWebhook(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid webhook ID")
+		return
+	}
+	wh, err := getIncidentWebhook(s.auth.db, id)
+	if err != nil || wh == nil {
+		writeError(w, http.StatusNotFound, "Webhook not found")
+		return
+	}
+	testPayload := map[string]any{
+		"title":        "🚨 [TEST ALERT] Crelan Incident Webhook Dispatcher",
+		"severity":     "WARNING",
+		"workload":     "production/orders-api",
+		"summary":      "This is a verified test alert dispatched from Crelan Day-2 Operational Intelligence to validate the webhook integration.",
+		"war_room_url": "https://crelan.abj.pipeops.app/admin#war-room",
+	}
+	res, err := dispatchIncidentWebhook(r.Context(), *wh, testPayload)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Webhook delivery failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *adminService) getDanglingConfigs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := scanDanglingConfigReferences(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not scan dangling configs: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, report)

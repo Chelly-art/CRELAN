@@ -2,6 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"io"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -35,6 +44,12 @@ func TestAdminHTMLContainsLayout(t *testing.T) {
 		"admin-inspector-drawer",
 		"admin-terminal-drawer",
 		"admin-ai-modal",
+		"admin-rollback-modal",
+		"admin-drain-modal",
+		"admin-webhook-modal",
+		"data-view=\"certificates\"",
+		"data-view=\"webhooks\"",
+		"data-view=\"dangling-configs\"",
 	}
 	for _, marker := range expectedMarkers {
 		if !strings.Contains(content, marker) {
@@ -855,6 +870,424 @@ func TestTenantNetworkIsolationMatrix(t *testing.T) {
 	}
 	if matrix.IsolationScore != 50 {
 		t.Errorf("expected 50%% isolation score, got %d", matrix.IsolationScore)
+	}
+}
+
+func TestDeploymentRevisionsAndRollback(t *testing.T) {
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-service",
+			Namespace: "production",
+			Annotations: map[string]string{
+				"deployment.kubernetes.io/revision": "2",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "web",
+							Image: "nginx:1.21-alpine",
+							Env: []corev1.EnvVar{
+								{Name: "PORT", Value: "8080"},
+								{Name: "FEATURE_FLAG", Value: "true"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	rs1 := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-service-rs-1",
+			Namespace: "production",
+			Annotations: map[string]string{
+				"deployment.kubernetes.io/revision": "1",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: "Deployment", Name: "web-service"},
+			},
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "web",
+							Image: "nginx:1.20-alpine",
+							Env: []corev1.EnvVar{
+								{Name: "PORT", Value: "8080"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	rs2 := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-service-rs-2",
+			Namespace: "production",
+			Annotations: map[string]string{
+				"deployment.kubernetes.io/revision": "2",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: "Deployment", Name: "web-service"},
+			},
+		},
+		Spec: appsv1.ReplicaSetSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "web",
+							Image: "nginx:1.21-alpine",
+							Env: []corev1.EnvVar{
+								{Name: "PORT", Value: "8080"},
+								{Name: "FEATURE_FLAG", Value: "true"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(dep, rs1, rs2)
+	ctx := context.Background()
+
+	// 1. Fetch revisions
+	revs, err := fetchDeploymentRevisions(ctx, client, "production", "web-service")
+	if err != nil {
+		t.Fatalf("fetchDeploymentRevisions failed: %v", err)
+	}
+	if len(revs) != 2 {
+		t.Fatalf("expected 2 revisions, got %d", len(revs))
+	}
+	if revs[0].Revision != 2 || !revs[0].IsCurrent {
+		t.Errorf("expected rev 2 to be current, got: %+v", revs[0])
+	}
+
+	// 2. Diff revision 1 against current (revision 2)
+	diff, err := calculateRevisionDiff(ctx, client, "production", "web-service", 1)
+	if err != nil {
+		t.Fatalf("calculateRevisionDiff failed: %v", err)
+	}
+	if diff.Identical {
+		t.Errorf("expected diff to show differences between rev 1 and rev 2")
+	}
+	var foundImageDiff, foundEnvDiff bool
+	for _, ch := range diff.Changes {
+		if strings.Contains(ch.Field, "image") {
+			foundImageDiff = true
+			if ch.OldValue != "nginx:1.21-alpine" || ch.NewValue != "nginx:1.20-alpine" {
+				t.Errorf("unexpected image diff: %+v", ch)
+			}
+		}
+		if strings.Contains(ch.Field, "FEATURE_FLAG") {
+			foundEnvDiff = true
+		}
+	}
+	if !foundImageDiff || !foundEnvDiff {
+		t.Errorf("expected both image and env diffs, got: %+v", diff.Changes)
+	}
+
+	// 3. Rollback to revision 1
+	err = rollbackDeploymentRevision(ctx, client, "production", "web-service", 1)
+	if err != nil {
+		t.Fatalf("rollbackDeploymentRevision failed: %v", err)
+	}
+	updatedDep, err := client.AppsV1().Deployments("production").Get(ctx, "web-service", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get rolled back deployment: %v", err)
+	}
+	if updatedDep.Spec.Template.Spec.Containers[0].Image != "nginx:1.20-alpine" {
+		t.Errorf("expected rolled back image nginx:1.20-alpine, got %s", updatedDep.Spec.Template.Spec.Containers[0].Image)
+	}
+}
+
+func TestTLSCertificateExpirationScanner(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey failed: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(12345),
+		Subject: pkix.Name{
+			CommonName:   "api.pipeops.app",
+			Organization: []string{"PipeOps Inc"},
+		},
+		DNSNames:  []string{"api.pipeops.app", "crelan.abj.pipeops.app"},
+		NotBefore: time.Now().Add(-24 * time.Hour),
+		NotAfter:  time.Now().Add(60 * 24 * time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate failed: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	tlsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "crelan-tls-cert",
+			Namespace: "default",
+		},
+		Type: corev1.SecretTypeTLS,
+		Data: map[string][]byte{
+			corev1.TLSCertKey: pemBytes,
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(tlsSecret)
+	ctx := context.Background()
+
+	report, err := scanTLSCertificates(ctx, client)
+	if err != nil {
+		t.Fatalf("scanTLSCertificates failed: %v", err)
+	}
+	if report.TotalCertificates != 1 {
+		t.Fatalf("expected 1 certificate, got %d", report.TotalCertificates)
+	}
+	cert := report.Certificates[0]
+	if cert.CommonName != "api.pipeops.app" {
+		t.Errorf("expected CN api.pipeops.app, got %s", cert.CommonName)
+	}
+	if cert.Status != "valid" {
+		t.Errorf("expected valid status, got %s", cert.Status)
+	}
+	if cert.DaysRemaining < 58 || cert.DaysRemaining > 61 {
+		t.Errorf("expected ~60 days until expiry, got %d", cert.DaysRemaining)
+	}
+	if len(cert.DNSNames) != 2 {
+		t.Errorf("expected 2 DNS names, got %v", cert.DNSNames)
+	}
+}
+
+func TestNodeDrainSafetySimulator(t *testing.T) {
+	node1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-node-1"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4000m"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+			Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	node2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-node-2"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4000m"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+			Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+
+	singletonPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "singleton-db-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "worker-node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "db",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	dsPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fluentd-ds-pod",
+			Namespace: "kube-system",
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: "DaemonSet", Name: "fluentd"},
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "worker-node-1",
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	client := k8sfake.NewSimpleClientset(node1, node2, singletonPod, dsPod)
+	ctx := context.Background()
+
+	// 1. Simulate drain
+	sim, err := simulateNodeDrain(ctx, client, "worker-node-1")
+	if err != nil {
+		t.Fatalf("simulateNodeDrain failed: %v", err)
+	}
+	if sim.NodeName != "worker-node-1" {
+		t.Errorf("expected node worker-node-1, got %s", sim.NodeName)
+	}
+	if len(sim.EvictionCandidates) != 1 {
+		t.Fatalf("expected 1 candidate pod (ds skipped), got %d", len(sim.EvictionCandidates))
+	}
+	if !sim.EvictionCandidates[0].IsSingleton {
+		t.Errorf("expected singletonPod to be flagged as singleton")
+	}
+	if !sim.ClusterHeadroom.CanAbsorbWorkloads {
+		t.Errorf("expected worker-node-2 to have capacity to absorb workload")
+	}
+
+	// 2. Test cordon and uncordon
+	err = toggleNodeCordon(ctx, client, "worker-node-1", true)
+	if err != nil {
+		t.Fatalf("cordon failed: %v", err)
+	}
+	n1, _ := client.CoreV1().Nodes().Get(ctx, "worker-node-1", metav1.GetOptions{})
+	if !n1.Spec.Unschedulable {
+		t.Errorf("expected worker-node-1 to be unschedulable")
+	}
+
+	err = toggleNodeCordon(ctx, client, "worker-node-1", false)
+	if err != nil {
+		t.Fatalf("uncordon failed: %v", err)
+	}
+	n1, _ = client.CoreV1().Nodes().Get(ctx, "worker-node-1", metav1.GetOptions{})
+	if n1.Spec.Unschedulable {
+		t.Errorf("expected worker-node-1 to be schedulable after uncordon")
+	}
+}
+
+func TestIncidentWebhooksDispatcher(t *testing.T) {
+	auth, err := newAuthService()
+	if err != nil {
+		t.Fatalf("newAuthService failed: %v", err)
+	}
+	defer auth.db.Close()
+	db := auth.db
+
+	var receivedBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		receivedBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok": true}`))
+	}))
+	defer ts.Close()
+
+	id, err := insertIncidentWebhook(db, "SRE Slack Alerts", ts.URL, "slack", "critical,pod_crash")
+	if err != nil {
+		t.Fatalf("insertIncidentWebhook failed: %v", err)
+	}
+	if id <= 0 {
+		t.Fatalf("expected positive webhook ID, got %d", id)
+	}
+
+	list, err := fetchIncidentWebhooks(db)
+	if err != nil {
+		t.Fatalf("fetchIncidentWebhooks failed: %v", err)
+	}
+	if len(list) != 1 || list[0].Name != "SRE Slack Alerts" {
+		t.Fatalf("unexpected webhook list: %+v", list)
+	}
+
+	wh, err := getIncidentWebhook(db, id)
+	if err != nil || wh == nil {
+		t.Fatalf("getIncidentWebhook failed: %v", err)
+	}
+	resp, err := dispatchIncidentWebhook(context.Background(), *wh, map[string]any{
+		"title":        "Payment API CrashLoopBackOff",
+		"severity":     "CRITICAL",
+		"workload":     "default/payment-api",
+		"summary":      "Container exited with code 137 (OOMKilled)",
+		"war_room_url": "https://crelan.abj.pipeops.app/admin#war-room",
+	})
+	if err != nil {
+		t.Fatalf("dispatchIncidentWebhook failed: %v", err)
+	}
+	if !resp.Success || resp.StatusCode != 200 {
+		t.Errorf("expected success dispatch response, got: %+v", resp)
+	}
+	if !strings.Contains(receivedBody, "Payment API CrashLoopBackOff") {
+		t.Errorf("slack payload did not contain title: %s", receivedBody)
+	}
+
+	if err := deleteIncidentWebhook(db, id); err != nil {
+		t.Fatalf("deleteIncidentWebhook failed: %v", err)
+	}
+	remaining, _ := fetchIncidentWebhooks(db)
+	if len(remaining) != 0 {
+		t.Errorf("expected 0 webhooks after delete, got %d", len(remaining))
+	}
+}
+
+func TestDanglingConfigReferencesScanner(t *testing.T) {
+	badPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-pod-broken",
+			Namespace: "production",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "app",
+					Env: []corev1.EnvVar{
+						{
+							Name: "DATABASE_URL",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "missing-db-secret"},
+									Key:                  "url",
+								},
+							},
+						},
+						{
+							Name: "FEATURE_SETTINGS",
+							ValueFrom: &corev1.EnvVarSource{
+								ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "missing-configmap"},
+									Key:                  "features.json",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(badPod)
+	ctx := context.Background()
+
+	report, err := scanDanglingConfigReferences(ctx, client)
+	if err != nil {
+		t.Fatalf("scanDanglingConfigReferences failed: %v", err)
+	}
+	if report.BrokenReferenceCount != 2 {
+		t.Fatalf("expected 2 dangling reference issues, got %d (%+v)", report.BrokenReferenceCount, report.Issues)
+	}
+	var foundSecret, foundCM bool
+	for _, issue := range report.Issues {
+		if issue.MissingKind == "Secret" && issue.MissingName == "missing-db-secret" {
+			foundSecret = true
+		}
+		if issue.MissingKind == "ConfigMap" && issue.MissingName == "missing-configmap" {
+			foundCM = true
+		}
+	}
+	if !foundSecret || !foundCM {
+		t.Errorf("missing expected dangling issues: %+v", report.Issues)
 	}
 }
 

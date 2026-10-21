@@ -277,6 +277,15 @@ async function renderCurrentView() {
       case "isolation-matrix":
         await renderTenantIsolationMatrix(container);
         break;
+      case "certificates":
+        await renderCertificates(container);
+        break;
+      case "webhooks":
+        await renderWebhooks(container);
+        break;
+      case "dangling-configs":
+        await renderDanglingConfigs(container);
+        break;
       case "cluster-connect":
         renderClusterConnect(container);
         break;
@@ -509,10 +518,11 @@ async function renderNodes(container) {
             <th>CPU</th>
             <th>Memory</th>
             <th>Age</th>
+            <th style="text-align: right;">Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${filtered.length === 0 ? `<tr><td colspan="10" class="admin-empty-state">No nodes match your filter.</td></tr>` : ""}
+          ${filtered.length === 0 ? `<tr><td colspan="11" class="admin-empty-state">No nodes match your filter.</td></tr>` : ""}
           ${filtered.map((n) => `
             <tr onclick="openInspector('node', '', '${escapeHTML(n.name)}')">
               <td class="admin-table-name">${escapeHTML(n.name)}</td>
@@ -525,6 +535,11 @@ async function renderNodes(container) {
               <td>${escapeHTML(n.cpu_allocatable)}</td>
               <td>${escapeHTML(n.mem_allocatable)}</td>
               <td class="admin-table-age">${escapeHTML(n.age)}</td>
+              <td>
+                <div class="admin-row-actions" style="justify-content: flex-end;">
+                  <button class="admin-action-btn" onclick="event.stopPropagation(); openNodeDrainModal('${escapeHTML(n.name)}')" title="Node Drain & Maintenance Safety Simulator">Drain Sim</button>
+                </div>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -681,6 +696,7 @@ async function renderDeployments(container) {
               <td class="admin-table-age">${escapeHTML(d.age)}</td>
               <td>
                 <div class="admin-row-actions" style="justify-content: flex-end;">
+                  <button class="admin-action-btn" onclick="event.stopPropagation(); openRollbackModal('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')" title="Deployment Revision History & Visual Diff">Rollback</button>
                   <button class="admin-action-btn" onclick="event.stopPropagation(); triggerRolloutRestart('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')" title="Rollout Restart">Restart</button>
                   <button class="admin-action-btn" onclick="event.stopPropagation(); openScaleModal('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}', ${d.replicas})" title="Scale Replicas">Scale</button>
                   <button class="admin-action-btn btn-delete" onclick="event.stopPropagation(); confirmDeleteDeployment('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')" title="Delete Deployment">Delete</button>
@@ -2599,6 +2615,19 @@ function setupEventListeners() {
   $("#tab-btn-postmortem-markdown")?.addEventListener("click", () => switchPostMortemTab("markdown"));
   $("#tab-btn-postmortem-runbook")?.addEventListener("click", () => switchPostMortemTab("runbook"));
 
+  // Rollback Modal
+  $("#rollback-modal-close")?.addEventListener("click", () => $("#admin-rollback-modal").classList.remove("open"));
+  $("#rollback-modal-dismiss")?.addEventListener("click", () => $("#admin-rollback-modal").classList.remove("open"));
+
+  // Drain Simulator Modal
+  $("#drain-modal-close")?.addEventListener("click", () => $("#admin-drain-modal").classList.remove("open"));
+  $("#drain-modal-dismiss")?.addEventListener("click", () => $("#admin-drain-modal").classList.remove("open"));
+
+  // Webhook Modal
+  $("#webhook-modal-close")?.addEventListener("click", () => $("#admin-webhook-modal").classList.remove("open"));
+  $("#webhook-modal-dismiss")?.addEventListener("click", () => $("#admin-webhook-modal").classList.remove("open"));
+  $("#webhook-form")?.addEventListener("submit", handleCreateWebhook);
+
   // Sign out
   $("#admin-signout").addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
@@ -3385,6 +3414,546 @@ function copyPostMortemMarkdown() {
   });
 }
 
+// -------------------------------------------------------------
+// Day-2 Superpower 1: Deployment Revision History & 1-Click Rollback
+// -------------------------------------------------------------
+
+let currentRollbackState = { namespace: "", deployment: "", selectedRevision: null };
+
+async function openRollbackModal(namespace, deploymentName) {
+  currentRollbackState = { namespace, deployment: deploymentName, selectedRevision: null };
+  const modal = $("#admin-rollback-modal");
+  modal.classList.add("open");
+  $("#rollback-modal-title").textContent = `Rollback: ${deploymentName} (${namespace})`;
+  $("#rollback-modal-status").textContent = "";
+  $("#rollback-modal-confirm-btn").disabled = true;
+  $("#rollback-revisions-list").innerHTML = `<div class="admin-empty-state">Fetching revisions…</div>`;
+  $("#rollback-diff-pane").innerHTML = `<div class="admin-empty-state">Select a revision on the left to see differences against the active rollout.</div>`;
+
+  try {
+    const revs = await request(`/api/v1/admin/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(deploymentName)}/revisions`);
+    if (!revs || revs.length === 0) {
+      $("#rollback-revisions-list").innerHTML = `<div class="admin-empty-state">No ReplicaSet revisions found.</div>`;
+      return;
+    }
+
+    $("#rollback-revisions-list").innerHTML = `
+      <div class="admin-rev-list">
+        ${revs.map((r) => `
+          <div class="admin-rev-item ${r.is_current ? "active" : ""}" id="rev-item-${r.revision}" onclick="selectRollbackRevision('${escapeHTML(namespace)}', '${escapeHTML(deploymentName)}', ${r.revision})">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <strong style="font-size: 13px;">Revision ${r.revision}</strong>
+              ${r.is_current ? `<span class="admin-badge admin-badge-ready" style="font-size: 10px;">ACTIVE</span>` : `<span style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(r.age)} ago</span>`}
+            </div>
+            <div style="font-size: 11px; color: var(--admin-text-muted); word-break: break-all;">
+              ${escapeHTML(r.images.join(", "))}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    const previous = revs.find(r => !r.is_current);
+    if (previous) {
+      selectRollbackRevision(namespace, deploymentName, previous.revision);
+    }
+  } catch (err) {
+    $("#rollback-revisions-list").innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Failed to fetch revisions: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function selectRollbackRevision(namespace, deploymentName, revision) {
+  currentRollbackState.selectedRevision = revision;
+  $$(".admin-rev-item").forEach(el => el.classList.remove("active"));
+  $(`#rev-item-${revision}`)?.classList.add("active");
+
+  const diffPane = $("#rollback-diff-pane");
+  diffPane.innerHTML = `<div class="admin-empty-state">Calculating visual diff…</div>`;
+  $("#rollback-modal-confirm-btn").disabled = true;
+
+  try {
+    const diff = await request(`/api/v1/admin/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(deploymentName)}/revisions/${revision}/diff`);
+    
+    if (diff.identical) {
+      diffPane.innerHTML = `
+        <div class="admin-empty-state" style="color: var(--admin-green);">
+          <h3>✓ Revision ${revision} is identical to active revision (${diff.current_revision})</h3>
+          <p>No changes would be applied by rolling back to this revision.</p>
+        </div>
+      `;
+      $("#rollback-modal-confirm-btn").disabled = true;
+      return;
+    }
+
+    diffPane.innerHTML = `
+      <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 12px; font-weight: 600;">Diff: Revision ${revision} (Target) vs Revision ${diff.current_revision} (Active)</span>
+        <span class="admin-badge admin-badge-warning">${diff.changes.length} change(s)</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${diff.changes.map(c => `
+          <div class="admin-diff-change-row">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="color: var(--admin-text);">${escapeHTML(c.field)}</strong>
+              <span class="admin-diff-tag ${escapeHTML(c.action)}">${escapeHTML(c.action)}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
+              <div style="background: #fee2e2; color: #991b1b; padding: 4px 8px; border-radius: 4px; overflow-x: auto;">
+                <span style="font-size: 10px; opacity: 0.7; display: block;">Active Spec (Revision ${diff.current_revision}):</span>
+                ${escapeHTML(c.old_value)}
+              </div>
+              <div style="background: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 4px; overflow-x: auto;">
+                <span style="font-size: 10px; opacity: 0.7; display: block;">Target Spec (Revision ${revision}):</span>
+                ${escapeHTML(c.new_value)}
+              </div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    $("#rollback-modal-confirm-btn").disabled = false;
+    $("#rollback-modal-confirm-btn").onclick = () => executeRollback(namespace, deploymentName, revision);
+  } catch (err) {
+    diffPane.innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Failed to compute diff: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function executeRollback(namespace, deploymentName, targetRevision) {
+  const btn = $("#rollback-modal-confirm-btn");
+  btn.disabled = true;
+  btn.textContent = "Rolling back…";
+  $("#rollback-modal-status").textContent = "Triggering rolling deployment rollback…";
+
+  try {
+    await request(`/api/v1/admin/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(deploymentName)}/rollback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetRevision }),
+    });
+
+    $("#rollback-modal-status").innerHTML = `<strong style="color: var(--admin-green);">✓ Successfully rolled back to revision ${targetRevision}!</strong>`;
+    setTimeout(() => {
+      $("#admin-rollback-modal").classList.remove("open");
+      btn.textContent = "1-Click Rollback";
+      if (state.activeView === "deployments") {
+        renderDeployments($("#admin-content-area"));
+      } else {
+        renderCurrentView();
+      }
+    }, 1500);
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "1-Click Rollback";
+    $("#rollback-modal-status").innerHTML = `<span style="color: var(--admin-red);">Rollback failed: ${escapeHTML(err.message)}</span>`;
+  }
+}
+
+// -------------------------------------------------------------
+// Day-2 Superpower 2: TLS/SSL Certificate Expiration Radar
+// -------------------------------------------------------------
+
+async function renderCertificates(container) {
+  const report = await request("/api/v1/admin/security/certificates");
+  const filtered = filterRows(report.certificates || [], ["secret_name", "namespace", "common_name", "issuer", "status"]);
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>TLS/SSL Certificate Expiration Radar</h1>
+        <span class="admin-view-count">${report.total_certificates}</span>
+      </div>
+    </div>
+
+    <!-- Metrics Cards -->
+    <div class="admin-kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-title">Valid Certificates</div>
+        <div class="admin-kpi-val" style="color: var(--admin-green);">${report.valid_count}</div>
+        <div class="admin-kpi-sub">> 30 days remaining</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-title">Expiring Soon</div>
+        <div class="admin-kpi-val" style="color: var(--admin-amber);">${report.expiring_soon_count}</div>
+        <div class="admin-kpi-sub">Within 30 days</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-title">Critical Urgency</div>
+        <div class="admin-kpi-val" style="color: var(--admin-red);">${report.critical_count}</div>
+        <div class="admin-kpi-sub">Within 7 days</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-title">Expired Certificates</div>
+        <div class="admin-kpi-val" style="color: #64748b;">${report.expired_count}</div>
+        <div class="admin-kpi-sub">Immediate outage risk</div>
+      </div>
+    </div>
+
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Secret / Cert</th>
+            <th>Namespace</th>
+            <th>Common Name (CN)</th>
+            <th>Subject Alternative Names (SANs)</th>
+            <th>Issuer</th>
+            <th>Expires On</th>
+            <th>Days Remaining</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No TLS secret certificates found in cluster.</td></tr>` : ""}
+          ${filtered.map(c => {
+            let statusBadge = `<span class="admin-badge admin-badge-ready">Valid</span>`;
+            if (c.status === "expiring_soon") statusBadge = `<span class="admin-badge admin-badge-warning">Expiring Soon</span>`;
+            if (c.status === "critical") statusBadge = `<span class="admin-badge admin-badge-danger">Critical (&lt; 7d)</span>`;
+            if (c.status === "expired") statusBadge = `<span class="admin-badge" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">Expired</span>`;
+
+            return `
+              <tr>
+                <td class="admin-table-name">${escapeHTML(c.secret_name)}</td>
+                <td class="admin-table-ns">${escapeHTML(c.namespace)}</td>
+                <td><strong>${escapeHTML(c.common_name)}</strong></td>
+                <td style="font-size: 11px; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">
+                  ${escapeHTML((c.dns_names || []).join(", ") || "-")}
+                </td>
+                <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(c.issuer)} ${c.is_self_signed ? `<span class="admin-badge" style="font-size: 9px;">Self-Signed</span>` : ""}</td>
+                <td style="font-size: 11px; font-family: var(--admin-mono);">${escapeHTML(c.not_after)}</td>
+                <td>
+                  <strong style="color: ${c.days_remaining <= 7 ? "var(--admin-red)" : c.days_remaining <= 30 ? "var(--admin-amber)" : "var(--admin-green)"}">
+                    ${c.days_remaining <= 0 ? "EXPIRED" : `${c.days_remaining} days`}
+                  </strong>
+                </td>
+                <td>${statusBadge}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------------
+// Day-2 Superpower 3: Node Drain & Maintenance Safety Simulator
+// -------------------------------------------------------------
+
+async function openNodeDrainModal(nodeName) {
+  const modal = $("#admin-drain-modal");
+  modal.classList.add("open");
+  $("#drain-modal-title").textContent = `Drain Simulation: ${nodeName}`;
+  $("#drain-modal-status").textContent = "";
+  $("#drain-modal-body").innerHTML = `<div class="admin-empty-state">Running live capacity simulation for ${escapeHTML(nodeName)}…</div>`;
+
+  try {
+    const sim = await request(`/api/v1/admin/nodes/${encodeURIComponent(nodeName)}/drain-simulation`);
+
+    const isSafe = sim.status === "safe";
+    const statusColor = isSafe ? "var(--admin-green)" : sim.status === "warning" ? "var(--admin-amber)" : "var(--admin-red)";
+    $("#drain-modal-badge").textContent = sim.status.toUpperCase();
+    $("#drain-modal-badge").style.borderColor = statusColor;
+    $("#drain-modal-badge").style.color = statusColor;
+
+    const cordonBtn = $("#drain-modal-cordon-btn");
+    if (sim.unschedulable) {
+      cordonBtn.textContent = "Uncordon Node";
+      cordonBtn.className = "admin-btn admin-btn-primary";
+      cordonBtn.onclick = () => toggleCordonNode(nodeName, false);
+    } else {
+      cordonBtn.textContent = "Cordon Node (Mark Unschedulable)";
+      cordonBtn.className = "admin-btn admin-btn-danger";
+      cordonBtn.onclick = () => toggleCordonNode(nodeName, true);
+    }
+
+    $("#drain-modal-body").innerHTML = `
+      <div style="background: #f8fafc; border: 1px solid var(--admin-border); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--admin-text-muted);">Cluster Headroom Absorption</div>
+            <strong style="font-size: 15px; color: ${sim.cluster_headroom.can_absorb_workloads ? "var(--admin-green)" : "var(--admin-red)"};">
+              ${sim.cluster_headroom.can_absorb_workloads ? "✓ Surviving Nodes Can Absorb Workloads" : "⚠️ Insufficient Headroom: Pods Will Pending"}
+            </strong>
+          </div>
+          <span class="admin-badge ${sim.unschedulable ? "admin-badge-warning" : "admin-badge-ready"}">
+            ${sim.unschedulable ? "Currently Cordoned" : "Active & Schedulable"}
+          </span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; font-size: 12px;">
+          <div>
+            <span style="color: var(--admin-text-muted); display: block;">Surviving Ready Nodes:</span>
+            <strong>${sim.cluster_headroom.available_nodes}</strong>
+          </div>
+          <div>
+            <span style="color: var(--admin-text-muted); display: block;">Available Headroom (CPU/Mem):</span>
+            <strong>${sim.cluster_headroom.headroom_cpu} / ${sim.cluster_headroom.headroom_memory}</strong>
+          </div>
+          <div>
+            <span style="color: var(--admin-text-muted); display: block;">Required Eviction (CPU/Mem):</span>
+            <strong style="color: var(--admin-accent);">${sim.cluster_headroom.required_evict_cpu} / ${sim.cluster_headroom.required_evict_memory}</strong>
+          </div>
+          <div>
+            <span style="color: var(--admin-text-muted); display: block;">Evictable Pods:</span>
+            <strong>${sim.total_evictable_pods} pods (${sim.singleton_pod_count} singleton)</strong>
+          </div>
+        </div>
+      </div>
+
+      ${sim.safety_recommendations && sim.safety_recommendations.length > 0 ? `
+        <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+          <strong style="font-size: 12px; color: #9a3412;">Safety Recommendations:</strong>
+          <ul style="margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #7c2d12;">
+            ${sim.safety_recommendations.map(r => `<li>${escapeHTML(r)}</li>`).join("")}
+          </ul>
+        </div>
+      ` : ""}
+
+      <div style="font-size: 12px; font-weight: 700; margin-bottom: 8px;">Pods to be Evicted (${sim.eviction_candidates.length})</div>
+      <div style="max-height: 240px; overflow-y: auto; border: 1px solid var(--admin-border); border-radius: 6px;">
+        <table class="admin-table" style="font-size: 11px;">
+          <thead>
+            <tr>
+              <th>Pod Name</th>
+              <th>Namespace</th>
+              <th>Workload</th>
+              <th>Singleton Warning</th>
+              <th>CPU Req</th>
+              <th>Mem Req</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sim.eviction_candidates.length === 0 ? `<tr><td colspan="6" class="admin-empty-state">No non-DaemonSet pods scheduled on this node.</td></tr>` : ""}
+            ${sim.eviction_candidates.map(p => `
+              <tr>
+                <td class="admin-table-name">${escapeHTML(p.name)}</td>
+                <td class="admin-table-ns">${escapeHTML(p.namespace)}</td>
+                <td>${escapeHTML(p.workload_kind)}/${escapeHTML(p.workload_name)}</td>
+                <td>
+                  ${p.is_singleton ? `<span class="admin-badge admin-badge-danger">Singleton (Downtime Risk)</span>` : `<span class="admin-badge admin-badge-ready">Replicated</span>`}
+                </td>
+                <td style="font-family: var(--admin-mono);">${escapeHTML(p.cpu_request)}</td>
+                <td style="font-family: var(--admin-mono);">${escapeHTML(p.memory_request)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    $("#drain-modal-body").innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Simulation failed: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function toggleCordonNode(nodeName, unschedulable) {
+  const btn = $("#drain-modal-cordon-btn");
+  btn.disabled = true;
+  const endpoint = unschedulable ? `/api/v1/admin/nodes/${encodeURIComponent(nodeName)}/cordon` : `/api/v1/admin/nodes/${encodeURIComponent(nodeName)}/uncordon`;
+
+  try {
+    await request(endpoint, { method: "POST" });
+    $("#drain-modal-status").innerHTML = `<strong style="color: var(--admin-green);">✓ Node ${escapeHTML(nodeName)} ${unschedulable ? "cordoned" : "uncordoned"} successfully!</strong>`;
+    setTimeout(() => {
+      openNodeDrainModal(nodeName);
+      if (state.activeView === "nodes") renderNodes($("#admin-content-area"));
+    }, 1000);
+  } catch (err) {
+    btn.disabled = false;
+    $("#drain-modal-status").innerHTML = `<span style="color: var(--admin-red);">Action failed: ${escapeHTML(err.message)}</span>`;
+  }
+}
+
+// -------------------------------------------------------------
+// Day-2 Superpower 4: Incident Webhook Alert Dispatcher
+// -------------------------------------------------------------
+
+async function renderWebhooks(container) {
+  const webhooks = await request("/api/v1/admin/webhooks");
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Incident Webhook Alerts</h1>
+        <span class="admin-view-count">${webhooks.length}</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-primary" onclick="openWebhookModal()" type="button">
+          + Register Webhook Target
+        </button>
+      </div>
+    </div>
+
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Destination Name</th>
+            <th>Provider Format</th>
+            <th>Webhook Endpoint</th>
+            <th>Trigger Events</th>
+            <th>Created</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${webhooks.length === 0 ? `<tr><td colspan="6" class="admin-empty-state">No webhooks registered. Register a Slack, Discord, or generic destination to dispatch real-time outage alerts.</td></tr>` : ""}
+          ${webhooks.map(w => {
+            let providerBadge = `<span class="admin-badge admin-badge-info">${escapeHTML(w.provider.toUpperCase())}</span>`;
+            if (w.provider === "slack") providerBadge = `<span class="admin-badge" style="background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;">SLACK</span>`;
+            if (w.provider === "discord") providerBadge = `<span class="admin-badge" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;">DISCORD</span>`;
+
+            return `
+              <tr>
+                <td class="admin-table-name"><strong>${escapeHTML(w.name)}</strong></td>
+                <td>${providerBadge}</td>
+                <td class="admin-table-ns" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${escapeHTML(w.url)}">
+                  ${escapeHTML(w.url)}
+                </td>
+                <td style="font-size: 11px;">${escapeHTML(w.events)}</td>
+                <td class="admin-table-age">${escapeHTML(w.created_at)}</td>
+                <td>
+                  <div class="admin-row-actions" style="justify-content: flex-end;">
+                    <button class="admin-action-btn" onclick="testWebhook(${w.id})" title="Dispatch Test Alert">Test Alert</button>
+                    <button class="admin-action-btn btn-delete" onclick="deleteWebhook(${w.id})" title="Delete Webhook">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openWebhookModal() {
+  $("#webhook-name-input").value = "";
+  $("#webhook-url-input").value = "";
+  $("#webhook-provider-select").value = "slack";
+  $("#webhook-events-input").value = "critical, pod_crash, node_pressure, cert_expiring";
+  $("#admin-webhook-modal").classList.add("open");
+}
+
+async function handleCreateWebhook(e) {
+  e.preventDefault();
+  const name = $("#webhook-name-input").value.trim();
+  const url = $("#webhook-url-input").value.trim();
+  const provider = $("#webhook-provider-select").value;
+  const events = $("#webhook-events-input").value.trim();
+
+  try {
+    await request("/api/v1/admin/webhooks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, url, provider, events }),
+    });
+    $("#admin-webhook-modal").classList.remove("open");
+    renderWebhooks($("#admin-content-area"));
+  } catch (err) {
+    alert("Could not register webhook: " + err.message);
+  }
+}
+
+async function deleteWebhook(id) {
+  if (!confirm("Are you sure you want to delete this incident webhook target?")) return;
+  try {
+    await request(`/api/v1/admin/webhooks/${id}`, { method: "DELETE" });
+    renderWebhooks($("#admin-content-area"));
+  } catch (err) {
+    alert("Delete failed: " + err.message);
+  }
+}
+
+async function testWebhook(id) {
+  try {
+    const res = await request(`/api/v1/admin/webhooks/${id}/test`, { method: "POST" });
+    if (res.success) {
+      alert(`✓ Test alert delivered successfully! (HTTP ${res.status_code})`);
+    } else {
+      alert(`⚠️ Test alert failed: ${res.message}`);
+    }
+  } catch (err) {
+    alert("Test dispatch failed: " + err.message);
+  }
+}
+
+// -------------------------------------------------------------
+// Day-2 Superpower 5: Broken Reference & Dangling Config Scanner
+// -------------------------------------------------------------
+
+async function renderDanglingConfigs(container) {
+  const report = await request("/api/v1/admin/security/dangling-configs");
+  const filtered = filterRows(report.issues || [], ["workload_name", "namespace", "missing_name", "missing_kind"]);
+
+  const badge = $("#badge-dangling");
+  if (badge) {
+    badge.textContent = report.broken_reference_count;
+    badge.hidden = report.broken_reference_count === 0;
+  }
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Broken Reference & Dangling Config Pre-Flight Scanner</h1>
+        <span class="admin-view-count">${report.broken_reference_count}</span>
+      </div>
+    </div>
+
+    <!-- Overview Hero -->
+    <div style="background: ${report.broken_reference_count === 0 ? "#f0fdf4" : "#fef2f2"}; border: 1px solid ${report.broken_reference_count === 0 ? "#bbf7d0" : "#fecaca"}; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="margin: 0 0 4px; font-size: 15px; color: ${report.broken_reference_count === 0 ? "#166534" : "#991b1b"};">
+            ${report.broken_reference_count === 0 ? "✓ Zero Dangling Configuration References Detected" : `⚠️ ${report.broken_reference_count} Broken Reference(s) Causing CreateContainerConfigError`}
+          </h3>
+          <p style="margin: 0; font-size: 13px; color: ${report.broken_reference_count === 0 ? "#15803d" : "#b91c1c"};">
+            ${report.broken_reference_count === 0 ? `Scanned ${report.total_scanned_workloads} workloads across all namespaces. All referenced ConfigMaps, Secrets, keys, and volumes exist.` : `Found missing objects or keys referenced in env/envFrom/volumes. Workloads will fail on restart.`}
+          </p>
+        </div>
+        <span class="admin-badge ${report.broken_reference_count === 0 ? "admin-badge-ready" : "admin-badge-danger"}">
+          ${report.total_scanned_workloads} Workloads Scanned
+        </span>
+      </div>
+    </div>
+
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Workload</th>
+            <th>Namespace</th>
+            <th>Container</th>
+            <th>Reference Type</th>
+            <th>Missing Resource</th>
+            <th>Missing Key</th>
+            <th>Remediation Runbook</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No dangling or missing configuration references detected! All workloads are clean.</td></tr>` : ""}
+          ${filtered.map(issue => `
+            <tr>
+              <td class="admin-table-name">
+                <span class="admin-kind-badge">${escapeHTML(issue.workload_kind)}</span>
+                <strong>${escapeHTML(issue.workload_name)}</strong>
+              </td>
+              <td class="admin-table-ns">${escapeHTML(issue.namespace)}</td>
+              <td><code>${escapeHTML(issue.container)}</code></td>
+              <td><span class="admin-badge" style="font-size: 10px;">${escapeHTML(issue.ref_type)}</span></td>
+              <td>
+                <span class="admin-badge admin-badge-danger">${escapeHTML(issue.missing_kind)}</span>
+                <strong style="color: var(--admin-red);">${escapeHTML(issue.missing_name)}</strong>
+              </td>
+              <td style="font-family: var(--admin-mono);">${issue.missing_key ? escapeHTML(issue.missing_key) : `<span style="color: var(--admin-text-muted);">(entire object missing)</span>`}</td>
+              <td style="font-size: 11px; color: var(--admin-text-muted); max-width: 320px;">${escapeHTML(issue.remediation)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 
 async function initializeAdmin() {
   try {

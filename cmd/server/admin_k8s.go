@@ -3,10 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"database/sql"
+	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"regexp"
 	"sort"
 	"strings"
@@ -600,6 +604,134 @@ type tenantBoundaryCheck struct {
 	PolicyCount            int      `json:"policy_count"`
 }
 
+// -------------------------------------------------------------
+// Deployment Revisions & 1-Click Rollback Models
+// -------------------------------------------------------------
+
+type deploymentRevisionSummary struct {
+	Revision       int64    `json:"revision"`
+	ReplicaSetName string   `json:"replicaset_name"`
+	Namespace      string   `json:"namespace"`
+	DeploymentName string   `json:"deployment_name"`
+	Images         []string `json:"images"`
+	Replicas       int32    `json:"replicas"`
+	CreatedAt      string   `json:"created_at"`
+	Age            string   `json:"age"`
+	IsCurrent      bool     `json:"is_current"`
+}
+
+type diffChangeItem struct {
+	Field    string `json:"field"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+	Action   string `json:"action"` // "modified", "added", "removed"
+}
+
+type deploymentRevisionDiff struct {
+	DeploymentName  string           `json:"deployment_name"`
+	Namespace       string           `json:"namespace"`
+	TargetRevision  int64            `json:"target_revision"`
+	CurrentRevision int64            `json:"current_revision"`
+	Changes         []diffChangeItem `json:"changes"`
+	Identical       bool             `json:"identical"`
+}
+
+// -------------------------------------------------------------
+// TLS Certificate Expiration Radar Models
+// -------------------------------------------------------------
+
+type tlsCertificateReport struct {
+	TotalCertificates int                  `json:"total_certificates"`
+	ValidCount        int                  `json:"valid_count"`
+	ExpiringSoonCount int                  `json:"expiring_soon_count"` // <= 30 days
+	CriticalCount     int                  `json:"critical_count"`      // <= 7 days
+	ExpiredCount      int                  `json:"expired_count"`
+	Certificates      []tlsCertificateItem `json:"certificates"`
+}
+
+type tlsCertificateItem struct {
+	SecretName     string   `json:"secret_name"`
+	Namespace      string   `json:"namespace"`
+	CommonName     string   `json:"common_name"`
+	DNSNames       []string `json:"dns_names"`
+	Issuer         string   `json:"issuer"`
+	NotBefore      string   `json:"not_before"`
+	NotAfter       string   `json:"not_after"`
+	DaysRemaining  int      `json:"days_remaining"`
+	Status         string   `json:"status"` // "valid", "expiring_soon", "critical", "expired"
+	IsSelfSigned   bool     `json:"is_self_signed"`
+	ReferencingIng string   `json:"referencing_ingress,omitempty"`
+}
+
+// -------------------------------------------------------------
+// Node Drain & Maintenance Safety Simulator Models
+// -------------------------------------------------------------
+
+type nodeDrainSimulationReport struct {
+	NodeName              string                  `json:"node_name"`
+	Status                string                  `json:"status"` // "safe", "warning", "unsafe"
+	Unschedulable         bool                    `json:"unschedulable"`
+	TotalEvictablePods    int                     `json:"total_evictable_pods"`
+	SingletonPodCount     int                     `json:"singleton_pod_count"`
+	PDBBlockedCount       int                     `json:"pdb_blocked_count"`
+	ClusterHeadroom       clusterCapacityHeadroom `json:"cluster_headroom"`
+	EvictionCandidates    []evictionCandidatePod  `json:"eviction_candidates"`
+	SafetyRecommendations []string                `json:"safety_recommendations"`
+}
+
+type clusterCapacityHeadroom struct {
+	AvailableNodes      int    `json:"available_nodes"`
+	HeadroomCPU         string `json:"headroom_cpu"`
+	HeadroomMemory      string `json:"headroom_memory"`
+	RequiredEvictCPU    string `json:"required_evict_cpu"`
+	RequiredEvictMemory string `json:"required_evict_memory"`
+	CanAbsorbWorkloads  bool   `json:"can_absorb_workloads"`
+}
+
+type evictionCandidatePod struct {
+	Name          string `json:"name"`
+	Namespace     string `json:"namespace"`
+	WorkloadKind  string `json:"workload_kind"`
+	WorkloadName  string `json:"workload_name"`
+	IsSingleton   bool   `json:"is_singleton"`
+	PDBProtected  bool   `json:"pdb_protected"`
+	PDBAllowed    bool   `json:"pdb_allowed"`
+	CPURequest    string `json:"cpu_request"`
+	MemoryRequest string `json:"memory_request"`
+}
+
+// -------------------------------------------------------------
+// Webhook Dispatch Models
+// -------------------------------------------------------------
+
+type webhookTestResponse struct {
+	Success    bool   `json:"success"`
+	StatusCode int    `json:"status_code"`
+	Message    string `json:"message"`
+}
+
+// -------------------------------------------------------------
+// Dangling Config & Broken Reference Models
+// -------------------------------------------------------------
+
+type danglingConfigReport struct {
+	TotalScannedWorkloads int                   `json:"total_scanned_workloads"`
+	BrokenReferenceCount  int                   `json:"broken_reference_count"`
+	Issues                []danglingConfigIssue `json:"issues"`
+}
+
+type danglingConfigIssue struct {
+	WorkloadKind string `json:"workload_kind"`
+	WorkloadName string `json:"workload_name"`
+	Namespace    string `json:"namespace"`
+	Container    string `json:"container"`
+	RefType      string `json:"ref_type"`
+	MissingKind  string `json:"missing_kind"`
+	MissingName  string `json:"missing_name"`
+	MissingKey   string `json:"missing_key,omitempty"`
+	Remediation  string `json:"remediation"`
+}
+
 type resourceEfficiencyReport struct {
 	TotalClusterCPUAllocatable string                   `json:"total_cpu_allocatable"`
 	TotalClusterMemAllocatable string                   `json:"total_mem_allocatable"`
@@ -695,6 +827,22 @@ func formatAge(t time.Time) string {
 	}
 	days := int(d.Hours() / 24)
 	return fmt.Sprintf("%dd", days)
+}
+
+func formatBytes(b int64) string {
+	if b < 0 {
+		return "0 Mi"
+	}
+	if b >= 1024*1024*1024 {
+		return fmt.Sprintf("%.2f Gi", float64(b)/(1024*1024*1024))
+	}
+	if b >= 1024*1024 {
+		return fmt.Sprintf("%.1f Mi", float64(b)/(1024*1024))
+	}
+	if b >= 1024 {
+		return fmt.Sprintf("%.1f Ki", float64(b)/1024)
+	}
+	return fmt.Sprintf("%d B", b)
 }
 
 func getPodPhaseAndStatus(pod *corev1.Pod) (phase string, detail string, hasErrors bool) {
@@ -4107,4 +4255,843 @@ func calculateTenantNetworkMatrix(ctx context.Context, client kubernetes.Interfa
 
 	return report, nil
 }
+
+// -------------------------------------------------------------
+// Operational Feature 1: Deployment Revisions & 1-Click Rollback
+// -------------------------------------------------------------
+
+func fetchDeploymentRevisions(ctx context.Context, client kubernetes.Interface, namespace, deploymentName string) ([]deploymentRevisionSummary, error) {
+	if client == nil {
+		return nil, errKubernetesNotConfigured
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	rsList, err := client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	currRevStr := dep.Annotations["deployment.kubernetes.io/revision"]
+	var result []deploymentRevisionSummary
+
+	for _, rs := range rsList.Items {
+		isOwner := false
+		for _, owner := range rs.OwnerReferences {
+			if owner.Kind == "Deployment" && owner.Name == deploymentName {
+				isOwner = true
+				break
+			}
+		}
+		if !isOwner && rs.Labels["app"] != deploymentName && !strings.HasPrefix(rs.Name, deploymentName+"-") {
+			continue
+		}
+
+		revStr := rs.Annotations["deployment.kubernetes.io/revision"]
+		if revStr == "" {
+			continue
+		}
+		var revNum int64
+		_, _ = fmt.Sscanf(revStr, "%d", &revNum)
+
+		var imgs []string
+		for _, c := range rs.Spec.Template.Spec.Containers {
+			imgs = append(imgs, c.Image)
+		}
+
+		replicas := int32(0)
+		if rs.Spec.Replicas != nil {
+			replicas = *rs.Spec.Replicas
+		}
+
+		result = append(result, deploymentRevisionSummary{
+			Revision:       revNum,
+			ReplicaSetName: rs.Name,
+			Namespace:      namespace,
+			DeploymentName: deploymentName,
+			Images:         imgs,
+			Replicas:       replicas,
+			CreatedAt:      rs.CreationTimestamp.UTC().Format(time.RFC3339),
+			Age:            formatAge(rs.CreationTimestamp.Time),
+			IsCurrent:      revStr == currRevStr,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Revision > result[j].Revision
+	})
+
+	return result, nil
+}
+
+func calculateRevisionDiff(ctx context.Context, client kubernetes.Interface, namespace, deploymentName string, targetRevision int64) (deploymentRevisionDiff, error) {
+	if client == nil {
+		return deploymentRevisionDiff{}, errKubernetesNotConfigured
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return deploymentRevisionDiff{}, err
+	}
+
+	rsList, err := client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return deploymentRevisionDiff{}, err
+	}
+
+	var targetRS *metav1.ObjectMeta
+	var targetTemplate corev1.PodTemplateSpec
+	for _, rs := range rsList.Items {
+		revStr := rs.Annotations["deployment.kubernetes.io/revision"]
+		var revNum int64
+		_, _ = fmt.Sscanf(revStr, "%d", &revNum)
+		if revNum == targetRevision {
+			targetRS = &rs.ObjectMeta
+			targetTemplate = rs.Spec.Template
+			break
+		}
+	}
+
+	if targetRS == nil {
+		return deploymentRevisionDiff{}, fmt.Errorf("revision %d not found for deployment %s", targetRevision, deploymentName)
+	}
+
+	var currRev int64
+	_, _ = fmt.Sscanf(dep.Annotations["deployment.kubernetes.io/revision"], "%d", &currRev)
+
+	diff := deploymentRevisionDiff{
+		DeploymentName:  deploymentName,
+		Namespace:       namespace,
+		TargetRevision:  targetRevision,
+		CurrentRevision: currRev,
+		Changes:         []diffChangeItem{},
+	}
+
+	// Compare container images
+	targetImgs := make(map[string]string)
+	for _, c := range targetTemplate.Spec.Containers {
+		targetImgs[c.Name] = c.Image
+	}
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		if tImg, ok := targetImgs[c.Name]; ok {
+			if tImg != c.Image {
+				diff.Changes = append(diff.Changes, diffChangeItem{
+					Field:    fmt.Sprintf("container[%s].image", c.Name),
+					OldValue: c.Image,
+					NewValue: tImg,
+					Action:   "modified",
+				})
+			}
+		} else {
+			diff.Changes = append(diff.Changes, diffChangeItem{
+				Field:    fmt.Sprintf("container[%s]", c.Name),
+				OldValue: c.Image,
+				NewValue: "(removed in target revision)",
+				Action:   "removed",
+			})
+		}
+	}
+
+	// Compare environment variables
+	targetEnvs := make(map[string]map[string]string)
+	for _, c := range targetTemplate.Spec.Containers {
+		targetEnvs[c.Name] = make(map[string]string)
+		for _, e := range c.Env {
+			targetEnvs[c.Name][e.Name] = e.Value
+		}
+	}
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		tEnv := targetEnvs[c.Name]
+		for _, e := range c.Env {
+			if tVal, ok := tEnv[e.Name]; ok {
+				if tVal != e.Value {
+					diff.Changes = append(diff.Changes, diffChangeItem{
+						Field:    fmt.Sprintf("container[%s].env[%s]", c.Name, e.Name),
+						OldValue: e.Value,
+						NewValue: tVal,
+						Action:   "modified",
+					})
+				}
+			} else {
+				diff.Changes = append(diff.Changes, diffChangeItem{
+					Field:    fmt.Sprintf("container[%s].env[%s]", c.Name, e.Name),
+					OldValue: e.Value,
+					NewValue: "(not present in target revision)",
+					Action:   "removed",
+				})
+			}
+		}
+		for tKey, tVal := range tEnv {
+			has := false
+			for _, e := range c.Env {
+				if e.Name == tKey {
+					has = true
+					break
+				}
+			}
+			if !has {
+				diff.Changes = append(diff.Changes, diffChangeItem{
+					Field:    fmt.Sprintf("container[%s].env[%s]", c.Name, tKey),
+					OldValue: "(absent in current revision)",
+					NewValue: tVal,
+					Action:   "added",
+				})
+			}
+		}
+	}
+
+	diff.Identical = len(diff.Changes) == 0
+	return diff, nil
+}
+
+func rollbackDeploymentRevision(ctx context.Context, client kubernetes.Interface, namespace, deploymentName string, targetRevision int64) error {
+	if client == nil {
+		return errKubernetesNotConfigured
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	rsList, err := client.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	var targetTemplate *corev1.PodTemplateSpec
+	for _, rs := range rsList.Items {
+		revStr := rs.Annotations["deployment.kubernetes.io/revision"]
+		var revNum int64
+		_, _ = fmt.Sscanf(revStr, "%d", &revNum)
+		if revNum == targetRevision {
+			targetTemplate = &rs.Spec.Template
+			break
+		}
+	}
+
+	if targetTemplate == nil {
+		return fmt.Errorf("target revision %d not found for rollback", targetRevision)
+	}
+
+	dep.Spec.Template = *targetTemplate
+	if dep.Annotations == nil {
+		dep.Annotations = make(map[string]string)
+	}
+	dep.Annotations["crelan.platform/rollbackFromRevision"] = fmt.Sprintf("%d", targetRevision)
+	dep.Annotations["crelan.platform/rolloutAt"] = time.Now().UTC().Format(time.RFC3339)
+
+	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	return err
+}
+
+// -------------------------------------------------------------
+// Operational Feature 2: TLS Certificate Expiration Radar
+// -------------------------------------------------------------
+
+func scanTLSCertificates(ctx context.Context, client kubernetes.Interface) (tlsCertificateReport, error) {
+	if client == nil {
+		return tlsCertificateReport{}, errKubernetesNotConfigured
+	}
+	secrets, err := client.CoreV1().Secrets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return tlsCertificateReport{}, err
+	}
+
+	ingresses, _ := client.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	secToIngress := make(map[string]string)
+	if ingresses != nil {
+		for _, ing := range ingresses.Items {
+			for _, tls := range ing.Spec.TLS {
+				secToIngress[ing.Namespace+"/"+tls.SecretName] = ing.Name
+			}
+		}
+	}
+
+	report := tlsCertificateReport{
+		Certificates: []tlsCertificateItem{},
+	}
+
+	now := time.Now().UTC()
+
+	for _, sec := range secrets.Items {
+		var crtBytes []byte
+		if sec.Type == corev1.SecretTypeTLS || sec.Data["tls.crt"] != nil {
+			crtBytes = sec.Data["tls.crt"]
+		} else if sec.Data["cert.pem"] != nil {
+			crtBytes = sec.Data["cert.pem"]
+		} else if sec.Data["server.crt"] != nil {
+			crtBytes = sec.Data["server.crt"]
+		}
+		if len(crtBytes) == 0 {
+			continue
+		}
+
+		block, _ := pem.Decode(crtBytes)
+		var derBytes []byte
+		if block != nil {
+			derBytes = block.Bytes
+		} else {
+			derBytes = crtBytes
+		}
+
+		cert, err := x509.ParseCertificate(derBytes)
+		if err != nil {
+			continue
+		}
+
+		report.TotalCertificates++
+
+		issuerStr := cert.Issuer.CommonName
+		if issuerStr == "" && len(cert.Issuer.Organization) > 0 {
+			issuerStr = cert.Issuer.Organization[0]
+		}
+		if issuerStr == "" {
+			issuerStr = "Unknown CA"
+		}
+
+		days := int(math.Floor(cert.NotAfter.Sub(now).Hours() / 24))
+		status := "valid"
+		if cert.NotAfter.Before(now) {
+			status = "expired"
+			report.ExpiredCount++
+		} else if days <= 7 {
+			status = "critical"
+			report.CriticalCount++
+		} else if days <= 30 {
+			status = "expiring_soon"
+			report.ExpiringSoonCount++
+		} else {
+			report.ValidCount++
+		}
+
+		isSelfSigned := cert.Issuer.String() == cert.Subject.String()
+		ingRef := secToIngress[sec.Namespace+"/"+sec.Name]
+
+		report.Certificates = append(report.Certificates, tlsCertificateItem{
+			SecretName:     sec.Name,
+			Namespace:      sec.Namespace,
+			CommonName:     cert.Subject.CommonName,
+			DNSNames:       cert.DNSNames,
+			Issuer:         issuerStr,
+			NotBefore:      cert.NotBefore.UTC().Format(time.RFC3339),
+			NotAfter:       cert.NotAfter.UTC().Format(time.RFC3339),
+			DaysRemaining:  days,
+			Status:         status,
+			IsSelfSigned:   isSelfSigned,
+			ReferencingIng: ingRef,
+		})
+	}
+
+	sort.Slice(report.Certificates, func(i, j int) bool {
+		return report.Certificates[i].DaysRemaining < report.Certificates[j].DaysRemaining
+	})
+
+	return report, nil
+}
+
+// -------------------------------------------------------------
+// Operational Feature 3: Node Drain & Maintenance Safety Simulator
+// -------------------------------------------------------------
+
+func simulateNodeDrain(ctx context.Context, client kubernetes.Interface, nodeName string) (nodeDrainSimulationReport, error) {
+	if client == nil {
+		return nodeDrainSimulationReport{}, errKubernetesNotConfigured
+	}
+	targetNode, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nodeDrainSimulationReport{}, err
+	}
+
+	allNodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nodeDrainSimulationReport{}, err
+	}
+
+	allPods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nodeDrainSimulationReport{}, err
+	}
+
+	var evictPods []evictionCandidatePod
+	var totalReqCPU, totalReqMem int64
+	singletonCount := 0
+
+	for _, p := range allPods.Items {
+		if p.Spec.NodeName != nodeName {
+			continue
+		}
+		if p.Annotations["kubernetes.io/config.mirror"] != "" {
+			continue
+		}
+		isDaemonSet := false
+		for _, owner := range p.OwnerReferences {
+			if owner.Kind == "DaemonSet" {
+				isDaemonSet = true
+				break
+			}
+		}
+		if isDaemonSet {
+			continue
+		}
+
+		var pCPU, pMem int64
+		for _, c := range p.Spec.Containers {
+			pCPU += c.Resources.Requests.Cpu().MilliValue()
+			pMem += c.Resources.Requests.Memory().Value()
+		}
+		totalReqCPU += pCPU
+		totalReqMem += pMem
+
+		// Singleton check
+		isSingleton := true
+		for _, owner := range p.OwnerReferences {
+			if owner.Kind == "ReplicaSet" || owner.Kind == "Deployment" {
+				// We consider singleton if replica count is 1 or controlled by single pod RS
+				isSingleton = false
+			}
+		}
+		if isSingleton {
+			singletonCount++
+		}
+
+		wKind := "Pod"
+		wName := p.Name
+		if len(p.OwnerReferences) > 0 {
+			wKind = p.OwnerReferences[0].Kind
+			wName = p.OwnerReferences[0].Name
+		}
+
+		evictPods = append(evictPods, evictionCandidatePod{
+			Name:          p.Name,
+			Namespace:     p.Namespace,
+			WorkloadKind:  wKind,
+			WorkloadName:  wName,
+			IsSingleton:   isSingleton,
+			PDBProtected:  false,
+			PDBAllowed:    true,
+			CPURequest:    fmt.Sprintf("%dm", pCPU),
+			MemoryRequest: formatBytes(pMem),
+		})
+	}
+
+	// Calculate cluster headroom across surviving nodes
+	var availNodesCount int
+	var availHeadroomCPU, availHeadroomMem int64
+	for _, n := range allNodes.Items {
+		if n.Name == nodeName {
+			continue
+		}
+		if n.Spec.Unschedulable {
+			continue
+		}
+		isReady := false
+		for _, cond := range n.Status.Conditions {
+			if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+				isReady = true
+				break
+			}
+		}
+		if !isReady {
+			continue
+		}
+
+		availNodesCount++
+		nCPU := n.Status.Allocatable.Cpu().MilliValue()
+		nMem := n.Status.Allocatable.Memory().Value()
+
+		// Subtract current requests on node
+		for _, p := range allPods.Items {
+			if p.Spec.NodeName != n.Name || p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
+				continue
+			}
+			for _, c := range p.Spec.Containers {
+				nCPU -= c.Resources.Requests.Cpu().MilliValue()
+				nMem -= c.Resources.Requests.Memory().Value()
+			}
+		}
+		if nCPU > 0 {
+			availHeadroomCPU += nCPU
+		}
+		if nMem > 0 {
+			availHeadroomMem += nMem
+		}
+	}
+
+	canAbsorb := availHeadroomCPU >= totalReqCPU && availHeadroomMem >= totalReqMem
+	headroom := clusterCapacityHeadroom{
+		AvailableNodes:      availNodesCount,
+		HeadroomCPU:         fmt.Sprintf("%dm", availHeadroomCPU),
+		HeadroomMemory:      formatBytes(availHeadroomMem),
+		RequiredEvictCPU:    fmt.Sprintf("%dm", totalReqCPU),
+		RequiredEvictMemory: formatBytes(totalReqMem),
+		CanAbsorbWorkloads:  canAbsorb,
+	}
+
+	var recs []string
+	status := "safe"
+	if !canAbsorb {
+		status = "unsafe"
+		recs = append(recs, fmt.Sprintf("Cluster capacity warning: Surviving nodes lack sufficient CPU/Memory headroom to absorb %d evicted pod(s). Scale up cluster nodes before draining.", len(evictPods)))
+	}
+	if singletonCount > 0 {
+		if status == "safe" {
+			status = "warning"
+		}
+		recs = append(recs, fmt.Sprintf("%d singleton workload(s) detected. These will experience intermittent service downtime until rescheduled.", singletonCount))
+	}
+	if availNodesCount == 0 && len(evictPods) > 0 {
+		status = "unsafe"
+		recs = append(recs, "No other schedulable ready nodes available in cluster. Draining this node will leave all workloads Pending.")
+	}
+	if len(recs) == 0 {
+		recs = append(recs, "Surviving cluster nodes possess sufficient headroom. All workloads can be evacuated safely.")
+	}
+
+	return nodeDrainSimulationReport{
+		NodeName:              nodeName,
+		Status:                status,
+		Unschedulable:         targetNode.Spec.Unschedulable,
+		TotalEvictablePods:    len(evictPods),
+		SingletonPodCount:     singletonCount,
+		PDBBlockedCount:       0,
+		ClusterHeadroom:       headroom,
+		EvictionCandidates:    evictPods,
+		SafetyRecommendations: recs,
+	}, nil
+}
+
+func toggleNodeCordon(ctx context.Context, client kubernetes.Interface, nodeName string, unschedulable bool) error {
+	if client == nil {
+		return errKubernetesNotConfigured
+	}
+	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	node.Spec.Unschedulable = unschedulable
+	_, err = client.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	return err
+}
+
+// -------------------------------------------------------------
+// Operational Feature 4: Incident Webhook Dispatcher
+// -------------------------------------------------------------
+
+func dispatchIncidentWebhook(ctx context.Context, webhook platformIncidentWebhookRecord, payload map[string]any) (webhookTestResponse, error) {
+	var bodyBytes []byte
+	title := fmt.Sprintf("%v", payload["title"])
+	if title == "" {
+		title = "Workload Failure Detected"
+	}
+	summary := fmt.Sprintf("%v", payload["summary"])
+	severity := fmt.Sprintf("%v", payload["severity"])
+	if severity == "" {
+		severity = "CRITICAL"
+	}
+	workload := fmt.Sprintf("%v", payload["workload"])
+	if workload == "" {
+		workload = "default/unknown-pod"
+	}
+	warRoomURL := fmt.Sprintf("%v", payload["war_room_url"])
+	if warRoomURL == "" {
+		warRoomURL = "https://crelan.abj.pipeops.app/admin#war-room"
+	}
+
+	if webhook.Provider == "slack" {
+		slackPayload := map[string]any{
+			"text": fmt.Sprintf("🚨 *Crelan Incident Alert:* %s (%s)", title, severity),
+			"blocks": []any{
+				map[string]any{
+					"type": "header",
+					"text": map[string]string{
+						"type": "plain_text",
+						"text": "🚨 Crelan Incident Alert",
+					},
+				},
+				map[string]any{
+					"type": "section",
+					"text": map[string]string{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Workload:* `%s`\n*Severity:* `%s`\n*Details:* %s", workload, severity, summary),
+					},
+				},
+				map[string]any{
+					"type": "actions",
+					"elements": []any{
+						map[string]any{
+							"type": "button",
+							"text": map[string]string{"type": "plain_text", "text": "Open Incident War Room"},
+							"url":  warRoomURL,
+						},
+					},
+				},
+			},
+		}
+		bodyBytes, _ = json.Marshal(slackPayload)
+	} else if webhook.Provider == "discord" {
+		discordPayload := map[string]any{
+			"content": "🚨 **Crelan Platform Incident Alert**",
+			"embeds": []any{
+				map[string]any{
+					"title":       title,
+					"description": summary,
+					"color":       15158332,
+					"fields": []any{
+						map[string]any{"name": "Workload", "value": workload, "inline": true},
+						map[string]any{"name": "Severity", "value": severity, "inline": true},
+					},
+					"url": warRoomURL,
+				},
+			},
+		}
+		bodyBytes, _ = json.Marshal(discordPayload)
+	} else {
+		bodyBytes, _ = json.Marshal(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", webhook.URL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return webhookTestResponse{Success: false, Message: err.Error()}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return webhookTestResponse{Success: false, Message: "Connection error: " + err.Error()}, err
+	}
+	defer resp.Body.Close()
+
+	success := resp.StatusCode >= 200 && resp.StatusCode < 300
+	msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	return webhookTestResponse{
+		Success:    success,
+		StatusCode: resp.StatusCode,
+		Message:    msg,
+	}, nil
+}
+
+// -------------------------------------------------------------
+// Operational Feature 5: Broken Reference & Dangling Config Scanner
+// -------------------------------------------------------------
+
+func scanDanglingConfigReferences(ctx context.Context, client kubernetes.Interface) (danglingConfigReport, error) {
+	if client == nil {
+		return danglingConfigReport{}, errKubernetesNotConfigured
+	}
+	cmList, err := client.CoreV1().ConfigMaps("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return danglingConfigReport{}, err
+	}
+	secList, err := client.CoreV1().Secrets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return danglingConfigReport{}, err
+	}
+
+	cmMap := make(map[string]map[string]bool)
+	for _, cm := range cmList.Items {
+		keys := make(map[string]bool)
+		for k := range cm.Data {
+			keys[k] = true
+		}
+		for k := range cm.BinaryData {
+			keys[k] = true
+		}
+		cmMap[cm.Namespace+"/"+cm.Name] = keys
+	}
+
+	secMap := make(map[string]map[string]bool)
+	for _, s := range secList.Items {
+		keys := make(map[string]bool)
+		for k := range s.Data {
+			keys[k] = true
+		}
+		secMap[s.Namespace+"/"+s.Name] = keys
+	}
+
+	report := danglingConfigReport{
+		Issues: []danglingConfigIssue{},
+	}
+
+	// 1. Scan Deployments
+	deps, _ := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if deps != nil {
+		for _, dep := range deps.Items {
+			report.TotalScannedWorkloads++
+			checkPodTemplateForDangling(&report, "Deployment", dep.Name, dep.Namespace, dep.Spec.Template, cmMap, secMap)
+		}
+	}
+
+	// 2. Scan StatefulSets
+	sts, _ := client.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	if sts != nil {
+		for _, s := range sts.Items {
+			report.TotalScannedWorkloads++
+			checkPodTemplateForDangling(&report, "StatefulSet", s.Name, s.Namespace, s.Spec.Template, cmMap, secMap)
+		}
+	}
+
+	// 3. Scan DaemonSets
+	ds, _ := client.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	if ds != nil {
+		for _, d := range ds.Items {
+			report.TotalScannedWorkloads++
+			checkPodTemplateForDangling(&report, "DaemonSet", d.Name, d.Namespace, d.Spec.Template, cmMap, secMap)
+		}
+	}
+
+	// 4. Scan Standalone Pods (skip pods managed by controllers)
+	pods, _ := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if pods != nil {
+		for _, p := range pods.Items {
+			if len(p.OwnerReferences) > 0 {
+				continue
+			}
+			report.TotalScannedWorkloads++
+			checkPodTemplateForDangling(&report, "Pod", p.Name, p.Namespace, corev1.PodTemplateSpec{Spec: p.Spec}, cmMap, secMap)
+		}
+	}
+
+	report.BrokenReferenceCount = len(report.Issues)
+	return report, nil
+}
+
+func checkPodTemplateForDangling(report *danglingConfigReport, kind, name, namespace string, template corev1.PodTemplateSpec, cmMap, secMap map[string]map[string]bool) {
+	containers := append(template.Spec.InitContainers, template.Spec.Containers...)
+	for _, c := range containers {
+		// Env key references
+		for _, e := range c.Env {
+			if e.ValueFrom != nil {
+				if e.ValueFrom.ConfigMapKeyRef != nil {
+					cmName := e.ValueFrom.ConfigMapKeyRef.Name
+					cmKey := e.ValueFrom.ConfigMapKeyRef.Key
+					keys, exists := cmMap[namespace+"/"+cmName]
+					if !exists {
+						report.Issues = append(report.Issues, danglingConfigIssue{
+							WorkloadKind: kind,
+							WorkloadName: name,
+							Namespace:    namespace,
+							Container:    c.Name,
+							RefType:      "configMapKeyRef",
+							MissingKind:  "ConfigMap",
+							MissingName:  cmName,
+							MissingKey:   cmKey,
+							Remediation:  fmt.Sprintf("Create ConfigMap %q in namespace %q with key %q to avoid CreateContainerConfigError.", cmName, namespace, cmKey),
+						})
+					} else if !keys[cmKey] {
+						report.Issues = append(report.Issues, danglingConfigIssue{
+							WorkloadKind: kind,
+							WorkloadName: name,
+							Namespace:    namespace,
+							Container:    c.Name,
+							RefType:      "configMapKeyRef",
+							MissingKind:  "ConfigMap",
+							MissingName:  cmName,
+							MissingKey:   cmKey,
+							Remediation:  fmt.Sprintf("Key %q does not exist in ConfigMap %q. Add this key or correct environment variable reference.", cmKey, cmName),
+						})
+					}
+				}
+				if e.ValueFrom.SecretKeyRef != nil {
+					secName := e.ValueFrom.SecretKeyRef.Name
+					secKey := e.ValueFrom.SecretKeyRef.Key
+					keys, exists := secMap[namespace+"/"+secName]
+					if !exists {
+						report.Issues = append(report.Issues, danglingConfigIssue{
+							WorkloadKind: kind,
+							WorkloadName: name,
+							Namespace:    namespace,
+							Container:    c.Name,
+							RefType:      "secretKeyRef",
+							MissingKind:  "Secret",
+							MissingName:  secName,
+							MissingKey:   secKey,
+							Remediation:  fmt.Sprintf("Create Secret %q in namespace %q with key %q.", secName, namespace, secKey),
+						})
+					} else if !keys[secKey] {
+						report.Issues = append(report.Issues, danglingConfigIssue{
+							WorkloadKind: kind,
+							WorkloadName: name,
+							Namespace:    namespace,
+							Container:    c.Name,
+							RefType:      "secretKeyRef",
+							MissingKind:  "Secret",
+							MissingName:  secName,
+							MissingKey:   secKey,
+							Remediation:  fmt.Sprintf("Key %q does not exist in Secret %q.", secKey, secName),
+						})
+					}
+				}
+			}
+		}
+
+		// EnvFrom references
+		for _, ef := range c.EnvFrom {
+			if ef.ConfigMapRef != nil {
+				cmName := ef.ConfigMapRef.Name
+				if _, exists := cmMap[namespace+"/"+cmName]; !exists {
+					report.Issues = append(report.Issues, danglingConfigIssue{
+						WorkloadKind: kind,
+						WorkloadName: name,
+						Namespace:    namespace,
+						Container:    c.Name,
+						RefType:      "envFromConfigMap",
+						MissingKind:  "ConfigMap",
+						MissingName:  cmName,
+						Remediation:  fmt.Sprintf("Referenced ConfigMap %q not found in namespace %q.", cmName, namespace),
+					})
+				}
+			}
+			if ef.SecretRef != nil {
+				secName := ef.SecretRef.Name
+				if _, exists := secMap[namespace+"/"+secName]; !exists {
+					report.Issues = append(report.Issues, danglingConfigIssue{
+						WorkloadKind: kind,
+						WorkloadName: name,
+						Namespace:    namespace,
+						Container:    c.Name,
+						RefType:      "envFromSecret",
+						MissingKind:  "Secret",
+						MissingName:  secName,
+						Remediation:  fmt.Sprintf("Referenced Secret %q not found in namespace %q.", secName, namespace),
+					})
+				}
+			}
+		}
+	}
+
+	// Volume references
+	for _, v := range template.Spec.Volumes {
+		if v.ConfigMap != nil {
+			if _, exists := cmMap[namespace+"/"+v.ConfigMap.Name]; !exists {
+				report.Issues = append(report.Issues, danglingConfigIssue{
+					WorkloadKind: kind,
+					WorkloadName: name,
+					Namespace:    namespace,
+					Container:    "(volume)",
+					RefType:      "volumeConfigMap",
+					MissingKind:  "ConfigMap",
+					MissingName:  v.ConfigMap.Name,
+					Remediation:  fmt.Sprintf("Mounted ConfigMap volume %q references non-existent ConfigMap %q.", v.Name, v.ConfigMap.Name),
+				})
+			}
+		}
+		if v.Secret != nil {
+			if _, exists := secMap[namespace+"/"+v.Secret.SecretName]; !exists {
+				report.Issues = append(report.Issues, danglingConfigIssue{
+					WorkloadKind: kind,
+					WorkloadName: name,
+					Namespace:    namespace,
+					Container:    "(volume)",
+					RefType:      "volumeSecret",
+					MissingKind:  "Secret",
+					MissingName:  v.Secret.SecretName,
+					Remediation:  fmt.Sprintf("Mounted Secret volume %q references non-existent Secret %q.", v.Name, v.Secret.SecretName),
+				})
+			}
+		}
+	}
+}
+
 
