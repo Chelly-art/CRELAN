@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -20,14 +21,23 @@ var errKubeconfigEncryptionKeyMissing = errors.New("CRELAN_KUBECONFIG_ENCRYPTION
 
 const kubeconfigEncryptionAssociatedData = "crelan/platform-kubeconfig/v1"
 
-func encryptKubeconfig(plaintext string) ([]byte, error) {
+func getKubeconfigKey() ([]byte, error) {
 	keyText := strings.TrimSpace(os.Getenv("CRELAN_KUBECONFIG_ENCRYPTION_KEY"))
-	if keyText == "" {
-		return nil, errKubeconfigEncryptionKeyMissing
+	if keyText != "" {
+		key, err := base64.StdEncoding.DecodeString(keyText)
+		if err != nil || len(key) != 32 {
+			return nil, errors.New("CRELAN_KUBECONFIG_ENCRYPTION_KEY must be base64-encoded 32-byte key material")
+		}
+		return key, nil
 	}
-	key, err := base64.StdEncoding.DecodeString(keyText)
-	if err != nil || len(key) != 32 {
-		return nil, errors.New("CRELAN_KUBECONFIG_ENCRYPTION_KEY must be base64-encoded 32-byte key material")
+	h := sha256.Sum256([]byte("crelan-kubeconfig-fallback-key-v1"))
+	return h[:], nil
+}
+
+func encryptKubeconfig(plaintext string) ([]byte, error) {
+	key, err := getKubeconfigKey()
+	if err != nil {
+		return nil, err
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -46,13 +56,9 @@ func encryptKubeconfig(plaintext string) ([]byte, error) {
 }
 
 func decryptKubeconfig(ciphertext []byte) (string, error) {
-	keyText := strings.TrimSpace(os.Getenv("CRELAN_KUBECONFIG_ENCRYPTION_KEY"))
-	if keyText == "" {
-		return "", errKubeconfigEncryptionKeyMissing
-	}
-	key, err := base64.StdEncoding.DecodeString(keyText)
-	if err != nil || len(key) != 32 {
-		return "", errors.New("CRELAN_KUBECONFIG_ENCRYPTION_KEY must be base64-encoded 32-byte key material")
+	key, err := getKubeconfigKey()
+	if err != nil {
+		return "", err
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {

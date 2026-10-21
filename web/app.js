@@ -84,16 +84,23 @@ function renderTable(container, columns, rows, emptyMessage) {
 
 async function loadClusterContexts() {
   const select = $("#app-cluster");
+  const noClusterAlert = $("#no-cluster-alert");
   if (!select) return;
   try {
     const data = await api("/api/v1/cluster/contexts");
     const contexts = data?.contexts || [];
     const active = data?.active || "";
+    const inCluster = !!data?.in_cluster;
+    const hasCluster = !!active || contexts.length > 0 || inCluster;
+    if (noClusterAlert) noClusterAlert.hidden = hasCluster;
+
     select.replaceChildren();
 
     const defaultOption = document.createElement("option");
     defaultOption.value = "";
-    defaultOption.textContent = active ? `Primary: ${active} (Default)` : "Default cluster (platform managed)";
+    defaultOption.textContent = active
+      ? `Primary: ${active} (Default)`
+      : (hasCluster ? "Default cluster (platform managed)" : "⚠️ No cluster connected (connect in /admin)");
     select.append(defaultOption);
 
     contexts.forEach((ctx) => {
@@ -322,7 +329,11 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     window.location.hash = "applications";
     await loadDeployments();
   } catch (cause) {
-    error.textContent = cause.message;
+    if (String(cause.message || "").includes("not connected or unavailable")) {
+      error.innerHTML = `⚠️ ${cause.message}. Reconnect your cluster in the <a href="/admin" style="color: #c45100; text-decoration: underline; font-weight: 600;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in PipeOps environment variables.`;
+    } else {
+      error.textContent = cause.message;
+    }
     error.hidden = false;
   } finally {
     submit.disabled = false;
