@@ -1,0 +1,159 @@
+name: infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which stage to run
+        type: choice
+        options: [all, vpc, eks, components]
+        default: all
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  AWS_ACCOUNT_ID: "049637491884"
+  CLUSTER_NAME: dev-cluster
+  TF_DIR: terraform/environments/dev
+  TF_VERSION: 1.14.0
+
+concurrency:
+  group: infrastructure-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      vpc: ${{ steps.pick.outputs.vpc }}
+      eks: ${{ steps.pick.outputs.eks }}
+      components: ${{ steps.pick.outputs.components }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: pick
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          TARGET: ${{ inputs.target }}
+          PUSH_BASE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          vpc=false; eks=false; comp=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            case "$TARGET" in
+              all) vpc=true; eks=true; comp=true ;;
+              vpc) vpc=true ;;
+              eks) eks=true ;;
+              components) comp=true ;;
+            esac
+          else
+            if [ "$EVENT" = "pull_request" ]; then base="$PR_BASE"; else base="$PUSH_BASE"; fi
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+              files=$(git ls-files)
+            else
+              files=$(git diff --name-only "$base" "$GITHUB_SHA")
+            fi
+            echo "Changed files:"; echo "$files"
+            echo "$files" | grep -qE '^terraform/modules/vpc/' && vpc=true || true
+            echo "$files" | grep -qE '^terraform/modules/(eks|iam)/' && eks=true || true
+            echo "$files" | grep -qE '^terraform/environments/dev/' && { vpc=true; eks=true; } || true
+            echo "$files" | grep -qE '^(helm/|scripts/|manifests/capsule/)' && comp=true || true
+            echo "$files" | grep -qE '^\.github/workflows/infrastructure\.yml' && { vpc=true; eks=true; comp=true; } || true
+          fi
+          echo "vpc=$vpc" >> "$GITHUB_OUTPUT"
+          echo "eks=$eks" >> "$GITHUB_OUTPUT"
+          echo "components=$comp" >> "$GITHUB_OUTPUT"
+
+  vpc:
+    needs: select
+    if: needs.select.outputs.vpc == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify AWS account
+        run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "Wrong AWS account: $acct"; exit 1; }
+      - run: terraform init -input=false
+      - run: terraform validate
+      - run: terraform plan -input=false -lock-timeout=5m -target=module.vpc -out=tfplan-vpc
+      - name: Apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -input=false -lock-timeout=5m tfplan-vpc
+
+  eks:
+    needs: [select, vpc]
+    if: >-
+      always() && !cancelled() &&
+      needs.select.outputs.eks == 'true' &&
+      (needs.vpc.result == 'success' || needs.vpc.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify AWS account
+        run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "Wrong AWS account: $acct"; exit 1; }
+      - run: terraform init -input=false
+      - run: terraform validate
+      - run: terraform plan -input=false -lock-timeout=5m -target=module.iam -target=module.eks -out=tfplan-eks
+      - name: Apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -input=false -lock-timeout=5m tfplan-eks
+
+  components:
+    needs: [select, vpc, eks]
+    if: >-
+      always() && !cancelled() &&
+      github.event_name != 'pull_request' &&
+      needs.select.outputs.components == 'true' &&
+      (needs.vpc.result == 'success' || needs.vpc.result == 'skipped') &&
+      (needs.eks.result == 'success' || needs.eks.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify AWS account and connect to cluster
+        run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "Wrong AWS account: $acct"; exit 1; }
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          kubectl config current-context
+          kubectl get nodes
+      - name: Deploy components with Helm
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: bash scripts/deploy-components.sh

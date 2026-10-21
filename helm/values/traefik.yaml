@@ -1,0 +1,11 @@
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+ingressRoute:
+  dashboard:
+    enabled: false
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi

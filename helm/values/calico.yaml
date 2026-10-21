@@ -1,0 +1,4 @@
+installation:
+  kubernetesProvider: EKS
+  cni:
+    type: AmazonVPC

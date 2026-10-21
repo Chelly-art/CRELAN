@@ -21,10 +21,10 @@ module "eks" {
   environment     = var.environment
   cluster_name    = "dev-cluster"
   cluster_version = "1.36"
-  
+
   # Control plane stays secure in private subnets
-  subnet_ids      = module.vpc.private_subnets
-  
+  subnet_ids = module.vpc.private_subnets
+
   # Worker nodes get public IPs and internet access to join the cluster
   node_subnet_ids = module.vpc.public_subnets
 
