@@ -121,6 +121,84 @@ body.admin-body {
   opacity: 0.9;
 }
 
+/* Domain Rail Switcher */
+.admin-rail-domains {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.admin-rail-domain-btn {
+  width: 42px;
+  height: 44px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 4px 2px;
+  position: relative;
+}
+
+.admin-rail-domain-btn:hover {
+  background-color: var(--admin-surface-hover);
+  border-color: var(--admin-border-subtle);
+}
+
+.admin-rail-domain-icon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.admin-rail-domain-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--admin-text-muted);
+  margin-top: 2px;
+}
+
+.admin-rail-domain-btn.active {
+  background: var(--admin-accent-bg);
+  border-color: var(--admin-accent-border);
+}
+
+.admin-rail-domain-btn.active .admin-rail-domain-label {
+  color: var(--admin-accent);
+}
+
+.admin-rail-domain-btn[data-domain="sre"].active {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+.admin-rail-domain-btn[data-domain="sre"].active .admin-rail-domain-label {
+  color: #059669;
+}
+
+.admin-rail-domain-btn[data-domain="security"].active {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.admin-rail-domain-btn[data-domain="security"].active .admin-rail-domain-label {
+  color: #dc2626;
+}
+
+.admin-rail-domain-btn[data-domain="ops"].active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+.admin-rail-domain-btn[data-domain="ops"].active .admin-rail-domain-label {
+  color: #6366f1;
+}
+
 .admin-cluster-badge {
   width: 36px;
   height: 36px;
@@ -185,7 +263,7 @@ body.admin-body {
 
 /* 2. Secondary Sidebar Tree */
 .admin-sidebar {
-  width: 224px;
+  width: 236px;
   background-color: var(--admin-sidebar-bg);
   border-right: 1px solid var(--admin-border);
   display: flex;
@@ -196,12 +274,53 @@ body.admin-body {
 }
 
 .admin-sidebar-header {
-  padding: 16px 16px 12px;
+  padding: 14px 14px 12px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   border-bottom: 1px solid var(--admin-border);
   background-color: var(--admin-surface);
+}
+
+.admin-sidebar-domain-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--admin-bg-secondary, #fafbfc);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm, 6px);
+}
+
+#sidebar-domain-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+#sidebar-domain-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--admin-text);
+  white-space: nowrap;
+}
+
+.admin-sidebar-domain-desc {
+  font-size: 10px;
+  color: var(--admin-text-muted);
+  white-space: nowrap;
+}
+
+/* Domain Filtering for Sidebar Navigation Groups */
+body[data-active-domain="k8s"] .admin-tree-group:not([data-domain="k8s"]),
+body[data-active-domain="sre"] .admin-tree-group:not([data-domain="sre"]),
+body[data-active-domain="security"] .admin-tree-group:not([data-domain="security"]),
+body[data-active-domain="ops"] .admin-tree-group:not([data-domain="ops"]) {
+  display: none !important;
+}
+
+body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
+  display: none !important;
 }
 
 .admin-cluster-name {

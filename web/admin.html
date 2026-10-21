@@ -13,11 +13,32 @@
     <div class="admin-app">
       <aside class="admin-rail" aria-label="Cluster Rail">
         <a class="admin-rail-brand" href="/dashboard" title="Crelan Platform">C</a>
-        <div class="admin-cluster-badge" id="rail-cluster-badge" title="Kubernetes Cluster">
-          K8s
-          <span class="status-dot" id="rail-status-dot"></span>
+
+        <!-- 4 Primary Operational Domain Switchers -->
+        <div class="admin-rail-domains">
+          <button class="admin-rail-domain-btn active" id="rail-domain-k8s" data-domain="k8s" type="button" title="Cluster Core (Workloads, Pods, Network, Storage)">
+            <span class="admin-rail-domain-icon">☸️</span>
+            <span class="admin-rail-domain-label">Core</span>
+          </button>
+          <button class="admin-rail-domain-btn" id="rail-domain-sre" data-domain="sre" type="button" title="SRE & Reliability (SLOs, RED Signals, Chaos, War Room)">
+            <span class="admin-rail-domain-icon">📈</span>
+            <span class="admin-rail-domain-label">SRE</span>
+          </button>
+          <button class="admin-rail-domain-btn" id="rail-domain-security" data-domain="security" type="button" title="Security & Compliance (CVEs, CIS, RBAC, Isolation)">
+            <span class="admin-rail-domain-icon">🛡️</span>
+            <span class="admin-rail-domain-label">Security</span>
+          </button>
+          <button class="admin-rail-domain-btn" id="rail-domain-ops" data-domain="ops" type="button" title="Platform Ops & Fleet (Multi-Cluster, Helm, CRDs, Drift)">
+            <span class="admin-rail-domain-icon">⚙️</span>
+            <span class="admin-rail-domain-label">Fleet</span>
+          </button>
         </div>
+
         <div class="admin-rail-bottom">
+          <div class="admin-cluster-badge" id="rail-cluster-badge" title="Kubernetes Cluster Connection Status">
+            K8s
+            <span class="status-dot" id="rail-status-dot"></span>
+          </div>
           <a class="admin-rail-icon-btn" href="/dashboard" title="Switch to Customer Workspaces">App</a>
           <button class="admin-rail-icon-btn" id="rail-refresh-btn" type="button" title="Refresh Cluster State">Sync</button>
         </div>
@@ -25,14 +46,23 @@
 
       <nav class="admin-sidebar" aria-label="Cluster Navigation">
         <div class="admin-sidebar-header">
-          <span class="admin-cluster-name" id="sidebar-cluster-name">-</span>
-          <span class="admin-cluster-tag" id="sidebar-cluster-tag">Disconnected</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 8px;">
+            <span class="admin-cluster-name" id="sidebar-cluster-name">-</span>
+            <span class="admin-cluster-tag" id="sidebar-cluster-tag">Disconnected</span>
+          </div>
+          <div class="admin-sidebar-domain-badge" id="sidebar-domain-badge">
+            <span id="sidebar-domain-icon">☸️</span>
+            <div style="display: flex; flex-direction: column; overflow: hidden;">
+              <strong id="sidebar-domain-title">Cluster Core</strong>
+              <span class="admin-sidebar-domain-desc" id="sidebar-domain-desc">Workloads & Infrastructure</span>
+            </div>
+          </div>
         </div>
 
-        <div class="admin-nav-tree">
-          <!-- CLUSTER -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Cluster</div>
+        <div class="admin-nav-tree" id="admin-nav-tree">
+          <!-- ==================== DOMAIN 1: CLUSTER CORE ==================== -->
+          <div class="admin-tree-group" data-domain="k8s">
+            <div class="admin-tree-header">Cluster Overview</div>
             <a class="admin-tree-item active" href="#overview" data-view="overview">
               <span>Overview</span>
             </a>
@@ -40,10 +70,17 @@
               <span>Nodes</span>
               <span class="admin-item-badge" id="badge-nodes">0</span>
             </a>
+            <a class="admin-tree-item" href="#namespaces" data-view="namespaces">
+              <span>Namespaces</span>
+              <span class="admin-item-badge" id="badge-namespaces">0</span>
+            </a>
+            <a class="admin-tree-item" href="#events" data-view="events">
+              <span>Cluster Events</span>
+              <span class="admin-item-badge" id="badge-events">0</span>
+            </a>
           </div>
 
-          <!-- WORKLOADS -->
-          <div class="admin-tree-group">
+          <div class="admin-tree-group" data-domain="k8s">
             <div class="admin-tree-header">Workloads</div>
             <a class="admin-tree-item" href="#pods" data-view="pods">
               <span>Pods</span>
@@ -67,9 +104,8 @@
             </a>
           </div>
 
-          <!-- NETWORK -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Network</div>
+          <div class="admin-tree-group" data-domain="k8s">
+            <div class="admin-tree-header">Network & Storage</div>
             <a class="admin-tree-item" href="#services" data-view="services">
               <span>Services</span>
             </a>
@@ -79,30 +115,6 @@
             <a class="admin-tree-item" href="#networkpolicies" data-view="networkpolicies">
               <span>Network Policies</span>
             </a>
-          </div>
-
-          <!-- CONFIGURATION -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Configuration</div>
-            <a class="admin-tree-item" href="#configmaps" data-view="configmaps">
-              <span>ConfigMaps</span>
-            </a>
-            <a class="admin-tree-item" href="#secrets" data-view="secrets">
-              <span>Secrets</span>
-            </a>
-            <a class="admin-tree-item" href="#certificates" data-view="certificates">
-              <span>TLS Expiration Radar</span>
-              <span class="admin-item-badge" id="badge-certs">x509</span>
-            </a>
-            <a class="admin-tree-item" href="#dangling-configs" data-view="dangling-configs">
-              <span>Dangling Config Scanner</span>
-              <span class="admin-item-badge admin-badge-warning" id="badge-dangling" hidden>0</span>
-            </a>
-          </div>
-
-          <!-- STORAGE -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Storage</div>
             <a class="admin-tree-item" href="#pvcs" data-view="pvcs">
               <span>Persistent Volume Claims</span>
             </a>
@@ -114,112 +126,23 @@
             </a>
           </div>
 
-          <!-- NAMESPACES & EVENTS -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Cluster Scopes</div>
-            <a class="admin-tree-item" href="#namespaces" data-view="namespaces">
-              <span>Namespaces</span>
-              <span class="admin-item-badge" id="badge-namespaces">0</span>
+          <div class="admin-tree-group" data-domain="k8s">
+            <div class="admin-tree-header">Configuration</div>
+            <a class="admin-tree-item" href="#configmaps" data-view="configmaps">
+              <span>ConfigMaps</span>
             </a>
-            <a class="admin-tree-item" href="#events" data-view="events">
-              <span>Cluster Events</span>
-              <span class="admin-item-badge" id="badge-events">0</span>
+            <a class="admin-tree-item" href="#secrets" data-view="secrets">
+              <span>Secrets</span>
             </a>
-          </div>
-
-          <!-- PLATFORM INTELLIGENCE & SECURITY -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header" style="color: var(--admin-accent);">Platform Intelligence & Security</div>
-            <a class="admin-tree-item" href="#copilot" data-view="copilot">
-              <span>AI K8s Copilot</span>
-              <span class="admin-item-badge" style="color: var(--admin-accent); font-weight: 700;">AI</span>
-            </a>
-            <a class="admin-tree-item" href="#security" data-view="security">
-              <span>Security & Hardening</span>
-              <span class="admin-item-badge" id="badge-security" style="color: var(--admin-accent);">CIS</span>
-            </a>
-            <a class="admin-tree-item" href="#rbac" data-view="rbac">
-              <span>RBAC Blast Radius</span>
-              <span class="admin-item-badge" id="badge-rbac">Radar</span>
-            </a>
-            <a class="admin-tree-item" href="#rightsizing" data-view="rightsizing">
-              <span>Cost & Right-Sizing</span>
-              <span class="admin-item-badge" id="badge-rightsizing">Advisor</span>
-            </a>
-            <a class="admin-tree-item" href="#databases" data-view="databases">
-              <span>Database Topology</span>
-            </a>
-            <a class="admin-tree-item" href="#storage-leaks" data-view="storage-leaks">
-              <span>Storage Leak Detector</span>
-              <span class="admin-item-badge admin-badge-warning" id="badge-leaks" hidden>0</span>
-            </a>
-            <a class="admin-tree-item" href="#efficiency" data-view="efficiency">
-              <span>Resource Heatmap</span>
-            </a>
-            <a class="admin-tree-item" href="#war-room" data-view="war-room">
-              <span>Incident War Room</span>
-              <span class="admin-item-badge admin-badge-danger" id="badge-warroom">Live</span>
-            </a>
-            <a class="admin-tree-item" href="#audit" data-view="audit">
-              <span>Platform Audit Trail</span>
-              <span class="admin-item-badge" id="badge-audit">Logs</span>
-            </a>
-            <a class="admin-tree-item" href="#upgrade-radar" data-view="upgrade-radar">
-              <span>Cluster Upgrade Radar</span>
-              <span class="admin-item-badge" id="badge-upgrade">Radar</span>
-            </a>
-            <a class="admin-tree-item" href="#topology" data-view="topology">
-              <span>Traffic & Ingress Topology</span>
-            </a>
-            <a class="admin-tree-item" href="#isolation-matrix" data-view="isolation-matrix">
-              <span>Tenant Isolation Matrix</span>
-            </a>
-            <a class="admin-tree-item" href="#event-storm" data-view="event-storm">
-              <span>Event Storm Radar</span>
-              <span class="admin-item-badge admin-badge-warning" id="badge-storm">Radar</span>
-            </a>
-            <a class="admin-tree-item" href="#autoscaling" data-view="autoscaling">
-              <span>Autoscaling & HPA</span>
-              <span class="admin-item-badge" id="badge-autoscaling">HPA</span>
-            </a>
-            <a class="admin-tree-item" href="#gitops-drift" data-view="gitops-drift">
-              <span>GitOps Drift Radar</span>
-              <span class="admin-item-badge" id="badge-drift">Drift</span>
-            </a>
-            <a class="admin-tree-item" href="#backup-radar" data-view="backup-radar">
-              <span>Disaster Recovery</span>
-              <span class="admin-item-badge" id="badge-dr">DR</span>
+            <a class="admin-tree-item" href="#dangling-configs" data-view="dangling-configs">
+              <span>Dangling Config Scanner</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-dangling" hidden>0</span>
             </a>
           </div>
 
-          <!-- ENTERPRISE EXTENSIONS & SECURITY -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header" style="color: #6366f1;">Enterprise Suite</div>
-            <a class="admin-tree-item" href="#image-vulnerabilities" data-view="image-vulnerabilities">
-              <span>Image CVE Radar</span>
-              <span class="admin-item-badge admin-badge-danger" id="badge-cve">CVE</span>
-            </a>
-            <a class="admin-tree-item" href="#helm-releases" data-view="helm-releases">
-              <span>Helm Releases</span>
-              <span class="admin-item-badge" id="badge-helm" style="background: #326ce5; color: #fff;">Helm</span>
-            </a>
-            <a class="admin-tree-item" href="#crds" data-view="crds">
-              <span>Custom Resources (CRDs)</span>
-              <span class="admin-item-badge" id="badge-crds">CRD</span>
-            </a>
-            <a class="admin-tree-item" href="#can-i" data-view="can-i">
-              <span>RBAC "can-i" Inspector</span>
-              <span class="admin-item-badge" id="badge-cani">Auth</span>
-            </a>
-            <a class="admin-tree-item" href="#cluster-fleet" data-view="cluster-fleet">
-              <span>Cluster Fleet</span>
-              <span class="admin-item-badge" id="badge-fleet">Fleet</span>
-            </a>
-          </div>
-
-          <!-- SITE RELIABILITY ENGINEERING (SRE) -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header" style="color: #059669;">SRE & Reliability</div>
+          <!-- ==================== DOMAIN 2: SRE & RELIABILITY ==================== -->
+          <div class="admin-tree-group" data-domain="sre">
+            <div class="admin-tree-header" style="color: #059669;">Service Level Objectives</div>
             <a class="admin-tree-item" href="#sre-slos" data-view="sre-slos">
               <span>SLO & Error Budgets</span>
               <span class="admin-item-badge admin-badge-warning" id="badge-sre-slo">SLO</span>
@@ -228,6 +151,14 @@
               <span>Golden Signals (RED)</span>
               <span class="admin-item-badge" id="badge-sre-red">RED</span>
             </a>
+            <a class="admin-tree-item" href="#sre-scorecards" data-view="sre-scorecards">
+              <span>Reliability Scorecards</span>
+              <span class="admin-item-badge" id="badge-sre-scorecards">A-F</span>
+            </a>
+          </div>
+
+          <div class="admin-tree-group" data-domain="sre">
+            <div class="admin-tree-header" style="color: #059669;">Resilience & Testing</div>
             <a class="admin-tree-item" href="#sre-probes" data-view="sre-probes">
               <span>Health Probe Doctor</span>
               <span class="admin-item-badge admin-badge-danger" id="badge-sre-probes">Doctor</span>
@@ -244,15 +175,120 @@
               <span>Chaos Resilience Prober</span>
               <span class="admin-item-badge" id="badge-sre-chaos" style="background: #dc2626; color: #fff;">Chaos</span>
             </a>
-            <a class="admin-tree-item" href="#sre-scorecards" data-view="sre-scorecards">
-              <span>Reliability Scorecards</span>
-              <span class="admin-item-badge" id="badge-sre-scorecards">A-F</span>
+          </div>
+
+          <div class="admin-tree-group" data-domain="sre">
+            <div class="admin-tree-header" style="color: #059669;">Incident & Autoscaling</div>
+            <a class="admin-tree-item" href="#war-room" data-view="war-room">
+              <span>Incident War Room</span>
+              <span class="admin-item-badge admin-badge-danger" id="badge-warroom">Live</span>
+            </a>
+            <a class="admin-tree-item" href="#event-storm" data-view="event-storm">
+              <span>Event Storm Radar</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-storm">Radar</span>
+            </a>
+            <a class="admin-tree-item" href="#autoscaling" data-view="autoscaling">
+              <span>Autoscaling & HPA</span>
+              <span class="admin-item-badge" id="badge-autoscaling">HPA</span>
             </a>
           </div>
 
-          <!-- PLATFORM OPERATIONS -->
-          <div class="admin-tree-group">
-            <div class="admin-tree-header">Platform Ops</div>
+          <!-- ==================== DOMAIN 3: SECURITY & COMPLIANCE ==================== -->
+          <div class="admin-tree-group" data-domain="security">
+            <div class="admin-tree-header" style="color: #dc2626;">Hardening & CVEs</div>
+            <a class="admin-tree-item" href="#security" data-view="security">
+              <span>Security & Hardening</span>
+              <span class="admin-item-badge" id="badge-security" style="color: var(--admin-accent);">CIS</span>
+            </a>
+            <a class="admin-tree-item" href="#image-vulnerabilities" data-view="image-vulnerabilities">
+              <span>Image CVE Radar</span>
+              <span class="admin-item-badge admin-badge-danger" id="badge-cve">CVE</span>
+            </a>
+          </div>
+
+          <div class="admin-tree-group" data-domain="security">
+            <div class="admin-tree-header" style="color: #dc2626;">Access & Isolation</div>
+            <a class="admin-tree-item" href="#rbac" data-view="rbac">
+              <span>RBAC Blast Radius</span>
+              <span class="admin-item-badge" id="badge-rbac">Radar</span>
+            </a>
+            <a class="admin-tree-item" href="#can-i" data-view="can-i">
+              <span>RBAC "can-i" Inspector</span>
+              <span class="admin-item-badge" id="badge-cani">Auth</span>
+            </a>
+            <a class="admin-tree-item" href="#isolation-matrix" data-view="isolation-matrix">
+              <span>Tenant Isolation Matrix</span>
+            </a>
+          </div>
+
+          <div class="admin-tree-group" data-domain="security">
+            <div class="admin-tree-header" style="color: #dc2626;">Governance & Audit</div>
+            <a class="admin-tree-item" href="#certificates" data-view="certificates">
+              <span>TLS Expiration Radar</span>
+              <span class="admin-item-badge" id="badge-certs">x509</span>
+            </a>
+            <a class="admin-tree-item" href="#audit" data-view="audit">
+              <span>Platform Audit Trail</span>
+              <span class="admin-item-badge" id="badge-audit">Logs</span>
+            </a>
+          </div>
+
+          <!-- ==================== DOMAIN 4: PLATFORM OPS & FLEET ==================== -->
+          <div class="admin-tree-group" data-domain="ops">
+            <div class="admin-tree-header" style="color: #6366f1;">Fleet & Packages</div>
+            <a class="admin-tree-item" href="#cluster-fleet" data-view="cluster-fleet">
+              <span>Cluster Fleet</span>
+              <span class="admin-item-badge" id="badge-fleet">Fleet</span>
+            </a>
+            <a class="admin-tree-item" href="#helm-releases" data-view="helm-releases">
+              <span>Helm Releases</span>
+              <span class="admin-item-badge" id="badge-helm" style="background: #326ce5; color: #fff;">Helm</span>
+            </a>
+            <a class="admin-tree-item" href="#crds" data-view="crds">
+              <span>Custom Resources (CRDs)</span>
+              <span class="admin-item-badge" id="badge-crds">CRD</span>
+            </a>
+          </div>
+
+          <div class="admin-tree-group" data-domain="ops">
+            <div class="admin-tree-header" style="color: #6366f1;">Platform Intelligence</div>
+            <a class="admin-tree-item" href="#copilot" data-view="copilot">
+              <span>AI K8s Copilot</span>
+              <span class="admin-item-badge" style="color: var(--admin-accent); font-weight: 700;">AI</span>
+            </a>
+            <a class="admin-tree-item" href="#rightsizing" data-view="rightsizing">
+              <span>Cost & Right-Sizing</span>
+              <span class="admin-item-badge" id="badge-rightsizing">Advisor</span>
+            </a>
+            <a class="admin-tree-item" href="#efficiency" data-view="efficiency">
+              <span>Resource Heatmap</span>
+            </a>
+            <a class="admin-tree-item" href="#databases" data-view="databases">
+              <span>Database Topology</span>
+            </a>
+            <a class="admin-tree-item" href="#storage-leaks" data-view="storage-leaks">
+              <span>Storage Leak Detector</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-leaks" hidden>0</span>
+            </a>
+            <a class="admin-tree-item" href="#topology" data-view="topology">
+              <span>Traffic & Ingress Topology</span>
+            </a>
+            <a class="admin-tree-item" href="#upgrade-radar" data-view="upgrade-radar">
+              <span>Cluster Upgrade Radar</span>
+              <span class="admin-item-badge" id="badge-upgrade">Radar</span>
+            </a>
+          </div>
+
+          <div class="admin-tree-group" data-domain="ops">
+            <div class="admin-tree-header" style="color: #6366f1;">GitOps & Continuity</div>
+            <a class="admin-tree-item" href="#gitops-drift" data-view="gitops-drift">
+              <span>GitOps Drift Radar</span>
+              <span class="admin-item-badge" id="badge-drift">Drift</span>
+            </a>
+            <a class="admin-tree-item" href="#backup-radar" data-view="backup-radar">
+              <span>Disaster Recovery</span>
+              <span class="admin-item-badge" id="badge-dr">DR</span>
+            </a>
             <a class="admin-tree-item" href="#cluster-connect" data-view="cluster-connect">
               <span>Connect Cluster</span>
             </a>

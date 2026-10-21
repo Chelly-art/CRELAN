@@ -83,8 +83,101 @@ function filterRows(items, fields) {
 }
 
 // -------------------------------------------------------------
-// Navigation & Routing
+// Navigation, Routing & Operational Domains
 // -------------------------------------------------------------
+
+const DOMAIN_METADATA = {
+  k8s: {
+    id: "k8s",
+    title: "Cluster Core",
+    icon: "☸️",
+    desc: "Workloads & Infrastructure",
+    defaultView: "overview",
+  },
+  sre: {
+    id: "sre",
+    title: "SRE & Reliability",
+    icon: "📈",
+    desc: "SLOs, RED Signals & Chaos",
+    defaultView: "sre-slos",
+  },
+  security: {
+    id: "security",
+    title: "Security & Compliance",
+    icon: "🛡️",
+    desc: "CVEs, CIS Hardening & RBAC",
+    defaultView: "security",
+  },
+  ops: {
+    id: "ops",
+    title: "Platform Ops & Fleet",
+    icon: "⚙️",
+    desc: "Multi-Cluster, Helm & GitOps",
+    defaultView: "cluster-fleet",
+  },
+};
+
+const VIEW_TO_DOMAIN = {
+  // Domain 1: Cluster Core
+  overview: "k8s",
+  nodes: "k8s",
+  pods: "k8s",
+  deployments: "k8s",
+  statefulsets: "k8s",
+  daemonsets: "k8s",
+  jobs: "k8s",
+  cronjobs: "k8s",
+  services: "k8s",
+  ingresses: "k8s",
+  networkpolicies: "k8s",
+  configmaps: "k8s",
+  secrets: "k8s",
+  pvcs: "k8s",
+  pvs: "k8s",
+  storageclasses: "k8s",
+  namespaces: "k8s",
+  events: "k8s",
+  "dangling-configs": "k8s",
+
+  // Domain 2: SRE & Reliability
+  "sre-slos": "sre",
+  "sre-golden-signals": "sre",
+  "sre-probes": "sre",
+  "sre-resilience": "sre",
+  "sre-canary": "sre",
+  "sre-chaos": "sre",
+  "sre-scorecards": "sre",
+  "war-room": "sre",
+  "event-storm": "sre",
+  autoscaling: "sre",
+
+  // Domain 3: Security & Compliance
+  security: "security",
+  "image-vulnerabilities": "security",
+  rbac: "security",
+  "can-i": "security",
+  "isolation-matrix": "security",
+  certificates: "security",
+  audit: "security",
+
+  // Domain 4: Platform Ops & Fleet
+  "cluster-fleet": "ops",
+  "helm-releases": "ops",
+  crds: "ops",
+  copilot: "ops",
+  rightsizing: "ops",
+  efficiency: "ops",
+  databases: "ops",
+  "storage-leaks": "ops",
+  topology: "ops",
+  "upgrade-radar": "ops",
+  "gitops-drift": "ops",
+  "backup-radar": "ops",
+  "cluster-connect": "ops",
+  readiness: "ops",
+  backup: "ops",
+  webhooks: "ops",
+};
 
 function getRoute() {
   const hash = window.location.hash.replace(/^#/, "");
@@ -95,9 +188,45 @@ function setRoute(route) {
   window.location.hash = route;
 }
 
+function switchDomain(domainId, navigateToDefault = true) {
+  if (!DOMAIN_METADATA[domainId]) domainId = "k8s";
+  state.activeDomain = domainId;
+  document.body.dataset.activeDomain = domainId;
+
+  // Update rail domain buttons
+  $$(".admin-rail-domain-btn").forEach((btn) => {
+    if (btn.dataset.domain === domainId) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+
+  // Update sidebar domain header badge
+  const meta = DOMAIN_METADATA[domainId];
+  const iconEl = $("#sidebar-domain-icon");
+  const titleEl = $("#sidebar-domain-title");
+  const descEl = $("#sidebar-domain-desc");
+  if (iconEl) iconEl.textContent = meta.icon;
+  if (titleEl) titleEl.textContent = meta.title;
+  if (descEl) descEl.textContent = meta.desc;
+
+  if (navigateToDefault) {
+    const current = getRoute();
+    if (VIEW_TO_DOMAIN[current] !== domainId) {
+      setRoute(meta.defaultView);
+    }
+  }
+}
+
 function updateNavigationActive() {
   const current = getRoute();
   state.activeView = current;
+
+  // Sync domain from active view
+  const domain = VIEW_TO_DOMAIN[current] || "k8s";
+  switchDomain(domain, false);
+
   $$(".admin-tree-item").forEach((item) => {
     if (item.dataset.view === current) {
       item.classList.add("active");
@@ -2413,6 +2542,13 @@ function setupEventListeners() {
       e.preventDefault();
       $("#admin-search-input").focus();
     }
+  });
+
+  // Domain Rail Switchers
+  $$(".admin-rail-domain-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchDomain(btn.dataset.domain, true);
+    });
   });
 
   // Perspective Toggle
