@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
@@ -163,42 +164,66 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Enter a context name that exists in the pasted kubeconfig")
 		return
 	}
+	for _, cluster := range config.Clusters {
+		if cluster.CertificateAuthority != "" && len(cluster.CertificateAuthorityData) == 0 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig references local file %q. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", cluster.CertificateAuthority))
+			return
+		}
+	}
+	for name, authInfo := range config.AuthInfos {
+		if (authInfo.ClientCertificate != "" && len(authInfo.ClientCertificateData) == 0) || (authInfo.ClientKey != "" && len(authInfo.ClientKeyData) == 0) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig user %q references local cert/key files. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", name))
+			return
+		}
+	}
 	restConfig, err := clientcmd.NewNonInteractiveClientConfig(*config, contextName, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
 	if err != nil {
 		log.Printf("build Kubernetes client config for context %q: %v", contextName, err)
-		writeError(w, http.StatusBadRequest, "Could not load credentials for that context")
+		writeError(w, http.StatusBadRequest, "Could not load credentials for that context: "+err.Error())
 		return
 	}
+	restConfig.Timeout = 8 * time.Second
 	provisioner, err := newKubernetesProvisionerWithRESTConfig(restConfig)
 	if err != nil {
 		log.Printf("initialize Kubernetes client for context %q: %v", contextName, err)
-		writeError(w, http.StatusBadRequest, "Could not initialize a client for that cluster")
+		writeError(w, http.StatusBadRequest, "Could not initialize client: "+err.Error())
 		return
 	}
+	serverURL := restConfig.Host
 	if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {
-		log.Printf("connect Kubernetes context %q: %v", contextName, err)
-		writeError(w, http.StatusBadGateway, "Could not reach that cluster with the pasted credentials")
+		log.Printf("connect Kubernetes context %q (%s): %v", contextName, serverURL, err)
+		hint := ""
+		if strings.Contains(serverURL, "127.0.0.1") || strings.Contains(serverURL, "localhost") {
+			hint = " Tip: The cluster API URL is localhost (" + serverURL + "). If Crelan is running in a container, 127.0.0.1 cannot reach your host machine; use host.docker.internal or your workstation's LAN IP."
+		}
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Could not reach Kubernetes API at %s within 8 seconds (%v).%s", serverURL, err, hint))
 		return
 	}
 	if s.deployments == nil {
 		writeError(w, http.StatusServiceUnavailable, "Deployment service is not available")
 		return
 	}
+	persisted := true
+	persistWarning := ""
 	if s.auth.databasePath == ":memory:" {
-		writeError(w, http.StatusConflict, "Set DATABASE_PATH to a durable file before saving a cluster connection")
-		return
-	}
-	if err := saveKubeconfigCredential(s.auth.db, contextName, input.Kubeconfig); err != nil {
+		persisted = false
+		persistWarning = "Connected in-memory for this session (set DATABASE_PATH to persist across server restarts)"
+	} else if err := saveKubeconfigCredential(s.auth.db, contextName, input.Kubeconfig); err != nil {
+		persisted = false
 		if errors.Is(err, errKubeconfigEncryptionKeyMissing) || strings.Contains(err.Error(), "CRELAN_KUBECONFIG_ENCRYPTION_KEY") {
-			writeError(w, http.StatusServiceUnavailable, "Configure CRELAN_KUBECONFIG_ENCRYPTION_KEY as a base64-encoded 32-byte key before connecting a cluster")
-			return
+			persistWarning = "Connected in-memory for this session (set CRELAN_KUBECONFIG_ENCRYPTION_KEY to persist across server restarts)"
+		} else {
+			log.Printf("save encrypted kubeconfig for context %q: %v", contextName, err)
+			persistWarning = "Connected in-memory for this session (could not encrypt to database: " + err.Error() + ")"
 		}
-		log.Printf("save encrypted kubeconfig for context %q: %v", contextName, err)
-		writeError(w, http.StatusInternalServerError, "Could not securely save the cluster connection")
-		return
 	}
 	s.deployments.setCluster(provisioner, contextName)
-	writeJSON(w, http.StatusOK, map[string]string{"context": contextName, "status": "connected"})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"context":         contextName,
+		"status":          "connected",
+		"persisted":       persisted,
+		"persist_warning": persistWarning,
+	})
 }
 
 func (s *adminService) currentKubernetesProvisioner() *kubernetesProvisioner {

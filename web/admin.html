@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#10151d">
-    <title>Crelan — Platform Admin</title>
+    <meta name="theme-color" content="#f5f7fa">
+    <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css">
     <link rel="stylesheet" href="/assets/admin.css">
     <script src="/assets/admin.js" defer></script>
@@ -14,7 +14,7 @@
       <!-- 1. Left Cluster Rail -->
       <aside class="admin-rail" aria-label="Cluster Rail">
         <a class="admin-rail-brand" href="/dashboard" title="Crelan Platform">C</a>
-        <div class="admin-cluster-badge active" id="rail-cluster-badge" title="Connected Kubernetes Cluster">
+        <div class="admin-cluster-badge" id="rail-cluster-badge" title="Kubernetes Cluster">
           K8s
           <span class="status-dot" id="rail-status-dot"></span>
         </div>
@@ -27,8 +27,8 @@
       <!-- 2. Secondary Sidebar Tree -->
       <nav class="admin-sidebar" aria-label="Cluster Navigation">
         <div class="admin-sidebar-header">
-          <span class="admin-cluster-name" id="sidebar-cluster-name">in-cluster</span>
-          <span class="admin-cluster-tag" id="sidebar-cluster-tag">Connected</span>
+          <span class="admin-cluster-name" id="sidebar-cluster-name">-</span>
+          <span class="admin-cluster-tag" id="sidebar-cluster-tag">Disconnected</span>
         </div>
 
         <div class="admin-nav-tree">
@@ -163,8 +163,8 @@
           <div class="admin-topbar-left">
             <div class="admin-context-chip">
               <span class="admin-dot" id="topbar-dot"></span>
-              <strong id="topbar-context-name">in-cluster</strong>
-              <span class="admin-k8s-version" id="topbar-k8s-version">v1.34</span>
+              <strong id="topbar-context-name">Not connected</strong>
+              <span class="admin-k8s-version" id="topbar-k8s-version"></span>
             </div>
 
             <div class="admin-ns-select-wrap">
@@ -217,8 +217,8 @@
         <aside class="admin-drawer" id="admin-inspector-drawer" aria-labelledby="drawer-title">
           <div class="admin-drawer-header">
             <div class="admin-drawer-title-group">
-              <span class="admin-kind-badge" id="drawer-kind">Pod</span>
-              <h2 class="admin-drawer-title" id="drawer-title">resource-name</h2>
+              <span class="admin-kind-badge" id="drawer-kind"></span>
+              <h2 class="admin-drawer-title" id="drawer-title"></h2>
             </div>
             <button class="admin-drawer-close" id="drawer-close-btn" type="button" aria-label="Close drawer">Close</button>
           </div>
@@ -243,8 +243,8 @@
           <div class="admin-terminal-header">
             <div class="admin-terminal-title">
               <span>Interactive Pod Exec:</span>
-              <strong id="terminal-pod-name">pod-name</strong>
-              <span class="admin-k8s-version" id="terminal-container-name">container</span>
+              <strong id="terminal-pod-name"></strong>
+              <span class="admin-k8s-version" id="terminal-container-name"></span>
             </div>
             <div class="admin-terminal-controls">
               <button class="admin-btn admin-btn-sm" id="terminal-clear-btn" type="button">Clear</button>

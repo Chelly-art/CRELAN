@@ -50,6 +50,8 @@ type DeploymentRequest struct {
 	WorkspaceMaxCPUMillicores int                   `json:"workspace_max_cpu_millicores,omitempty"`
 	WorkspaceMaxMemoryMB      int                   `json:"workspace_max_memory_mb,omitempty"`
 	PersistentStorage         *appPersistentStorage `json:"persistent_storage,omitempty"`
+	GitToken                  string                `json:"git_token,omitempty"`
+	BuildStrategy             string                `json:"build_strategy,omitempty"`
 	GitHubToken               string                `json:"-"`
 	PrivateRepo               bool                  `json:"-"`
 }
@@ -1433,7 +1435,9 @@ WHERE id = ? AND latest_run_id = ? AND status = 'queued'`, now, deploymentID, ru
 	if err := json.Unmarshal([]byte(requestJSON), &request); err != nil {
 		return s.finishRun(runID, deploymentID, "failed", "Saved deployment request is invalid")
 	}
-	if s.githubApp != nil && request.Image == "" {
+	if request.GitToken != "" && request.GitHubToken == "" {
+		request.GitHubToken = request.GitToken
+	} else if s.githubApp != nil && request.Image == "" {
 		request.GitHubToken, err = s.githubApp.installationToken(runCtx, workspaceID)
 		if err != nil {
 			log.Printf("create GitHub installation token for workspace %d: %v", workspaceID, err)

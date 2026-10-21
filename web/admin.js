@@ -101,25 +101,29 @@ async function loadClusterHeader() {
   try {
     const info = await request("/api/v1/admin/cluster/info");
     state.cluster = info;
-    $("#sidebar-cluster-name").textContent = info.context || "in-cluster";
-    $("#sidebar-cluster-tag").textContent = info.connected ? "Connected" : "Disconnected";
-    $("#topbar-context-name").textContent = info.context || "in-cluster";
-    $("#topbar-k8s-version").textContent = info.server_version || "v1.34";
+    const isConn = Boolean(info && info.connected);
+    $("#sidebar-cluster-name").textContent = isConn ? (info.context || "connected-cluster") : "No cluster";
+    $("#sidebar-cluster-tag").textContent = isConn ? "Connected" : "Disconnected";
+    $("#topbar-context-name").textContent = isConn ? (info.context || "connected-cluster") : "No cluster connected";
+    $("#topbar-k8s-version").textContent = isConn ? (info.server_version || "") : "";
 
     const dot = $("#topbar-dot");
     const railDot = $("#rail-status-dot");
-    if (info.connected) {
+    const railBadge = $("#rail-cluster-badge");
+    if (isConn) {
       dot.style.backgroundColor = "var(--admin-green)";
       railDot.style.backgroundColor = "var(--admin-green)";
+      if (railBadge) railBadge.classList.add("active");
     } else {
       dot.style.backgroundColor = "var(--admin-red)";
       railDot.style.backgroundColor = "var(--admin-red)";
+      if (railBadge) railBadge.classList.remove("active");
     }
 
-    $("#badge-nodes").textContent = info.nodes_count || 0;
-    $("#badge-pods").textContent = info.pods_count || 0;
-    $("#badge-namespaces").textContent = info.namespaces_count || 0;
-    $("#badge-events").textContent = info.warning_events_count || 0;
+    $("#badge-nodes").textContent = isConn ? (info.nodes_count || 0) : 0;
+    $("#badge-pods").textContent = isConn ? (info.pods_count || 0) : 0;
+    $("#badge-namespaces").textContent = isConn ? (info.namespaces_count || 0) : 0;
+    $("#badge-events").textContent = isConn ? (info.warning_events_count || 0) : 0;
   } catch (err) {
     console.warn("Could not load cluster header:", err);
   }
@@ -248,6 +252,22 @@ async function renderCurrentView() {
         await renderOverview(container);
     }
   } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title"><h1 style="text-transform: capitalize;">${escapeHTML(state.activeView)}</h1></div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 60px 20px;">
+            <h2 style="font-size: 18px; margin-bottom: 8px;">No Kubernetes Cluster Connected</h2>
+            <p style="color: var(--admin-text-muted); max-width: 480px; margin: 0 auto 18px;">
+              Connect your Kubernetes cluster using a kubeconfig to inspect and manage nodes, pods, workloads, and cluster resources.
+            </p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>`;
+      return;
+    }
     container.innerHTML = `
       <div class="admin-empty-state">
         <h3 style="color: var(--admin-red);">Failed to load view</h3>
@@ -263,9 +283,9 @@ async function renderCurrentView() {
 
 async function renderOverview(container) {
   const [info, nodes, pods] = await Promise.all([
-    request("/api/v1/admin/cluster/info"),
-    request("/api/v1/admin/nodes"),
-    request("/api/v1/admin/pods"),
+    request("/api/v1/admin/cluster/info").catch(() => ({ connected: false })),
+    request("/api/v1/admin/nodes").catch(() => []),
+    request("/api/v1/admin/pods").catch(() => []),
   ]);
 
   let runningPods = 0;
@@ -481,7 +501,29 @@ async function renderNodes(container) {
 
 async function renderPods(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const pods = await request(`/api/v1/admin/pods${ns}`);
+  let pods = [];
+  try {
+    pods = await request(`/api/v1/admin/pods${ns}`);
+  } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title"><h1>Pods</h1></div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 16px;">
+            <h3 style="font-size: 16px; margin-bottom: 8px;">No Kubernetes Cluster Connected</h3>
+            <p style="color: var(--admin-text-muted); max-width: 440px; margin: 0 auto 16px;">
+              Connect your Kubernetes cluster using a kubeconfig to inspect and manage pods and workloads.
+            </p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    throw err;
+  }
   const filtered = filterRows(pods, ["name", "namespace", "phase", "node", "pod_ip", "workspace_name", "app_name"]);
 
   container.innerHTML = `
@@ -1244,19 +1286,19 @@ async function renderEfficiency(container) {
 function renderClusterConnect(container) {
   container.innerHTML = `
     <div class="admin-view-header"><div class="admin-view-title"><h1>Connect Deployment Cluster</h1></div></div>
-    <div style="max-width: 720px; background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 9px; padding: 24px;">
-      <p style="color: var(--admin-text-muted); font-size: 12px; margin-top: 0;">
+    <div style="max-width: 760px; background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 9px; padding: 24px; box-shadow: var(--admin-shadow-sm);">
+      <p style="color: var(--admin-text-muted); font-size: 13px; margin-top: 0; line-height: 1.6;">
         Connect the Kubernetes cluster that customer workspaces deploy to. Paste a self-contained kubeconfig with certificate data embedded.
       </p>
       <form id="admin-connect-form">
         <label class="form-label" for="cluster-kubeconfig">Kubeconfig YAML</label>
-        <textarea class="text-input" id="cluster-kubeconfig" rows="8" placeholder="apiVersion: v1&#10;clusters:&#10;..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
+        <textarea class="text-input" id="cluster-kubeconfig" rows="10" placeholder="apiVersion: v1&#10;clusters:&#10;  - cluster:&#10;      server: https://127.0.0.1:6443&#10;..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
         
-        <label class="form-label" for="cluster-context" style="margin-top: 14px;">Context (optional)</label>
-        <input class="text-input" id="cluster-context" placeholder="current-context" style="width: 100%;">
+        <label class="form-label" for="cluster-context" style="margin-top: 14px;">Context (optional, defaults to current-context)</label>
+        <input class="text-input" id="cluster-context" placeholder="e.g. minikube, kind-crelan, arn:aws:eks:..." style="width: 100%;">
         
-        <p id="cluster-connect-state" style="color: var(--admin-text-muted); font-size: 12px; margin: 12px 0;">No new connection attempt.</p>
-        <button class="admin-btn admin-btn-primary" id="cluster-connect-submit" type="submit">Validate and Connect Cluster</button>
+        <div id="cluster-connect-state" style="margin: 14px 0;"></div>
+        <button class="admin-btn admin-btn-primary" id="cluster-connect-submit" type="submit" style="padding: 9px 18px; font-size: 12px;">Validate and Connect Cluster</button>
       </form>
     </div>`;
 
@@ -1265,25 +1307,54 @@ function renderClusterConnect(container) {
     const btn = $("#cluster-connect-submit");
     const st = $("#cluster-connect-state");
     btn.disabled = true;
-    st.textContent = "Connecting to Kubernetes API server…";
+    st.innerHTML = `<p style="color: var(--admin-accent); font-weight: 600; font-size: 12px; margin: 8px 0;">Connecting to Kubernetes API server and verifying access…</p>`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       const res = await fetch("/api/v1/admin/clusters/connect", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           kubeconfig: $("#cluster-kubeconfig").value,
           context: $("#cluster-context").value.trim(),
         }),
       });
+      clearTimeout(timeoutId);
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Connection failed");
-      st.innerHTML = `<span style="color: var(--admin-green);">Connected successfully to “${escapeHTML(data.context)}”! Active for customer workloads.</span>`;
+      if (!res.ok) throw new Error(data.error || ("Connection failed (" + res.status + ")"));
+      const warningHtml = data.persist_warning
+        ? `<p style="font-size: 11px; margin: 6px 0 0; color: var(--admin-amber);">${escapeHTML(data.persist_warning)}</p>`
+        : "";
+      st.innerHTML = `
+        <div style="padding: 14px 16px; background: var(--admin-green-bg); border: 1px solid var(--admin-green-border); border-radius: 6px; color: var(--admin-green); margin: 12px 0;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connected successfully to “${escapeHTML(data.context)}”!</strong>
+          <span style="font-size: 12px;">The cluster is active and ready for platform administration and workloads.</span>
+          ${warningHtml}
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <a class="admin-btn admin-btn-primary" href="#pods">View Pods</a>
+          <a class="admin-btn" href="#nodes">View Nodes</a>
+          <a class="admin-btn" href="#overview">Go to Overview</a>
+        </div>
+      `;
       await loadClusterHeader();
       await loadNamespacesDropdown();
     } catch (err) {
-      st.innerHTML = `<span style="color: var(--admin-red);">${escapeHTML(err.message)}</span>`;
+      clearTimeout(timeoutId);
+      const isTimeout = err.name === "AbortError" || (err.message && err.message.toLowerCase().includes("timeout"));
+      const errMsg = isTimeout
+        ? "Connection attempt timed out after 15 seconds. Ensure the Kubernetes API server URL is reachable from this server and any network/firewall allows access."
+        : err.message;
+      st.innerHTML = `
+        <div style="padding: 14px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 6px; color: var(--admin-red); margin: 12px 0;">
+          <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connection Failed</strong>
+          <span style="font-size: 12px;">${escapeHTML(errMsg)}</span>
+        </div>
+      `;
     } finally {
+      clearTimeout(timeoutId);
       btn.disabled = false;
     }
   });
@@ -1754,6 +1825,15 @@ async function deleteNamespace(name) {
 // Event Listeners & Initialization
 // -------------------------------------------------------------
 
+function shouldAutoRefresh() {
+  if (state.activeTerminal || state.activeLogs || state.activeInspector) return false;
+  if (state.activeView === "cluster-connect" || state.activeView === "backup") return false;
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false;
+  if (document.querySelector(".admin-modal-overlay.open")) return false;
+  return true;
+}
+
 function setupEventListeners() {
   window.addEventListener("hashchange", renderCurrentView);
 
@@ -1808,7 +1888,10 @@ function setupEventListeners() {
     const ms = parseInt(e.target.value, 10);
     if (ms > 0) {
       state.autoRefreshTimer = setInterval(() => {
-        if (!state.activeTerminal) renderCurrentView();
+        if (shouldAutoRefresh()) {
+          loadClusterHeader();
+          renderCurrentView();
+        }
       }, ms);
     }
   });
@@ -1928,9 +2011,12 @@ async function initializeAdmin() {
     await Promise.all([loadClusterHeader(), loadNamespacesDropdown(), loadWorkspaceMappings()]);
     await renderCurrentView();
 
-    // Start 10s auto-refresh by default
+    // Start 10s auto-refresh by default (skips forms and active input)
     state.autoRefreshTimer = setInterval(() => {
-      if (!state.activeTerminal) renderCurrentView();
+      if (shouldAutoRefresh()) {
+        loadClusterHeader();
+        renderCurrentView();
+      }
     }, 10000);
   } catch (err) {
     if (err.message !== "Sign in required") {

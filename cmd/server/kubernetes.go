@@ -726,7 +726,7 @@ func (p *kubernetesProvisioner) buildImage(ctx context.Context, workspaceID int6
 	if err != nil {
 		return "", fmt.Errorf("check repository Dockerfile: %w", err)
 	}
-	if hasDockerfile {
+	if request.BuildStrategy == "dockerfile" || (request.BuildStrategy != "buildpack" && hasDockerfile) {
 		return p.buildWithBuildKit(ctx, workspaceID, namespace, request, buildName, tag)
 	}
 	if request.PrivateRepo {

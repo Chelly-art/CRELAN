@@ -39,8 +39,6 @@ async function loadAccount() {
     window.location.reload();
   });
   $("#invite-form").hidden = user.workspace_role !== "owner";
-  const adminLink = $("#platform-admin-nav-link");
-  if (adminLink) adminLink.hidden = !user.platform_admin;
 }
 
 function renderTable(container, columns, rows, emptyMessage) {
@@ -187,12 +185,18 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     delete payload.image_port;
     if (!payload.branch) delete payload.branch;
     if (!payload.repository_url) {
-      error.textContent = "Enter a public GitHub repository URL.";
+      error.textContent = "Enter a GitHub repository URL.";
       error.hidden = false;
       submit.disabled = false;
       submit.textContent = "Deploy application";
       return;
     }
+    const dockerfile = $("#app-dockerfile")?.value.trim();
+    if (dockerfile) payload.dockerfile = dockerfile;
+    const buildStrategy = $("#app-build-strategy")?.value;
+    if (buildStrategy && buildStrategy !== "auto") payload.build_strategy = buildStrategy;
+    const gitToken = $("#app-git-token")?.value.trim();
+    if (gitToken) payload.git_token = gitToken;
   }
   if ($("#app-volume-enabled").checked) {
     payload.persistent_storage = { size: $("#app-volume-size").value, mount_path: $("#app-volume-mount").value.trim(), access_mode: $("#app-volume-access-mode").value || "single_writer" };
@@ -1001,6 +1005,7 @@ $("#registry-submit").addEventListener("click", async () => {
     server: $("#registry-server").value.trim(),
     username: $("#registry-username").value.trim(),
     password: $("#registry-password").value,
+    token: $("#registry-password").value,
   };
   submit.disabled = true;
   try {
@@ -1061,23 +1066,27 @@ document.querySelectorAll(".nav-link[href^='#']").forEach((link) => link.addEven
   const isDatabases = link.hash === "#databases";
   const isServices = link.hash === "#services";
   const isStorage = link.hash === "#storage";
+  const isTokens = link.hash === "#tokens";
   const isTeam = link.hash === "#team";
   const isUsage = link.hash === "#usage";
-  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isStorage ? "Retained volumes" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications")))));
+  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isStorage ? "Retained volumes" : (isTokens ? "API tokens" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications"))))));
   $("#deploy-form-panel").hidden = !isDeploy;
   $("#databases-page").hidden = !isDatabases;
   $("#services-page").hidden = !isServices;
   $("#workspace-storage-page").hidden = !isStorage;
+  const tokensPage = $("#tokens-page");
+  if (tokensPage) tokensPage.hidden = !isTokens;
   $("#team-page").hidden = !isTeam;
   $("#usage-page").hidden = !isUsage;
-  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isStorage || isTeam || isUsage;
-  $(".token-layout").hidden = isDatabases || isServices || isStorage || isTeam || isUsage;
-  $("#app-runtime").hidden = isDatabases || isServices || isStorage || isTeam || isUsage || !activeApplication;
+  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isStorage || isTokens || isTeam || isUsage;
+  $(".token-layout").hidden = isDatabases || isServices || isStorage || isTokens || isTeam || isUsage;
+  $("#app-runtime").hidden = isDatabases || isServices || isStorage || isTokens || isTeam || isUsage || !activeApplication;
   document.querySelectorAll(".nav-link[href^='#']").forEach((item) => item.classList.toggle("active", item === link));
   if (isDeploy) $("#app-name").focus();
   if (isDatabases) Promise.all([loadDatabases(), loadDatabaseEngines()]);
   if (isServices) Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]);
   if (isStorage) loadWorkspaceStorage();
+  if (isTokens) loadTokens();
   if (isTeam) loadWorkspaceMembers();
   if (isUsage) loadWorkspaceUsage();
 }));
@@ -1344,3 +1353,270 @@ async function loadWorkspaceUsage() {
 }
 
 $("#refresh-usage").addEventListener("click", loadWorkspaceUsage);
+
+// --- Workspace API Tokens ---
+async function loadTokens() {
+  const list = $("#tokens-list");
+  if (!list) return;
+  try {
+    const tokens = await api("/api/v1/tokens");
+    list.replaceChildren();
+    if (!tokens || !tokens.length) {
+      list.innerHTML = '<div class="token-empty"><strong>No API tokens issued</strong><span>Create a token to authenticate the Crelan CLI, GitHub Actions, or CI/CD pipelines.</span></div>';
+      return;
+    }
+    tokens.forEach((token) => {
+      const row = document.createElement("div");
+      row.className = "token-row";
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const name = document.createElement("strong");
+      name.textContent = token.name;
+      const prefix = document.createElement("code");
+      prefix.textContent = token.prefix + "••••••••";
+      const scopes = document.createElement("span");
+      scopes.className = "token-scope-list";
+      scopes.textContent = (token.scopes || []).join(", ");
+      details.append(name, prefix, scopes);
+
+      const status = document.createElement("span");
+      const isRevoked = !!token.revoked_at;
+      const isExpired = token.expires_at && new Date(token.expires_at) < new Date();
+      status.className = `token-row-state ${!isRevoked && !isExpired ? "active" : "revoked"}`;
+      status.textContent = isRevoked ? "Revoked" : (isExpired ? "Expired" : "Active");
+
+      const action = document.createElement("div");
+      if (!isRevoked && !isExpired) {
+        const revokeBtn = document.createElement("button");
+        revokeBtn.className = "revoke-token-button";
+        revokeBtn.type = "button";
+        revokeBtn.textContent = "Revoke";
+        revokeBtn.addEventListener("click", async () => {
+          if (!confirm(`Are you sure you want to revoke "${token.name}"? Pipelines using this token will lose access.`)) return;
+          try {
+            await api(`/api/v1/tokens/${token.id}`, { method: "DELETE" });
+            await loadTokens();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        action.append(revokeBtn);
+      }
+      row.append(details, status, action);
+      list.append(row);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="token-empty"><strong>Failed to load tokens</strong><span>${err.message}</span></div>`;
+  }
+}
+
+$("#token-create-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $("#token-error");
+  const submit = $("#token-submit");
+  error.hidden = true;
+  submit.disabled = true;
+  submit.textContent = "Generating token…";
+
+  const scopes = Array.from(document.querySelectorAll("input[name='token_scope']:checked")).map((cb) => cb.value);
+  if (!scopes.length) {
+    error.textContent = "Select at least one access scope.";
+    error.hidden = false;
+    submit.disabled = false;
+    submit.textContent = "Generate API token";
+    return;
+  }
+
+  const expiryValue = $("#token-expiry").value;
+  const payload = {
+    name: $("#token-name").value.trim(),
+    scopes: scopes,
+    expires_in_days: expiryValue ? Number(expiryValue) : undefined,
+  };
+
+  try {
+    const created = await api("/api/v1/tokens", { method: "POST", body: JSON.stringify(payload) });
+    $("#token-created-card").hidden = false;
+    $("#token-secret-value").textContent = created.token;
+    $("#token-name").value = "";
+    await loadTokens();
+  } catch (err) {
+    error.textContent = err.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "Generate API token";
+  }
+});
+
+$("#copy-token-secret")?.addEventListener("click", () => {
+  const val = $("#token-secret-value").textContent;
+  navigator.clipboard.writeText(val);
+  $("#copy-token-secret").textContent = "Copied!";
+  setTimeout(() => { $("#copy-token-secret").textContent = "Copy token"; }, 2000);
+});
+
+$("#refresh-tokens")?.addEventListener("click", loadTokens);
+
+// --- Dockerfile Generator ---
+const dockerfileTemplates = {
+  nodejs: `# Multi-stage Node.js Production Dockerfile
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodejs
+COPY --from=deps /app/node_modules ./node_modules
+COPY --chown=nodejs:nodejs . .
+USER nodejs
+EXPOSE 8080
+ENV PORT=8080
+CMD ["npm", "start"]
+`,
+  nextjs: `# Production Dockerfile for Next.js (Standalone output)
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+USER nextjs
+EXPOSE 8080
+ENV PORT=8080 HOSTNAME="0.0.0.0"
+CMD ["node", "server.js"]
+`,
+  python: `# Production Dockerfile for Python (FastAPI / Flask / Django)
+FROM python:3.11-slim AS builder
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.11-slim AS runner
+WORKDIR /app
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --chown=appuser:appgroup . .
+USER appuser
+EXPOSE 8080
+ENV PORT=8080
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+`,
+  golang: `# Minimal Multi-Stage Go Production Dockerfile
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app .
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata \\
+    && addgroup -S -g 10001 appgroup \\
+    && adduser -S -D -H -u 10001 -G appgroup appuser
+WORKDIR /app
+COPY --from=builder --chown=10001:10001 /out/app /app/server
+USER 10001:10001
+EXPOSE 8080
+ENV PORT=8080
+ENTRYPOINT ["/app/server"]
+`,
+  rust: `# Multi-stage Rust Production Dockerfile
+FROM rust:1.77-slim AS builder
+WORKDIR /usr/src/app
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 10001 appuser
+WORKDIR /app
+COPY --from=builder /usr/src/app/target/release/* /app/server
+USER appuser
+EXPOSE 8080
+ENV PORT=8080
+CMD ["/app/server"]
+`,
+  java: `# Multi-Stage Java / Spring Boot Dockerfile
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:21-jre-alpine
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+USER appuser
+EXPOSE 8080
+ENV PORT=8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+`,
+  static: `# Static Web Frontend Dockerfile with Nginx
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+RUN echo 'server { listen 8080; location / { root /usr/share/nginx/html; index index.html; try_files $uri $uri/ /index.html; } }' > /etc/nginx/conf.d/default.conf
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
+`
+};
+
+function updateGeneratedDockerfile() {
+  const preset = $("#gen-preset")?.value || "nodejs";
+  const code = $("#gen-dockerfile-code");
+  if (code) code.textContent = dockerfileTemplates[preset] || "";
+}
+
+$("#open-dockerfile-generator")?.addEventListener("click", () => {
+  const modal = $("#dockerfile-gen-modal");
+  if (modal) {
+    modal.hidden = false;
+    updateGeneratedDockerfile();
+  }
+});
+
+$("#close-dockerfile-gen")?.addEventListener("click", () => {
+  const modal = $("#dockerfile-gen-modal");
+  if (modal) modal.hidden = true;
+});
+
+$("#gen-preset")?.addEventListener("change", updateGeneratedDockerfile);
+
+$("#copy-generated-dockerfile")?.addEventListener("click", () => {
+  const content = $("#gen-dockerfile-code").textContent;
+  navigator.clipboard.writeText(content);
+  const btn = $("#copy-generated-dockerfile");
+  btn.textContent = "Copied to clipboard!";
+  setTimeout(() => { btn.textContent = "Copy to clipboard"; }, 2000);
+});
+
+$("#apply-generated-dockerfile")?.addEventListener("click", () => {
+  const strat = $("#app-build-strategy");
+  if (strat) strat.value = "dockerfile";
+  const df = $("#app-dockerfile");
+  if (df) df.value = "Dockerfile";
+  const modal = $("#dockerfile-gen-modal");
+  if (modal) modal.hidden = true;
+  alert("Dockerfile preset applied! Ensure the generated Dockerfile is saved to your repo root as 'Dockerfile'.");
+});
+

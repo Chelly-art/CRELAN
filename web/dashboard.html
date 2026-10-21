@@ -20,9 +20,9 @@
           <a class="nav-link" href="#databases"><span class="nav-icon">◉</span> Databases</a>
           <a class="nav-link" href="#services"><span class="nav-icon">◇</span> Services & storage</a>
           <a class="nav-link" href="#storage"><span class="nav-icon">▤</span> Retained volumes</a>
+          <a class="nav-link" href="#tokens"><span class="nav-icon">🔑</span> API tokens</a>
           <a class="nav-link" href="#team"><span class="nav-icon">♙</span> Team</a>
           <a class="nav-link" href="#usage"><span class="nav-icon">◷</span> Usage & audit</a>
-          <a class="nav-link" id="platform-admin-nav-link" href="/admin" hidden><span class="nav-icon">⚙</span> Platform admin</a>
         </nav>
         <div class="sidebar-bottom">
           <div class="user-card">
@@ -51,13 +51,59 @@
                 <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
                 <label class="form-label" for="app-name">Deployment name</label>
                 <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
-                <div id="repository-source-fields"><label class="form-label" for="app-repository">Public GitHub repository</label>
-                <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
-                <div class="deployment-two-col">
-                  <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
-                  <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
-                </div></div>
-                <div id="image-source-fields" hidden><label class="form-label" for="app-image">Container image</label><input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest"><label class="form-label" for="image-pull-secret">Private registry credential <span>(optional)</span></label><select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select><button class="inline-action" id="show-registry-form" type="button">Add registry credential</button><label class="form-label" for="image-port">Application port</label><input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080"><div id="registry-form" class="registry-form" hidden><label class="form-label" for="registry-name">Credential name</label><input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63"><label class="form-label" for="registry-server">Registry host</label><input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io"><label class="form-label" for="registry-username">Username</label><input class="text-input deployment-input" id="registry-username" autocomplete="username"><label class="form-label" for="registry-password">Access token or password</label><input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password"><p class="deployment-form-error" id="registry-error" role="alert" hidden></p><button class="primary-button" id="registry-submit" type="button">Save credential securely</button></div></div>
+                <div id="repository-source-fields">
+                  <label class="form-label" for="app-repository">GitHub repository URL</label>
+                  <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
+                  <div class="deployment-two-col">
+                    <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
+                    <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
+                  </div>
+                  <div class="deployment-two-col">
+                    <div>
+                      <label class="form-label" for="app-build-strategy">Build mechanism</label>
+                      <select class="text-input deployment-input" id="app-build-strategy" name="build_strategy">
+                        <option value="auto">Auto-detect (Dockerfile or Buildpack)</option>
+                        <option value="dockerfile">Dockerfile (BuildKit)</option>
+                        <option value="buildpack">Cloud Native Buildpack (kpack)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="form-label" for="app-dockerfile">Dockerfile path</label>
+                      <input class="text-input deployment-input" id="app-dockerfile" name="dockerfile" value="Dockerfile" placeholder="Dockerfile">
+                    </div>
+                  </div>
+                  <div class="deployment-two-col" style="align-items: center; margin-top: 6px;">
+                    <div>
+                      <label class="form-label" for="app-git-token">Private repo token <span>(optional, for private GitHub repos)</span></label>
+                      <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
+                    </div>
+                    <div style="padding-top: 18px;">
+                      <button class="inline-action" id="open-dockerfile-generator" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
+                    </div>
+                  </div>
+                </div>
+                <div id="image-source-fields" hidden>
+                  <label class="form-label" for="app-image">Container image</label>
+                  <input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest">
+                  <label class="form-label" for="image-pull-secret">Private registry credential <span>(optional)</span></label>
+                  <select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select>
+                  <button class="inline-action" id="show-registry-form" type="button">Add private registry token / credential</button>
+                  <label class="form-label" for="image-port">Application port</label>
+                  <input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080">
+                  <div id="registry-form" class="registry-form" hidden>
+                    <label class="form-label" for="registry-name">Credential name</label>
+                    <input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63">
+                    <label class="form-label" for="registry-server">Registry host</label>
+                    <input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io">
+                    <label class="form-label" for="registry-username">Username <span>(leave blank if using personal access token)</span></label>
+                    <input class="text-input deployment-input" id="registry-username" autocomplete="username" placeholder="e.g. github username (optional)">
+                    <label class="form-label" for="registry-password">Personal Access Token or Password</label>
+                    <input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password" placeholder="ghp_... or registry access token">
+                    <p class="field-help">Works with GitHub Container Registry (ghcr.io), Docker Hub, GitLab, and AWS ECR.</p>
+                    <p class="deployment-form-error" id="registry-error" role="alert" hidden></p>
+                    <button class="primary-button" id="registry-submit" type="button">Save credential securely</button>
+                  </div>
+                </div>
                 <label class="checkbox-label"><input type="checkbox" id="app-volume-enabled"> Attach persistent storage (single replica)</label>
                 <div id="app-volume-fields" class="app-volume-fields" hidden><p class="field-help">Single writer (RWO) storage requires one app replica. Shared (RWX) storage can be used by multiple replicas only when the platform has configured a compatible durable storage class. Persistent claims are retained after app deletion; use Retained volumes to permanently purge data.</p><div class="deployment-two-col"><div><label class="form-label" for="app-volume-size">Volume size</label><select class="text-input deployment-input" id="app-volume-size"><option value="5Gi">5 GiB</option><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option></select></div><div><label class="form-label" for="app-volume-access-mode">Volume access</label><select class="text-input deployment-input" id="app-volume-access-mode"><option value="single_writer">Single writer (RWO)</option><option value="shared">Shared (RWX, platform configured)</option></select></div></div><label class="form-label" for="app-volume-mount">Mount path</label><input class="text-input deployment-input" id="app-volume-mount" value="/data" placeholder="/data"></div>
                 <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
@@ -129,6 +175,56 @@
             <div class="token-list" id="database-list"><div class="token-empty">Loading databases…</div></div>
           </section>
           <section class="panel databases-panel" id="workspace-storage-page" hidden><div class="panel-heading"><div><div class="eyebrow">PERSISTENT DATA</div><h2>Retained app volumes</h2><p>Volumes stay after app deletion so you can recover data. Purging a volume permanently deletes its contents.</p></div><button class="inline-action" id="refresh-workspace-storage" type="button">Refresh</button></div><div class="token-list" id="workspace-storage-list"><div class="token-empty">Loading retained volumes…</div></div></section>
+          <section class="panel databases-panel" id="tokens-page" hidden>
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">API ACCESS</div>
+                <h2>Workspace API tokens</h2>
+                <p>Generate secure tokens for the Crelan CLI, GitHub Actions, GitLab CI, Terraform, and Pulumi.</p>
+              </div>
+              <button class="inline-action" id="refresh-tokens" type="button">Refresh</button>
+            </div>
+            <form id="token-create-form" class="database-create-form">
+              <h3>Create a new API token</h3>
+              <div class="deployment-two-col">
+                <div>
+                  <label class="form-label" for="token-name">Token name</label>
+                  <input class="text-input deployment-input" id="token-name" placeholder="github-actions-deployer" maxlength="80" required>
+                </div>
+                <div>
+                  <label class="form-label" for="token-expiry">Expiration</label>
+                  <select class="text-input deployment-input" id="token-expiry">
+                    <option value="30">30 days</option>
+                    <option value="7">7 days</option>
+                    <option value="90">90 days</option>
+                    <option value="365">1 year (365 days)</option>
+                    <option value="">No expiration</option>
+                  </select>
+                </div>
+              </div>
+              <label class="form-label">Access scopes</label>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 8px 0 16px;">
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="deployments:write" checked> <strong>deployments:write</strong> <small style="display:block;color:#667085;">Create/delete apps</small></label>
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="deployments:read" checked> <strong>deployments:read</strong> <small style="display:block;color:#667085;">Read rollout status</small></label>
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="logs:read" checked> <strong>logs:read</strong> <small style="display:block;color:#667085;">Stream container logs</small></label>
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="resources:read" checked> <strong>resources:read</strong> <small style="display:block;color:#667085;">Inspect K8s pods</small></label>
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="usage:read"> <strong>usage:read</strong> <small style="display:block;color:#667085;">Quota consumption</small></label>
+                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="audit:read"> <strong>audit:read</strong> <small style="display:block;color:#667085;">Audit history</small></label>
+              </div>
+              <p class="deployment-form-error" id="token-error" role="alert" hidden></p>
+              <button class="primary-button" id="token-submit" type="submit">Generate API token</button>
+            </form>
+            <div class="database-credentials" id="token-created-card" hidden>
+              <strong>Save your access token now</strong>
+              <p>This token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
+              <code id="token-secret-value" style="user-select: all; word-break: break-all;"></code>
+              <button class="inline-action" id="copy-token-secret" type="button">Copy token</button>
+            </div>
+            <h3 style="margin-top: 24px;">Active & revoked tokens</h3>
+            <div class="token-list" id="tokens-list">
+              <div class="token-empty">Loading workspace tokens…</div>
+            </div>
+          </section>
           <section class="panel databases-panel" id="services-page" hidden>
             <div class="panel-heading"><div><div class="eyebrow">WORKSPACE ADD-ONS</div><h2>Services & storage</h2><p>Provision managed services and save external connection details, including existing S3-compatible buckets.</p></div><button class="inline-action" id="refresh-services" type="button">Refresh</button></div>
             <div class="service-panels">
@@ -190,6 +286,38 @@
           <footer>Crelan <span>·</span> Kubernetes deployments <span class="footer-right" id="deployment-status">Deployment API connecting</span></footer>
         </section>
       </main>
+    </div>
+    <!-- Dockerfile Generator Modal -->
+    <div class="admin-modal-overlay" id="dockerfile-gen-modal" hidden style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+      <div class="panel" style="width: min(720px, 95vw); max-height: 85vh; display: flex; flex-direction: column; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-radius: 12px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e8ed; padding-bottom: 14px; margin-bottom: 16px;">
+          <div>
+            <h2 style="margin: 0; font-size: 18px;">✨ Production Dockerfile Generator</h2>
+            <p style="margin: 4px 0 0; color: #667085; font-size: 12px;">Choose your language/framework to get an optimized, multi-stage, non-root Dockerfile.</p>
+          </div>
+          <button class="inline-action" id="close-dockerfile-gen" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">✕</button>
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label class="form-label" for="gen-preset">Language / Framework Preset</label>
+          <select class="text-input" id="gen-preset" style="width: 100%;">
+            <option value="nodejs">Node.js / Express / Fastify (Multi-stage Alpine)</option>
+            <option value="nextjs">Next.js (Standalone Multi-stage)</option>
+            <option value="python">Python (FastAPI / Flask / Django / Uvicorn)</option>
+            <option value="golang">Go (Golang Minimal Multi-stage)</option>
+            <option value="rust">Rust (Cargo Multi-stage Debian Slim)</option>
+            <option value="java">Java / Spring Boot (Eclipse Temurin JRE)</option>
+            <option value="static">Static Web (HTML / CSS / JS with Nginx)</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-height: 220px; display: flex; flex-direction: column;">
+          <label class="form-label">Generated Dockerfile</label>
+          <pre id="gen-dockerfile-code" style="flex: 1; overflow: auto; background: #1e293b; color: #f8fafc; padding: 14px; border-radius: 8px; font-family: monospace; font-size: 11px; line-height: 1.5; margin: 0; white-space: pre;"></pre>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; border-top: 1px solid #e5e8ed; padding-top: 14px;">
+          <button class="inline-action" id="copy-generated-dockerfile" type="button">Copy to clipboard</button>
+          <button class="primary-button" id="apply-generated-dockerfile" type="button">Use for deployment</button>
+        </div>
+      </div>
     </div>
   </body>
 </html>

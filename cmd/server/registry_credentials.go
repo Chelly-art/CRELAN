@@ -30,6 +30,7 @@ type registryCredentialInput struct {
 	Server   string `json:"server"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Token    string `json:"token,omitempty"`
 }
 
 type registryCredential struct {
@@ -120,8 +121,16 @@ func (s *registryCredentialService) create(w http.ResponseWriter, r *http.Reques
 	input.Name = strings.TrimSpace(input.Name)
 	input.Server = strings.TrimSpace(input.Server)
 	input.Username = strings.TrimSpace(input.Username)
+	input.Password = strings.TrimSpace(input.Password)
+	input.Token = strings.TrimSpace(input.Token)
+	if input.Password == "" && input.Token != "" {
+		input.Password = input.Token
+	}
+	if input.Username == "" && input.Password != "" {
+		input.Username = "token"
+	}
 	if !registryCredentialNamePattern.MatchString(input.Name) || len(input.Username) < 1 || len(input.Username) > 256 || len(input.Password) < 1 || len(input.Password) > 4096 {
-		writeError(w, http.StatusBadRequest, "Credential name, username, or password is invalid")
+		writeError(w, http.StatusBadRequest, "Credential name, username, or token/password is invalid")
 		return
 	}
 	parsed, err := url.Parse("https://" + input.Server)
