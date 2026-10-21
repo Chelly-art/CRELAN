@@ -1226,16 +1226,6 @@ document.querySelectorAll(".template-nav-link").forEach((link) => link.addEventL
 $("#show-deploy-form")?.addEventListener("click", () => {
   window.location.hash = "deploy";
 });
-$("#prepare-infisical-deploy")?.addEventListener("click", () => {
-  window.location.hash = "deploy";
-  $("#app-source").value = "image";
-  updateSourceFields();
-  $("#app-name").value = "infisical";
-  $("#app-image").value = "infisical/infisical:v0.166.8";
-  $("#image-port").value = "8080";
-  $("#app-image").focus();
-  $("#deployment-error").hidden = true;
-});
 function updateSourceFields() {
   const imageSource = $("#app-source").value === "image";
   $("#repository-source-fields").hidden = imageSource;
@@ -1261,101 +1251,197 @@ $("#refresh-logs").addEventListener("click", loadApplicationLogs);
 $("#refresh-deployments").addEventListener("click", loadDeployments);
 $("#refresh-databases").addEventListener("click", loadDatabases);
 $("#refresh-services").addEventListener("click", () => Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]));
-document.querySelectorAll(".template-nav-link").forEach((link) => link.addEventListener("click", (event) => {
-  event.preventDefault();
-  document.querySelector(`.nav-link[href="${link.hash}"]`)?.click();
-}));
-$("#generate-infisical-app-keys").addEventListener("click", () => {
-  if (!globalThis.crypto?.getRandomValues) {
-    $("#infisical-app-error").textContent = "Secure browser randomness is unavailable. Generate the keys using Infisical's official instructions.";
-    $("#infisical-app-error").hidden = false;
-    return;
-  }
-  const encryptionBytes = crypto.getRandomValues(new Uint8Array(16));
-  const authBytes = crypto.getRandomValues(new Uint8Array(32));
-  const encryptionKey = [...encryptionBytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const authSecret = btoa(String.fromCharCode(...authBytes));
-  $("#infisical-encryption-key").value = encryptionKey;
-  $("#infisical-auth-secret").value = authSecret;
-  $("#infisical-app-error").hidden = true;
-  $("#copy-infisical-app-keys").disabled = false;
-  $("#infisical-app-status").textContent = "Keys generated in this browser. Copy and securely back them up before applying; they cannot be read back from Crelan.";
-});
-$("#copy-infisical-app-keys").addEventListener("click", async () => {
-  const text = `ENCRYPTION_KEY=${$("#infisical-encryption-key").value}\nAUTH_SECRET=${$("#infisical-auth-secret").value}`;
-  try {
-    await navigator.clipboard.writeText(text);
-    $("#infisical-app-status").textContent = "Keys copied. Save them in a secure password manager before applying configuration.";
-  } catch {
-    $("#infisical-app-status").textContent = "Clipboard access is unavailable. Copy the password fields manually and save them securely before applying.";
-  }
-});
 
-$("#infisical-app-form").addEventListener("submit", async (event) => {
+async function loadCustomDomains() {
+  if (!activeApplication) return;
+  const listEl = $("#app-domains-list");
+  if (!listEl) return;
+  try {
+    const domains = await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/domains`);
+    listEl.replaceChildren();
+    if (!domains || domains.length === 0) {
+      listEl.innerHTML = '<div class="token-empty">No custom domains configured.</div>';
+      return;
+    }
+    for (const d of domains) {
+      const row = document.createElement("div");
+      row.className = "token-row";
+      row.style.alignItems = "center";
+
+      const details = document.createElement("div");
+      details.className = "token-row-details";
+      const hostEl = document.createElement("strong");
+      hostEl.textContent = d.host;
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `token-row-state ${d.status === "active" ? "active" : "pending"}`;
+      statusBadge.textContent = d.status === "active" ? "Active (TLS Ready)" : "Pending DNS Verification";
+      statusBadge.style.marginLeft = "8px";
+      hostEl.appendChild(statusBadge);
+      details.appendChild(hostEl);
+
+      if (d.status === "pending" && d.txt_name && d.txt_value) {
+        const hint = document.createElement("p");
+        hint.className = "field-help";
+        hint.style.margin = "4px 0 0";
+        hint.innerHTML = `Add DNS TXT record: <code>${d.txt_name}</code> with value <code>${d.txt_value}</code>`;
+        details.appendChild(hint);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "token-row-actions";
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+
+      if (d.status === "pending") {
+        const verifyBtn = document.createElement("button");
+        verifyBtn.className = "inline-action";
+        verifyBtn.textContent = "Verify DNS";
+        verifyBtn.type = "button";
+        verifyBtn.addEventListener("click", async () => {
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = "Verifying…";
+          try {
+            await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/domains/${encodeURIComponent(d.id)}/verify`, { method: "POST" });
+            await loadCustomDomains();
+          } catch (err) {
+            alert(`Domain verification failed: ${err.message}`);
+          } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = "Verify DNS";
+          }
+        });
+        actions.appendChild(verifyBtn);
+      }
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "inline-action revoke";
+      delBtn.textContent = "Remove";
+      delBtn.type = "button";
+      delBtn.addEventListener("click", async () => {
+        if (!confirm(`Remove custom domain ${d.host}?`)) return;
+        delBtn.disabled = true;
+        try {
+          await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/domains/${encodeURIComponent(d.id)}`, { method: "DELETE" });
+          await loadCustomDomains();
+        } catch (err) {
+          alert(`Could not remove domain: ${err.message}`);
+        } finally {
+          delBtn.disabled = false;
+        }
+      });
+      actions.appendChild(delBtn);
+
+      row.appendChild(details);
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    }
+  } catch (err) {
+    listEl.innerHTML = `<div class="token-empty" style="color: #c45100;">Could not load custom domains: ${err.message}</div>`;
+  }
+}
+
+$("#app-domain-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!activeApplication || $("#infisical-app-setup").hidden) return;
-  const error = $("#infisical-app-error");
-  const button = $("#infisical-app-submit");
+  if (!activeApplication) return;
+  const error = $("#domain-error");
+  const submitBtn = $("#add-domain-submit");
+  const input = $("#new-custom-domain");
   error.hidden = true;
-  const databaseConnection = workspaceConnections.find((item) => String(item.id) === $("#infisical-database-connection").value);
-  const cacheConnection = workspaceConnections.find((item) => String(item.id) === $("#infisical-cache-connection").value);
-  if (!databaseConnection || !cacheConnection) {
-    error.textContent = "Choose a saved PostgreSQL connection and a saved Redis/Valkey connection.";
+  submitBtn.disabled = true;
+  try {
+    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/domains`, {
+      method: "POST",
+      body: JSON.stringify({ host: input.value.trim() }),
+    });
+    input.value = "";
+    await loadCustomDomains();
+  } catch (err) {
+    error.textContent = err.message;
     error.hidden = false;
-    return;
+  } finally {
+    submitBtn.disabled = false;
   }
-  const siteURL = $("#infisical-site-url").value.trim();
-  let parsedSiteURL;
-  try { parsedSiteURL = new URL(siteURL); } catch { /* handled below */ }
-  if (!parsedSiteURL || parsedSiteURL.protocol !== "https:" || !parsedSiteURL.hostname || parsedSiteURL.username || parsedSiteURL.password || parsedSiteURL.search || parsedSiteURL.hash) {
-    error.textContent = "Enter the public HTTPS URL users will use to reach this Infisical app, without credentials, query, or fragment.";
-    error.hidden = false;
-    return;
-  }
-  const encryptionKey = $("#infisical-encryption-key").value.trim();
-  const authSecret = $("#infisical-auth-secret").value.trim();
-  if (!/^[a-fA-F0-9]{32}$/.test(encryptionKey)) {
-    error.textContent = "ENCRYPTION_KEY must be 16 random bytes encoded as 32 hexadecimal characters.";
-    error.hidden = false;
-    return;
-  }
-  let authSecretBytes;
-  try { authSecretBytes = atob(authSecret); } catch { /* handled below */ }
-  if (!authSecretBytes || authSecretBytes.length !== 32) {
-    error.textContent = "AUTH_SECRET must be 32 random bytes encoded as base64.";
+});
+$("#refresh-domains")?.addEventListener("click", loadCustomDomains);
+
+$("#app-env-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!activeApplication) return;
+  const error = $("#app-env-error");
+  const status = $("#app-env-status");
+  const submitBtn = $("#app-env-submit");
+  error.hidden = true;
+  status.textContent = "";
+
+  const parseLines = (text) => {
+    const map = {};
+    for (const rawLine of (text || "").split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const idx = line.indexOf("=");
+      if (idx > 0) {
+        const k = line.slice(0, idx).trim();
+        const v = line.slice(idx + 1).trim();
+        if (k) map[k] = v;
+      }
+    }
+    return map;
+  };
+
+  const envMap = parseLines($("#app-env-vars").value);
+  const secretMap = parseLines($("#app-secret-vars").value);
+
+  if (Object.keys(envMap).length === 0 && Object.keys(secretMap).length === 0) {
+    error.textContent = "Enter at least one KEY=VALUE environment variable or secret.";
     error.hidden = false;
     return;
   }
 
-  button.disabled = true;
-  $("#infisical-app-status").textContent = "Attaching database and cache Secret references, then applying the Infisical configuration…";
+  submitBtn.disabled = true;
+  status.textContent = "Applying environment variables and secrets to application…";
   try {
-    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/connections`, {
-      method: "POST",
-      body: JSON.stringify({ connection_id: databaseConnection.id, env_mapping: { DB_CONNECTION_URI: "CONNECTION_URL" } }),
-    });
-    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/connections`, {
-      method: "POST",
-      body: JSON.stringify({ connection_id: cacheConnection.id, env_mapping: { REDIS_URL: "CONNECTION_URL" } }),
-    });
     await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/configuration`, {
       method: "PUT",
-      body: JSON.stringify({
-        environment: { SITE_URL: parsedSiteURL.origin },
-        secrets: { ENCRYPTION_KEY: encryptionKey, AUTH_SECRET: authSecret },
-      }),
+      body: JSON.stringify({ environment: envMap, secrets: secretMap }),
     });
-    $("#infisical-encryption-key").value = "";
-    $("#infisical-auth-secret").value = "";
-    $("#copy-infisical-app-keys").disabled = true;
-    $("#infisical-app-status").textContent = "Infisical configuration applied. Database/cache credentials remain Kubernetes Secret references; key values are stored as app Secret data and were cleared from this form.";
+    $("#app-secret-vars").value = "";
+    status.textContent = "Configuration successfully applied. Secrets are stored securely in Kubernetes.";
     await loadApplicationResources();
-  } catch (cause) {
-    error.textContent = `${cause.message} Some connection references may already have been applied; you can safely retry this setup.`;
+  } catch (err) {
+    error.textContent = err.message;
     error.hidden = false;
-    $("#infisical-app-status").textContent = "Configuration is incomplete. Review the error, then retry.";
+    status.textContent = "Configuration update failed.";
   } finally {
-    button.disabled = false;
+    submitBtn.disabled = false;
+  }
+});
+
+$("#rollback-app")?.addEventListener("click", async () => {
+  if (!activeApplication) return;
+  const btn = $("#rollback-app");
+  btn.disabled = true;
+  try {
+    const history = await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/history`);
+    const successfulRuns = (history || []).filter((r) => r.status === "running" && r.id !== activeApplication.latest_run_id);
+    if (!successfulRuns.length) {
+      alert("No previous successful deployment run found to roll back to.");
+      return;
+    }
+    const targetRun = successfulRuns[0];
+    const runDate = new Date(targetRun.created_at).toLocaleString();
+    if (!confirm(`Roll back ${activeApplication.name} to run #${targetRun.id} (deployed ${runDate})?`)) {
+      return;
+    }
+    await api(`/api/v1/deployments/${encodeURIComponent(activeApplication.id)}/rollback`, {
+      method: "POST",
+      body: JSON.stringify({ run_id: targetRun.id }),
+    });
+    alert(`Rollback queued successfully for ${activeApplication.name}.`);
+    await Promise.all([loadDeployments(), loadApplicationResources(), loadApplicationLogs()]);
+  } catch (err) {
+    alert(`Rollback failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
   }
 });
 $("#signout-button").addEventListener("click", async () => {
