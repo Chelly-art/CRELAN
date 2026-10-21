@@ -1965,12 +1965,216 @@ body.admin-body {
   color: var(--admin-amber);
   background: var(--admin-amber-bg);
 }
-
 .admin-dr-score-circle.poor {
   border-color: var(--admin-red);
   color: var(--admin-red);
   background: var(--admin-red-bg);
 }
 
+/* ==========================================================================
+   5. Site Reliability Engineering (SRE) Suite Styles
+   ========================================================================== */
 
+.sre-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
 
+.sre-kpi-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-md, 8px);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--admin-shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sre-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--admin-shadow-md);
+}
+
+.sre-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--admin-text-muted);
+}
+
+.sre-kpi-val {
+  font-size: 26px;
+  font-weight: 800;
+  font-family: var(--admin-font-heading);
+  color: var(--admin-text);
+  line-height: 1.1;
+}
+
+.sre-kpi-meta {
+  font-size: 12px;
+  color: var(--admin-text-muted);
+}
+
+.sre-grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--admin-font-heading);
+}
+
+.sre-grade-A {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.sre-grade-B {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+}
+
+.sre-grade-C {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+}
+
+.sre-grade-D {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+}
+
+.sre-grade-F {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.sre-burn-bar-wrap {
+  width: 100%;
+  height: 8px;
+  background: var(--admin-border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.sre-burn-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.sre-burn-safe {
+  background: #10b981;
+}
+
+.sre-burn-warn {
+  background: #f59e0b;
+}
+
+.sre-burn-critical {
+  background: #ef4444;
+}
+
+.sre-signal-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-md, 8px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sre-signal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--admin-border-subtle);
+  padding-bottom: 8px;
+}
+
+.sre-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.sre-signal-metric {
+  display: flex;
+  flex-direction: column;
+  background: var(--admin-bg-secondary, #fafbfc);
+  border: 1px solid var(--admin-border-subtle);
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.sre-signal-metric-label {
+  font-size: 11px;
+  color: var(--admin-text-muted);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sre-signal-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--admin-text);
+  font-family: var(--admin-mono);
+}
+
+.sre-canary-bar-wrap {
+  display: flex;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  margin-top: 8px;
+}
+
+.sre-canary-primary-fill {
+  background: #3b82f6;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sre-canary-canary-fill {
+  background: #10b981;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sre-antipattern-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}

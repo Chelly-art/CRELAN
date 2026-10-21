@@ -57,6 +57,15 @@ func TestAdminHTMLContainsLayout(t *testing.T) {
 		"data-view=\"autoscaling\"",
 		"data-view=\"gitops-drift\"",
 		"data-view=\"backup-radar\"",
+		"data-view=\"sre-slos\"",
+		"data-view=\"sre-golden-signals\"",
+		"data-view=\"sre-probes\"",
+		"data-view=\"sre-resilience\"",
+		"data-view=\"sre-canary\"",
+		"data-view=\"sre-chaos\"",
+		"data-view=\"sre-scorecards\"",
+		"admin-slo-modal",
+		"admin-chaos-modal",
 	}
 	for _, marker := range expectedMarkers {
 		if !strings.Contains(content, marker) {

@@ -256,6 +256,27 @@ CREATE TABLE IF NOT EXISTS platform_incident_webhooks (
 	enabled INTEGER NOT NULL DEFAULT 1,
 	created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS platform_sre_slos (
+	id INTEGER PRIMARY KEY,
+	name TEXT NOT NULL,
+	namespace TEXT NOT NULL,
+	service_name TEXT NOT NULL,
+	target_sli REAL NOT NULL,
+	sli_type TEXT NOT NULL,
+	window_days INTEGER NOT NULL DEFAULT 30,
+	created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_sre_chaos_runs (
+	id INTEGER PRIMARY KEY,
+	experiment_type TEXT NOT NULL,
+	target_kind TEXT NOT NULL,
+	target_name TEXT NOT NULL,
+	namespace TEXT NOT NULL,
+	status TEXT NOT NULL,
+	safety_check TEXT NOT NULL,
+	details TEXT,
+	created_at TEXT NOT NULL
+);
 `
 
 type platformIncidentWebhookRecord struct {

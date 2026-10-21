@@ -322,6 +322,27 @@ async function renderCurrentView() {
       case "cluster-fleet":
         await renderClusterFleet(container);
         break;
+      case "sre-slos":
+        await renderSRESLOs(container);
+        break;
+      case "sre-golden-signals":
+        await renderSREGoldenSignals(container);
+        break;
+      case "sre-probes":
+        await renderSREProbes(container);
+        break;
+      case "sre-resilience":
+        await renderSREResilience(container);
+        break;
+      case "sre-canary":
+        await renderSRECanaries(container);
+        break;
+      case "sre-chaos":
+        await renderSREChaos(container);
+        break;
+      case "sre-scorecards":
+        await renderSREScorecards(container);
+        break;
       default:
         await renderOverview(container);
     }
@@ -2686,6 +2707,21 @@ function setupEventListeners() {
   $("#helm-modal-copy-btn")?.addEventListener("click", copyHelmValuesToClipboard);
 
   $("#cve-modal-close")?.addEventListener("click", () => $("#admin-cve-modal").classList.remove("open"));
+
+  // SRE Modals
+  $("#slo-modal-close")?.addEventListener("click", () => $("#admin-slo-modal").classList.remove("open"));
+  $("#slo-modal-dismiss")?.addEventListener("click", () => $("#admin-slo-modal").classList.remove("open"));
+  $("#admin-slo-modal")?.addEventListener("click", (e) => {
+    if (e.target.id === "admin-slo-modal") $("#admin-slo-modal").classList.remove("open");
+  });
+  $("#slo-form")?.addEventListener("submit", handleCreateSLO);
+
+  $("#chaos-modal-close")?.addEventListener("click", () => $("#admin-chaos-modal").classList.remove("open"));
+  $("#chaos-modal-dismiss")?.addEventListener("click", () => $("#admin-chaos-modal").classList.remove("open"));
+  $("#admin-chaos-modal")?.addEventListener("click", (e) => {
+    if (e.target.id === "admin-chaos-modal") $("#admin-chaos-modal").classList.remove("open");
+  });
+  $("#chaos-form")?.addEventListener("submit", handleRunChaos);
 
   // Sign out
   $("#admin-signout").addEventListener("click", async () => {
@@ -5474,12 +5510,996 @@ async function switchClusterContext(contextName) {
   } catch (err) {
     alert(`Failed to switch context: ${err.message}`);
   }
+// -------------------------------------------------------------
+// Site Reliability Engineering (SRE) Operations Suite
+// -------------------------------------------------------------
+
+// 1. SLO & Error Budget Burn Radar
+async function renderSRESLOs(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/slos?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/slos`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>SLO & Error Budget Burn Radar</h1>
+        <p>Real-time Service Level Objectives, error budget exhaustion dials, and automated deployment freeze gates.</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-primary admin-btn-sm" type="button" onclick="openCreateSLOModal()">+ Define New SLO</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Calculating SLO telemetry and burn velocity…</div>
+  `;
+
+  try {
+    const slos = await request(url);
+    if (!slos || slos.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>SLO & Error Budget Burn Radar</h1>
+            <p>Real-time Service Level Objectives, error budget exhaustion dials, and automated deployment freeze gates.</p>
+          </div>
+          <div class="admin-view-actions">
+            <button class="admin-btn admin-btn-primary admin-btn-sm" type="button" onclick="openCreateSLOModal()">+ Define New SLO</button>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Service Level Objectives Configured</h3>
+            <p style="color: var(--admin-text-muted); margin: 8px 0 16px;">
+              Define availability or latency SLOs for critical microservices to monitor error budget burn and protect production stability.
+            </p>
+            <button class="admin-btn admin-btn-primary" type="button" onclick="openCreateSLOModal()">Define Your First SLO</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const total = slos.length;
+    const met = slos.filter(s => s.status === "met").length;
+    const burning = slos.filter(s => s.burn_velocity_1h > 1.0).length;
+    const frozen = slos.filter(s => s.deployment_frozen).length;
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>SLO & Error Budget Burn Radar</h1>
+          <p>Real-time Service Level Objectives, error budget exhaustion dials, and automated deployment freeze gates.</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-primary admin-btn-sm" type="button" onclick="openCreateSLOModal()">+ Define New SLO</button>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Active Objectives</div>
+          <div class="sre-kpi-val">${total}</div>
+          <div class="sre-kpi-meta">${met} of ${total} objectives met</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Burn Velocity Alert</div>
+          <div class="sre-kpi-val" style="color: ${burning > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${burning}</div>
+          <div class="sre-kpi-meta">&gt; 1x budget burn rate</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Deployment Freezes</div>
+          <div class="sre-kpi-val" style="color: ${frozen > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${frozen}</div>
+          <div class="sre-kpi-meta">${frozen > 0 ? "Deployment guard active" : "All pipelines clear"}</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Avg Budget Remaining</div>
+          <div class="sre-kpi-val">${(slos.reduce((a, b) => a + b.remaining_budget_pct, 0) / total).toFixed(1)}%</div>
+          <div class="sre-kpi-meta">Across 30d rolling window</div>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>SLO Name</th>
+              <th>Service</th>
+              <th>Target</th>
+              <th>Current SLI</th>
+              <th style="min-width: 140px;">Error Budget Remaining</th>
+              <th>Burn Velocity (1h / 6h)</th>
+              <th>Status</th>
+              <th>Deployment Guard</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${slos.map(s => {
+              const fillClass = s.remaining_budget_pct < 20 ? "sre-burn-critical" : s.remaining_budget_pct < 50 ? "sre-burn-warn" : "sre-burn-safe";
+              return `
+                <tr>
+                  <td><strong>${escapeHTML(s.name)}</strong></td>
+                  <td>
+                    <span class="admin-kind-badge">SVC</span>
+                    <code>${escapeHTML(s.namespace)}/${escapeHTML(s.service)}</code>
+                  </td>
+                  <td>${s.target_percentage.toFixed(2)}%</td>
+                  <td><strong style="color: ${s.current_percentage >= s.target_percentage ? "var(--admin-green)" : "var(--admin-red)"};">${s.current_percentage.toFixed(2)}%</strong></td>
+                  <td>
+                    <div style="font-weight: 700; font-size: 11px;">${s.remaining_budget_pct.toFixed(1)}%</div>
+                    <div class="sre-burn-bar-wrap">
+                      <div class="sre-burn-bar-fill ${fillClass}" style="width: ${Math.max(0, Math.min(100, s.remaining_budget_pct))}%;"></div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="admin-badge ${s.burn_velocity_1h >= 2 ? "admin-badge-danger" : s.burn_velocity_1h >= 1 ? "admin-badge-warning" : "admin-badge-success"}">
+                      ${s.burn_velocity_1h.toFixed(1)}x / ${s.burn_velocity_6h.toFixed(1)}x
+                    </span>
+                  </td>
+                  <td>
+                    <span class="admin-badge ${s.status === "met" ? "admin-badge-success" : s.status === "exhausted" ? "admin-badge-danger" : "admin-badge-warning"}">
+                      ${escapeHTML(s.status.toUpperCase())}
+                    </span>
+                  </td>
+                  <td>
+                    ${s.deployment_frozen ? `
+                      <span class="admin-badge admin-badge-danger">FROZEN</span>
+                    ` : `
+                      <span class="admin-badge admin-badge-success">ALLOWED</span>
+                    `}
+                  </td>
+                  <td style="text-align: right;">
+                    <button class="admin-btn admin-btn-sm admin-btn-danger" type="button" onclick="deleteSRESLO('${escapeHTML(s.id)}')">Delete</button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to load SLOs: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+function openCreateSLOModal() {
+  const modal = $("#admin-slo-modal");
+  if (!modal) return;
+  modal.classList.add("open");
+  $("#slo-namespace-input").value = state.selectedNamespace || "default";
+  $("#slo-name-input").focus();
+}
+
+async function handleCreateSLO(e) {
+  e.preventDefault();
+  const name = $("#slo-name-input").value.trim();
+  const service = $("#slo-service-input").value.trim();
+  const ns = $("#slo-namespace-input").value.trim();
+  const target = parseFloat($("#slo-target-input").value) || 99.9;
+  const window = $("#slo-window-select").value;
+  const indicator = $("#slo-indicator-select").value;
+  const threshold = parseFloat($("#slo-latency-threshold-input").value) || 250;
+  const channel = $("#slo-channel-input").value.trim();
+
+  try {
+    await request("/api/v1/admin/sre/slos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        service,
+        namespace: ns,
+        target_percentage: target,
+        window,
+        indicator_type: indicator,
+        latency_threshold_ms: threshold,
+        alert_channel: channel,
+      }),
+    });
+    $("#admin-slo-modal").classList.remove("open");
+    $("#slo-form").reset();
+    renderCurrentView();
+  } catch (err) {
+    alert("Failed to create SLO: " + err.message);
+  }
+}
+
+async function deleteSRESLO(id) {
+  if (!confirm("Are you sure you want to delete this SLO definition?")) return;
+  try {
+    await request(`/api/v1/admin/sre/slos?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    renderCurrentView();
+  } catch (err) {
+    alert("Failed to delete SLO: " + err.message);
+  }
+}
+
+// 2. The 4 Golden Signals & RED Engine
+async function renderSREGoldenSignals(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/golden-signals?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/golden-signals`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>The 4 Golden Signals & RED Engine</h1>
+        <p>Google SRE Rate, Errors, Duration (P50/P90/P99 latency), and Saturation across cluster microservices.</p>
+      </div>
+    </div>
+    <div class="admin-empty-state">Aggregating real-time RED signals…</div>
+  `;
+
+  try {
+    const signals = await request(url);
+    if (!signals || signals.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>The 4 Golden Signals & RED Engine</h1>
+            <p>Google SRE Rate, Errors, Duration (P50/P90/P99 latency), and Saturation across cluster microservices.</p>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Active Microservices Found</h3>
+            <p style="color: var(--admin-text-muted);">Ensure deployments and services are running in the target namespace.</p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const totalRPS = signals.reduce((acc, s) => acc + s.rate_rps, 0);
+    const avgErrorPct = (signals.reduce((acc, s) => acc + s.error_rate_pct, 0) / signals.length);
+    const degradedCount = signals.filter(s => s.error_rate_pct > 1.0 || s.duration_p99_ms > 500).length;
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>The 4 Golden Signals & RED Engine</h1>
+          <p>Google SRE Rate, Errors, Duration (P50/P90/P99 latency), and Saturation across cluster microservices.</p>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Monitored Services</div>
+          <div class="sre-kpi-val">${signals.length}</div>
+          <div class="sre-kpi-meta">Real-time HTTP/gRPC ingress</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Total Cluster Throughput</div>
+          <div class="sre-kpi-val">${totalRPS.toFixed(1)} <span style="font-size: 14px; font-weight: 500;">req/s</span></div>
+          <div class="sre-kpi-meta">Aggregated traffic volume</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Mean Cluster Error Rate</div>
+          <div class="sre-kpi-val" style="color: ${avgErrorPct > 1.0 ? "var(--admin-red)" : "var(--admin-green)"};">${avgErrorPct.toFixed(2)}%</div>
+          <div class="sre-kpi-meta">5xx and connection aborts</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Degraded Services</div>
+          <div class="sre-kpi-val" style="color: ${degradedCount > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${degradedCount}</div>
+          <div class="sre-kpi-meta">Latency / Error threshold breached</div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        ${signals.map(s => {
+          const isDegraded = s.error_rate_pct > 1.0 || s.duration_p99_ms > 500;
+          return `
+            <div class="sre-signal-card">
+              <div class="sre-signal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span class="admin-kind-badge">SVC</span>
+                  <strong style="font-size: 14px;">${escapeHTML(s.service)}</strong>
+                  <span style="font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(s.namespace)}</span>
+                </div>
+                <div>
+                  ${isDegraded ? `
+                    <span class="admin-badge admin-badge-danger">DEGRADED</span>
+                  ` : `
+                    <span class="admin-badge admin-badge-success">HEALTHY</span>
+                  `}
+                </div>
+              </div>
+
+              <div class="sre-signal-grid">
+                <div class="sre-signal-metric">
+                  <div class="sre-signal-metric-label">Rate (Throughput)</div>
+                  <div class="sre-signal-metric-value">${s.rate_rps.toFixed(1)} <span style="font-size: 11px; font-weight: normal; color: var(--admin-text-muted);">req/s</span></div>
+                </div>
+
+                <div class="sre-signal-metric">
+                  <div class="sre-signal-metric-label">Errors (5xx Ratio)</div>
+                  <div class="sre-signal-metric-value" style="color: ${s.error_rate_pct > 1.0 ? "var(--admin-red)" : "var(--admin-text)"};">
+                    ${s.error_rate_pct.toFixed(2)}%
+                  </div>
+                </div>
+
+                <div class="sre-signal-metric">
+                  <div class="sre-signal-metric-label">Duration Latency</div>
+                  <div class="sre-signal-metric-value">
+                    <span title="P50">${Math.round(s.duration_p50_ms)}ms</span>
+                    <span style="font-size: 11px; color: var(--admin-text-muted);"> (P99: ${Math.round(s.duration_p99_ms)}ms)</span>
+                  </div>
+                </div>
+
+                <div class="sre-signal-metric">
+                  <div class="sre-signal-metric-label">Saturation (CPU/Mem)</div>
+                  <div class="sre-signal-metric-value">
+                    ${Math.round(s.saturation_cpu_pct)}% <span style="font-size: 11px; color: var(--admin-text-muted);">CPU</span>
+                    / ${Math.round(s.saturation_mem_pct)}% <span style="font-size: 11px; color: var(--admin-text-muted);">Mem</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to load Golden Signals: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+// 3. Health Probe Doctor
+async function renderSREProbes(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/probe-audit?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/probe-audit`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Health Probe Doctor & Anti-Patterns</h1>
+        <p>Identify missing liveness/readiness probes, cascading timeouts, startup probe gaps, and deep-check failure traps.</p>
+      </div>
+    </div>
+    <div class="admin-empty-state">Auditing pod probe configurations…</div>
+  `;
+
+  try {
+    const probes = await request(url);
+    if (!probes || probes.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>Health Probe Doctor & Anti-Patterns</h1>
+            <p>Identify missing liveness/readiness probes, cascading timeouts, startup probe gaps, and deep-check failure traps.</p>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Deployments Found to Audit</h3>
+            <p style="color: var(--admin-text-muted);">Deploy microservices to perform health probe validation.</p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const criticalCount = probes.filter(p => p.risk_level === "critical" || p.risk_level === "high").length;
+    const missingLive = probes.filter(p => !p.liveness_configured).length;
+    const missingReady = probes.filter(p => !p.readiness_configured).length;
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Health Probe Doctor & Anti-Patterns</h1>
+          <p>Identify missing liveness/readiness probes, cascading timeouts, startup probe gaps, and deep-check failure traps.</p>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Workloads Audited</div>
+          <div class="sre-kpi-val">${probes.length}</div>
+          <div class="sre-kpi-meta">Containers inspected</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">High / Critical Risk</div>
+          <div class="sre-kpi-val" style="color: ${criticalCount > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${criticalCount}</div>
+          <div class="sre-kpi-meta">Vulnerable to outage cascading</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Missing Liveness</div>
+          <div class="sre-kpi-val" style="color: ${missingLive > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${missingLive}</div>
+          <div class="sre-kpi-meta">Unrecoverable deadlock risk</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Missing Readiness</div>
+          <div class="sre-kpi-val" style="color: ${missingReady > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${missingReady}</div>
+          <div class="sre-kpi-meta">Premature traffic routing</div>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Workload</th>
+              <th>Namespace</th>
+              <th>Liveness Probe</th>
+              <th>Readiness Probe</th>
+              <th>Startup Probe</th>
+              <th>Anti-Patterns Detected</th>
+              <th>Risk Level</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${probes.map(p => `
+              <tr>
+                <td><strong>${escapeHTML(p.workload_name)}</strong></td>
+                <td><code>${escapeHTML(p.namespace)}</code></td>
+                <td>
+                  ${p.liveness_configured ? `
+                    <span class="admin-badge admin-badge-success">CONFIGURED</span>
+                  ` : `
+                    <span class="admin-badge admin-badge-danger">MISSING</span>
+                  `}
+                </td>
+                <td>
+                  ${p.readiness_configured ? `
+                    <span class="admin-badge admin-badge-success">CONFIGURED</span>
+                  ` : `
+                    <span class="admin-badge admin-badge-warning">MISSING</span>
+                  `}
+                </td>
+                <td>
+                  ${p.startup_configured ? `
+                    <span class="admin-badge admin-badge-success">CONFIGURED</span>
+                  ` : `
+                    <span class="admin-badge">NONE</span>
+                  `}
+                </td>
+                <td>
+                  ${p.anti_patterns && p.anti_patterns.length > 0 ? `
+                    <div>
+                      ${p.anti_patterns.map(ap => `<span class="sre-antipattern-tag">${escapeHTML(ap)}</span>`).join("")}
+                    </div>
+                  ` : `
+                    <span style="color: var(--admin-green); font-weight: 600;">None (Clean)</span>
+                  `}
+                </td>
+                <td>
+                  <span class="admin-badge ${p.risk_level === "critical" ? "admin-badge-danger" : p.risk_level === "high" ? "admin-badge-warning" : "admin-badge-success"}">
+                    ${escapeHTML(p.risk_level.toUpperCase())}
+                  </span>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to audit probes: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+// 4. Multi-AZ & PDB Resilience Auditor
+async function renderSREResilience(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/resilience-audit?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/resilience-audit`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Multi-AZ & PDB Resilience Auditor</h1>
+        <p>Detect zone concentration risks, single points of failure, and missing PodDisruptionBudgets (PDB) during node drains.</p>
+      </div>
+    </div>
+    <div class="admin-empty-state">Auditing cluster resilience and zone spread…</div>
+  `;
+
+  try {
+    const res = await request(url);
+    if (!res || res.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>Multi-AZ & PDB Resilience Auditor</h1>
+            <p>Detect zone concentration risks, single points of failure, and missing PodDisruptionBudgets (PDB) during node drains.</p>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Workloads Found to Audit</h3>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const multiAZCount = res.filter(r => r.multi_az_status).length;
+    const missingPDB = res.filter(r => !r.pdb_configured).length;
+    const singleReplica = res.filter(r => r.replicas <= 1).length;
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Multi-AZ & PDB Resilience Auditor</h1>
+          <p>Detect zone concentration risks, single points of failure, and missing PodDisruptionBudgets (PDB) during node drains.</p>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Audited Workloads</div>
+          <div class="sre-kpi-val">${res.length}</div>
+          <div class="sre-kpi-meta">High availability checks</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Multi-AZ Distributed</div>
+          <div class="sre-kpi-val" style="color: var(--admin-green);">${multiAZCount}</div>
+          <div class="sre-kpi-meta">Zone-isolated failure resilience</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Missing PDBs</div>
+          <div class="sre-kpi-val" style="color: ${missingPDB > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${missingPDB}</div>
+          <div class="sre-kpi-meta">Vulnerable to maintenance evictions</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Single Replica SPOFs</div>
+          <div class="sre-kpi-val" style="color: ${singleReplica > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${singleReplica}</div>
+          <div class="sre-kpi-meta">No redundancy during downtime</div>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Workload</th>
+              <th>Namespace</th>
+              <th>Replicas</th>
+              <th>Zones Covered</th>
+              <th>Multi-AZ Spread</th>
+              <th>PDB Configured</th>
+              <th>Recommendations</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${res.map(r => `
+              <tr>
+                <td><strong>${escapeHTML(r.workload_name)}</strong></td>
+                <td><code>${escapeHTML(r.namespace)}</code></td>
+                <td>${r.replicas}</td>
+                <td>${escapeHTML(r.zones_covered || "Single Node/Zone")}</td>
+                <td>
+                  ${r.multi_az_status ? `
+                    <span class="admin-badge admin-badge-success">MULTI-AZ</span>
+                  ` : `
+                    <span class="admin-badge admin-badge-danger">ZONE-CONCENTRATED</span>
+                  `}
+                </td>
+                <td>
+                  ${r.pdb_configured ? `
+                    <span class="admin-badge admin-badge-success">${escapeHTML(r.pdb_name)}</span>
+                  ` : `
+                    <span class="admin-badge admin-badge-danger">MISSING PDB</span>
+                  `}
+                </td>
+                <td style="font-size: 12px; color: var(--admin-text-muted);">
+                  ${r.recommendation ? escapeHTML(r.recommendation) : "Configured according to SRE best practices."}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to audit resilience: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+// 5. Progressive Delivery & Canary Guard
+async function renderSRECanaries(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/canaries?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/canaries`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Progressive Delivery & Canary Guard</h1>
+        <p>Monitor live canary rollouts, traffic split ratios, error differentials, and 1-click abort fail-safes.</p>
+      </div>
+    </div>
+    <div class="admin-empty-state">Detecting canary deployments and traffic splits…</div>
+  `;
+
+  try {
+    const canaries = await request(url);
+    if (!canaries || canaries.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>Progressive Delivery & Canary Guard</h1>
+            <p>Monitor live canary rollouts, traffic split ratios, error differentials, and 1-click abort fail-safes.</p>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Active Canary Deployments Detected</h3>
+            <p style="color: var(--admin-text-muted);">
+              When deployments contain active canary cohorts (e.g. <code>app-canary</code> or weight annotations), they will appear here with automated anomaly detection.
+            </p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Progressive Delivery & Canary Guard</h1>
+          <p>Monitor live canary rollouts, traffic split ratios, error differentials, and 1-click abort fail-safes.</p>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        ${canaries.map(c => `
+          <div class="sre-signal-card">
+            <div class="sre-signal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-kind-badge">CANARY</span>
+                <strong style="font-size: 15px;">${escapeHTML(c.name)}</strong>
+                <span style="font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(c.namespace)}</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge ${c.status === "stable" ? "admin-badge-success" : c.status === "degraded" ? "admin-badge-danger" : "admin-badge-warning"}">
+                  ${escapeHTML(c.status.toUpperCase())}
+                </span>
+                <button class="admin-btn admin-btn-danger admin-btn-sm" type="button" onclick="abortSRECanary('${escapeHTML(c.namespace)}', '${escapeHTML(c.name)}')">
+                  Abort & Rollback
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-bottom: 4px;">
+                <span>Primary: ${c.primary_weight_pct}% (${c.primary_replicas} pods)</span>
+                <span style="color: #10b981;">Canary: ${c.canary_weight_pct}% (${c.canary_replicas} pods)</span>
+              </div>
+              <div class="sre-canary-bar-wrap">
+                <div class="sre-canary-primary-fill" style="width: ${c.primary_weight_pct}%;">Primary ${c.primary_weight_pct}%</div>
+                <div class="sre-canary-canary-fill" style="width: ${c.canary_weight_pct}%;">Canary ${c.canary_weight_pct}%</div>
+              </div>
+            </div>
+
+            <div class="sre-signal-grid">
+              <div class="sre-signal-metric">
+                <div class="sre-signal-metric-label">Primary Error Rate</div>
+                <div class="sre-signal-metric-value">${c.primary_error_rate_pct.toFixed(2)}%</div>
+              </div>
+              <div class="sre-signal-metric">
+                <div class="sre-signal-metric-label">Canary Error Rate</div>
+                <div class="sre-signal-metric-value" style="color: ${c.canary_error_rate_pct > c.primary_error_rate_pct ? "var(--admin-red)" : "var(--admin-green)"};">
+                  ${c.canary_error_rate_pct.toFixed(2)}%
+                </div>
+              </div>
+              <div class="sre-signal-metric">
+                <div class="sre-signal-metric-label">Primary P99 Latency</div>
+                <div class="sre-signal-metric-value">${Math.round(c.primary_p99_ms)}ms</div>
+              </div>
+              <div class="sre-signal-metric">
+                <div class="sre-signal-metric-label">Canary P99 Latency</div>
+                <div class="sre-signal-metric-value">${Math.round(c.canary_p99_ms)}ms</div>
+              </div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to load canaries: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+async function abortSRECanary(ns, name) {
+  if (!confirm(`Are you sure you want to abort canary '${name}' in namespace '${ns}' and roll back traffic immediately?`)) return;
+  try {
+    await request("/api/v1/admin/sre/canaries/abort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ namespace: ns, name }),
+    });
+    alert(`Canary ${name} aborted and rolled back successfully.`);
+    renderCurrentView();
+  } catch (err) {
+    alert("Failed to abort canary: " + err.message);
+  }
+}
+
+// 6. Safe Chaos Engineering Prober
+async function renderSREChaos(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Chaos Resilience Prober & Game Days</h1>
+        <p>Run guarded chaos engineering experiments with mandatory 2-replica safety locks, dry-run simulations, and MTTD tracking.</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-danger admin-btn-sm" type="button" onclick="openTriggerChaosModal()">+ Trigger Safe Chaos</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Loading chaos experiment history…</div>
+  `;
+
+  try {
+    const runs = await request("/api/v1/admin/sre/chaos/experiments");
+    const totalRuns = runs ? runs.length : 0;
+    const completed = runs ? runs.filter(r => r.status === "completed").length : 0;
+    const dryRuns = runs ? runs.filter(r => r.dry_run).length : 0;
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Chaos Resilience Prober & Game Days</h1>
+          <p>Run guarded chaos engineering experiments with mandatory 2-replica safety locks, dry-run simulations, and MTTD tracking.</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-danger admin-btn-sm" type="button" onclick="openTriggerChaosModal()">+ Trigger Safe Chaos</button>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Executed Experiments</div>
+          <div class="sre-kpi-val">${totalRuns}</div>
+          <div class="sre-kpi-meta">Game days & resilience tests</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Successful Passes</div>
+          <div class="sre-kpi-val" style="color: var(--admin-green);">${completed}</div>
+          <div class="sre-kpi-meta">Recovered within SLO targets</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Dry-Run Validations</div>
+          <div class="sre-kpi-val">${dryRuns}</div>
+          <div class="sre-kpi-meta">Zero production impact</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Replica Safety Gate</div>
+          <div class="sre-kpi-val" style="color: var(--admin-green);">ENFORCED</div>
+          <div class="sre-kpi-meta">≥ 2 replicas required</div>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Experiment</th>
+              <th>Target Workload</th>
+              <th>Type</th>
+              <th>Blast Radius</th>
+              <th>Mode</th>
+              <th>Status</th>
+              <th>Recovery Time</th>
+              <th>Executed By</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${runs && runs.length > 0 ? runs.map(r => `
+              <tr>
+                <td><strong>${escapeHTML(r.title)}</strong></td>
+                <td><code>${escapeHTML(r.namespace)}/${escapeHTML(r.target_workload)}</code></td>
+                <td><span class="admin-badge">${escapeHTML(r.experiment_type)}</span></td>
+                <td>${r.blast_radius} pod(s)</td>
+                <td>
+                  ${r.dry_run ? `
+                    <span class="admin-badge" style="background: #e0f2fe; color: #0369a1;">DRY-RUN</span>
+                  ` : `
+                    <span class="admin-badge" style="background: #fee2e2; color: #991b1b;">LIVE KILL</span>
+                  `}
+                </td>
+                <td>
+                  <span class="admin-badge ${r.status === "completed" ? "admin-badge-success" : r.status === "blocked" ? "admin-badge-danger" : "admin-badge-warning"}">
+                    ${escapeHTML(r.status.toUpperCase())}
+                  </span>
+                </td>
+                <td>${r.recovery_time_sec !== undefined ? `${r.recovery_time_sec}s` : "—"}</td>
+                <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(r.executed_by || "admin")}</td>
+                <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(r.created_at || "recently")}</td>
+              </tr>
+            `).join("") : `
+              <tr>
+                <td colspan="9" style="text-align: center; color: var(--admin-text-muted); padding: 24px;">
+                  No chaos experiments have been recorded yet. Click "+ Trigger Safe Chaos" to run your first game day drill.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to load chaos experiments: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+function openTriggerChaosModal(ns = "", workload = "") {
+  const modal = $("#admin-chaos-modal");
+  if (!modal) return;
+  modal.classList.add("open");
+  if (ns) $("#chaos-namespace-input").value = ns;
+  else $("#chaos-namespace-input").value = state.selectedNamespace || "default";
+  if (workload) $("#chaos-workload-input").value = workload;
+  $("#chaos-title-input").focus();
+}
+
+async function handleRunChaos(e) {
+  e.preventDefault();
+  const title = $("#chaos-title-input").value.trim();
+  const ns = $("#chaos-namespace-input").value.trim();
+  const workload = $("#chaos-workload-input").value.trim();
+  const expType = $("#chaos-type-select").value;
+  const blast = parseInt($("#chaos-blast-input").value, 10) || 1;
+  const dryRun = $("#chaos-dry-run-checkbox").checked;
+
+  const btn = $("#chaos-submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Executing Experiment…";
+
+  try {
+    const res = await request("/api/v1/admin/sre/chaos/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        namespace: ns,
+        target_workload: workload,
+        experiment_type: expType,
+        blast_radius: blast,
+        dry_run: dryRun,
+      }),
+    });
+
+    $("#admin-chaos-modal").classList.remove("open");
+    $("#chaos-form").reset();
+    alert(`Chaos experiment finished with status: ${res.status.toUpperCase()}.\nDetails: ${res.details || "Experiment executed within safety gates."}`);
+    renderCurrentView();
+  } catch (err) {
+    alert("Chaos experiment failed safety constraint: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Safe Experiment";
+  }
+}
+
+// 7. Service Reliability & Incident Scorecards
+async function renderSREScorecards(container) {
+  const ns = state.selectedNamespace || "";
+  const url = ns ? `/api/v1/admin/sre/reliability-scorecards?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/sre/reliability-scorecards`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Service Reliability & Incident Scorecards</h1>
+        <p>A-F reliability grading, Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), and production readiness criteria.</p>
+      </div>
+    </div>
+    <div class="admin-empty-state">Computing reliability scorecards…</div>
+  `;
+
+  try {
+    const cards = await request(url);
+    if (!cards || cards.length === 0) {
+      container.innerHTML = `
+        <div class="admin-view-header">
+          <div class="admin-view-title">
+            <h1>Service Reliability & Incident Scorecards</h1>
+            <p>A-F reliability grading, Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), and production readiness criteria.</p>
+          </div>
+        </div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 20px;">
+            <h3>No Workloads Found for Scorecard Evaluation</h3>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const avgScore = (cards.reduce((acc, c) => acc + c.score, 0) / cards.length).toFixed(1);
+    const gradeCounts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+    cards.forEach(c => {
+      const g = (c.grade || "C").charAt(0);
+      if (gradeCounts[g] !== undefined) gradeCounts[g]++;
+    });
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Service Reliability & Incident Scorecards</h1>
+          <p>A-F reliability grading, Mean Time to Detect (MTTD), Mean Time to Resolve (MTTR), and production readiness criteria.</p>
+        </div>
+      </div>
+
+      <div class="sre-kpi-grid">
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Average Reliability Index</div>
+          <div class="sre-kpi-val">${avgScore} / 100</div>
+          <div class="sre-kpi-meta">Weighted multi-factor score</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Grade A (Elite Services)</div>
+          <div class="sre-kpi-val" style="color: var(--admin-green);">${gradeCounts.A}</div>
+          <div class="sre-kpi-meta">Full HA & observability compliance</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Grade B / C (Standard)</div>
+          <div class="sre-kpi-val" style="color: var(--admin-amber);">${gradeCounts.B + gradeCounts.C}</div>
+          <div class="sre-kpi-meta">Minor resilience improvements needed</div>
+        </div>
+        <div class="sre-kpi-card">
+          <div class="sre-kpi-label">Grade D / F (At Risk)</div>
+          <div class="sre-kpi-val" style="color: ${gradeCounts.D + gradeCounts.F > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${gradeCounts.D + gradeCounts.F}</div>
+          <div class="sre-kpi-meta">Action required before peak load</div>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">Grade</th>
+              <th>Service</th>
+              <th>Namespace</th>
+              <th>Score</th>
+              <th>MTTD</th>
+              <th>MTTR</th>
+              <th>MTBF</th>
+              <th>Production Readiness Checklist</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${cards.map(c => `
+              <tr>
+                <td>
+                  <span class="sre-grade-badge sre-grade-${escapeHTML(c.grade)}">${escapeHTML(c.grade)}</span>
+                </td>
+                <td><strong>${escapeHTML(c.service)}</strong></td>
+                <td><code>${escapeHTML(c.namespace)}</code></td>
+                <td>
+                  <strong>${c.score}</strong> / 100
+                </td>
+                <td>${c.mttd_minutes}m</td>
+                <td>${c.mttr_minutes}m</td>
+                <td>${c.mtbf_hours}h</td>
+                <td style="font-size: 11px;">
+                  <span class="admin-badge ${c.has_probes ? "admin-badge-success" : "admin-badge-danger"}">Probes</span>
+                  <span class="admin-badge ${c.has_multi_az ? "admin-badge-success" : "admin-badge-warning"}">Multi-AZ</span>
+                  <span class="admin-badge ${c.has_pdb ? "admin-badge-success" : "admin-badge-danger"}">PDB</span>
+                  <span class="admin-badge ${c.has_limits ? "admin-badge-success" : "admin-badge-warning"}">Limits</span>
+                  <span class="admin-badge ${c.has_slo ? "admin-badge-success" : "admin-badge"}">SLO</span>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state">Failed to load reliability scorecards: ${escapeHTML(err.message)}</div>`;
+  }
 }
 
 // -------------------------------------------------------------
 // Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
+  { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", icon: "⏱️", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
+  { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", icon: "📈", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
+  { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", icon: "🩺", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
+  { title: "Multi-AZ & PDB Resilience Auditor", category: "SRE & Reliability", hash: "sre-resilience", icon: "🛡️", desc: "Audit cross-AZ zone spread topology, single points of failure, and PodDisruptionBudget gaps" },
+  { title: "Progressive Delivery & Canary Guard", category: "SRE & Reliability", hash: "sre-canary", icon: "🐤", desc: "Visualize canary vs baseline traffic splits, error differentials, and 1-click rollback" },
+  { title: "Guarded Chaos Engineering Prober", category: "SRE & Reliability", hash: "sre-chaos", icon: "💥", desc: "Run controlled pod disruption & latency game days with strict 2-replica safety gates" },
+  { title: "Service Reliability & Incident Scorecards", category: "SRE & Reliability", hash: "sre-scorecards", icon: "🎖️", desc: "A-F reliability grading, MTTD, MTTR, MTBF, and uptime stability indices" },
   { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
   { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", icon: "⎈", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
   { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", icon: "🧩", desc: "Browse installed CRDs, schemas, and live custom operator resources" },

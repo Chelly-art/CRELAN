@@ -169,6 +169,19 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/crds/{group}/{version}/{resource}", s.getCustomResourceInstances)
 	mux.HandleFunc("POST /api/v1/admin/security/can-i", s.checkCanI)
 	mux.HandleFunc("GET /api/v1/admin/clusters/fleet", s.getClusterFleet)
+
+	// Site Reliability Engineering (SRE) Operations Suite
+	mux.HandleFunc("GET /api/v1/admin/sre/slos", s.getSRESLOs)
+	mux.HandleFunc("POST /api/v1/admin/sre/slos", s.createSRESLO)
+	mux.HandleFunc("DELETE /api/v1/admin/sre/slos/{id}", s.deleteSRESLO)
+	mux.HandleFunc("GET /api/v1/admin/sre/golden-signals", s.getSREGoldenSignals)
+	mux.HandleFunc("GET /api/v1/admin/sre/probes/audit", s.getSREProbeAudit)
+	mux.HandleFunc("GET /api/v1/admin/sre/resilience/audit", s.getSREResilienceAudit)
+	mux.HandleFunc("GET /api/v1/admin/sre/canary", s.getSRECanaries)
+	mux.HandleFunc("POST /api/v1/admin/sre/canary/abort", s.abortSRECanary)
+	mux.HandleFunc("GET /api/v1/admin/sre/chaos/experiments", s.getSREChaosExperiments)
+	mux.HandleFunc("POST /api/v1/admin/sre/chaos/run", s.runSREChaosExperiment)
+	mux.HandleFunc("GET /api/v1/admin/sre/scorecards", s.getSREReliabilityScorecards)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {

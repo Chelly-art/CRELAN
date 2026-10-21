@@ -217,6 +217,39 @@
             </a>
           </div>
 
+          <!-- SITE RELIABILITY ENGINEERING (SRE) -->
+          <div class="admin-tree-group">
+            <div class="admin-tree-header" style="color: #059669;">SRE & Reliability</div>
+            <a class="admin-tree-item" href="#sre-slos" data-view="sre-slos">
+              <span>SLO & Error Budgets</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-sre-slo">SLO</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-golden-signals" data-view="sre-golden-signals">
+              <span>Golden Signals (RED)</span>
+              <span class="admin-item-badge" id="badge-sre-red">RED</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-probes" data-view="sre-probes">
+              <span>Health Probe Doctor</span>
+              <span class="admin-item-badge admin-badge-danger" id="badge-sre-probes">Doctor</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-resilience" data-view="sre-resilience">
+              <span>Multi-AZ & PDB Auditor</span>
+              <span class="admin-item-badge" id="badge-sre-pdb">PDB</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-canary" data-view="sre-canary">
+              <span>Canary & Progressive</span>
+              <span class="admin-item-badge" id="badge-sre-canary">Canary</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-chaos" data-view="sre-chaos">
+              <span>Chaos Resilience Prober</span>
+              <span class="admin-item-badge" id="badge-sre-chaos" style="background: #dc2626; color: #fff;">Chaos</span>
+            </a>
+            <a class="admin-tree-item" href="#sre-scorecards" data-view="sre-scorecards">
+              <span>Reliability Scorecards</span>
+              <span class="admin-item-badge" id="badge-sre-scorecards">A-F</span>
+            </a>
+          </div>
+
           <!-- PLATFORM OPERATIONS -->
           <div class="admin-tree-group">
             <div class="admin-tree-header">Platform Ops</div>
@@ -754,6 +787,134 @@
             <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
               <button class="admin-btn" id="cve-modal-dismiss" type="button">Close</button>
             </div>
+          </div>
+        </div>
+
+        <!-- SRE SLO MODAL -->
+        <div class="admin-modal-overlay" id="admin-slo-modal">
+          <div class="admin-modal" style="width: 540px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge admin-badge-warning">SLO</span>
+                <h2 style="margin: 0; font-size: 16px;">Define Service Level Objective (SLO)</h2>
+              </div>
+              <button class="admin-drawer-close" id="slo-modal-close" type="button">Close</button>
+            </div>
+            <form id="slo-form">
+              <div class="admin-modal-body">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">SLO Name</label>
+                    <input class="admin-form-input" id="slo-name-input" type="text" placeholder="e.g. Core API 99.9% Availability" required style="width: 100%;">
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Service Name</label>
+                      <input class="admin-form-input" id="slo-service-input" type="text" placeholder="e.g. auth-service" required style="width: 100%;">
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Namespace</label>
+                      <input class="admin-form-input" id="slo-namespace-input" type="text" placeholder="default" required style="width: 100%;">
+                    </div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Target SLO (%)</label>
+                      <input class="admin-form-input" id="slo-target-input" type="number" step="0.01" min="90" max="100" value="99.9" required style="width: 100%;">
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Rolling Window</label>
+                      <select class="admin-form-input" id="slo-window-select" style="width: 100%;">
+                        <option value="7d">7 Days</option>
+                        <option value="30d" selected>30 Days</option>
+                        <option value="90d">90 Days</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">SLI Metric</label>
+                      <select class="admin-form-input" id="slo-indicator-select" style="width: 100%;">
+                        <option value="availability" selected>Availability (Success Rate %)</option>
+                        <option value="latency">Latency (P99 Response Time)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Latency Target (ms)</label>
+                      <input class="admin-form-input" id="slo-latency-threshold-input" type="number" step="1" min="1" value="250" style="width: 100%;">
+                    </div>
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Alert Pager / Webhook Channel</label>
+                    <input class="admin-form-input" id="slo-channel-input" type="text" placeholder="#sre-oncall, pagerduty" value="#sre-oncall" style="width: 100%;">
+                  </div>
+                </div>
+              </div>
+              <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="admin-btn" id="slo-modal-dismiss" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-primary" type="submit">Create SLO Definition</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- SRE CHAOS EXPERIMENT MODAL -->
+        <div class="admin-modal-overlay" id="admin-chaos-modal">
+          <div class="admin-modal" style="width: 580px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge" style="background: #dc2626; color: #fff;">CHAOS</span>
+                <h2 style="margin: 0; font-size: 16px;">Trigger Guarded Chaos Engineering Experiment</h2>
+              </div>
+              <button class="admin-drawer-close" id="chaos-modal-close" type="button">Close</button>
+            </div>
+            <form id="chaos-form">
+              <div class="admin-modal-body">
+                <div class="admin-alert admin-alert-info" style="margin-bottom: 14px; font-size: 12px;">
+                  <strong>Safety Gate Active:</strong> Crelan SRE safety guards require at least 2 healthy running replicas before initiating pod disruption. Single-replica workloads are blocked automatically.
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Experiment Title</label>
+                    <input class="admin-form-input" id="chaos-title-input" type="text" placeholder="e.g. GameDay: Payment Gateway Random Pod Termination" required style="width: 100%;">
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Target Namespace</label>
+                      <input class="admin-form-input" id="chaos-namespace-input" type="text" placeholder="default" required style="width: 100%;">
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Target Workload (Deployment)</label>
+                      <input class="admin-form-input" id="chaos-workload-input" type="text" placeholder="e.g. web-app" required style="width: 100%;">
+                    </div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Experiment Type</label>
+                      <select class="admin-form-input" id="chaos-type-select" style="width: 100%;">
+                        <option value="pod-kill" selected>Pod Kill (Resilience & Failover)</option>
+                        <option value="latency-injection">Simulate Latency Spike (Game Day)</option>
+                        <option value="cpu-burn">Simulate CPU Pressure / Throttling</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Blast Radius (Pod Count)</label>
+                      <input class="admin-form-input" id="chaos-blast-input" type="number" min="1" max="5" value="1" required style="width: 100%;">
+                    </div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--admin-bg-secondary); border-radius: var(--admin-radius-sm); border: 1px solid var(--admin-border);">
+                    <input type="checkbox" id="chaos-dry-run-checkbox" checked style="width: 16px; height: 16px; cursor: pointer;">
+                    <label for="chaos-dry-run-checkbox" style="font-size: 12px; font-weight: 600; cursor: pointer;">
+                      Dry-Run Mode (Preflight verification only; do not terminate pods)
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="admin-btn" id="chaos-modal-dismiss" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-danger" type="submit" id="chaos-submit-btn">Run Safe Experiment</button>
+              </div>
+            </form>
           </div>
         </div>
       </main>
