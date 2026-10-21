@@ -17,7 +17,9 @@ form.addEventListener("submit", async (event) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not open the workspace.");
-    window.location.assign("/dashboard");
+    const params = new URLSearchParams(window.location.search);
+    const redirectUrl = params.get("redirect") || "/dashboard";
+    window.location.assign(redirectUrl);
   } catch (error) {
     errorBox.textContent = error.message;
     errorBox.hidden = false;

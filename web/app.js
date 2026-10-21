@@ -216,9 +216,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     $("#app-port").value = "8080";
     $("#image-port").value = "8080";
     updateSourceFields();
-    updateVolumeFields();
-    $("#deploy-form-panel").hidden = true;
-    $("#page-title").textContent = "Applications";
+    window.location.hash = "applications";
     await loadDeployments();
   } catch (cause) {
     error.textContent = cause.message;
@@ -1060,46 +1058,90 @@ $("#copy-database-credentials").addEventListener("click", async () => {
   }
 });
 
-document.querySelectorAll(".nav-link[href^='#']").forEach((link) => link.addEventListener("click", (event) => {
-  event.preventDefault();
-  const isDeploy = link.hash === "#deploy";
-  const isDatabases = link.hash === "#databases";
-  const isServices = link.hash === "#services";
-  const isStorage = link.hash === "#storage";
-  const isTokens = link.hash === "#tokens";
-  const isTeam = link.hash === "#team";
-  const isUsage = link.hash === "#usage";
-  $("#page-title").textContent = isDeploy ? "Deploy an app" : (isDatabases ? "Databases" : (isServices ? "Services & storage" : (isStorage ? "Retained volumes" : (isTokens ? "API tokens" : (isTeam ? "Team" : (isUsage ? "Usage & audit" : "Applications"))))));
-  $("#deploy-form-panel").hidden = !isDeploy;
-  $("#databases-page").hidden = !isDatabases;
-  $("#services-page").hidden = !isServices;
-  $("#workspace-storage-page").hidden = !isStorage;
-  const tokensPage = $("#tokens-page");
-  if (tokensPage) tokensPage.hidden = !isTokens;
-  $("#team-page").hidden = !isTeam;
-  $("#usage-page").hidden = !isUsage;
-  $("#infisical-template").hidden = isDeploy || isDatabases || isServices || isStorage || isTokens || isTeam || isUsage;
-  $(".token-layout").hidden = isDatabases || isServices || isStorage || isTokens || isTeam || isUsage;
-  $("#app-runtime").hidden = isDatabases || isServices || isStorage || isTokens || isTeam || isUsage || !activeApplication;
-  document.querySelectorAll(".nav-link[href^='#']").forEach((item) => item.classList.toggle("active", item === link));
-  if (isDeploy) $("#app-name").focus();
-  if (isDatabases) Promise.all([loadDatabases(), loadDatabaseEngines()]);
-  if (isServices) Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]);
-  if (isStorage) loadWorkspaceStorage();
-  if (isTokens) loadTokens();
-  if (isTeam) loadWorkspaceMembers();
-  if (isUsage) loadWorkspaceUsage();
-}));
-$("#show-deploy-form").addEventListener("click", () => {
-  $("#databases-page").hidden = true;
-  $("#services-page").hidden = true;
-  $(".token-layout").hidden = false;
-  $("#deploy-form-panel").hidden = false;
-  $("#page-title").textContent = "Deploy an app";
-  $("#app-name").focus();
+const routeMap = {
+  applications: { pageId: "#applications-page", title: "Applications" },
+  deploy: { pageId: "#deploy-page", title: "Deploy an app" },
+  databases: { pageId: "#databases-page", title: "Databases" },
+  services: { pageId: "#services-page", title: "Services & storage" },
+  storage: { pageId: "#workspace-storage-page", title: "Retained volumes" },
+  tokens: { pageId: "#tokens-page", title: "API tokens" },
+  team: { pageId: "#team-page", title: "Team" },
+  usage: { pageId: "#usage-page", title: "Usage & audit" },
+};
+
+function getActiveRoute() {
+  const hash = (window.location.hash || "").replace(/^#/, "").toLowerCase();
+  return routeMap[hash] ? hash : "applications";
+}
+
+function renderRoute(route) {
+  const activeRoute = route || getActiveRoute();
+
+  // Hide/show each page
+  Object.keys(routeMap).forEach((key) => {
+    const el = $(routeMap[key].pageId);
+    if (el) el.hidden = (key !== activeRoute);
+  });
+
+  // Update topbar breadcrumb
+  const pageTitle = $("#page-title");
+  if (pageTitle && routeMap[activeRoute]) {
+    pageTitle.textContent = routeMap[activeRoute].title;
+  }
+
+  // Update sidebar active link
+  document.querySelectorAll(".nav-link[href^='#']").forEach((link) => {
+    const linkHash = (link.hash || "").replace(/^#/, "").toLowerCase();
+    link.classList.toggle("active", linkHash === activeRoute);
+  });
+
+  // App runtime panel: only visible in applications when an app is active
+  const appRuntime = $("#app-runtime");
+  if (appRuntime && activeRoute !== "applications") {
+    appRuntime.hidden = true;
+  }
+
+  // Trigger page-specific data fetching
+  if (activeRoute === "deploy") {
+    $("#app-name")?.focus();
+  } else if (activeRoute === "tokens") {
+    loadTokens();
+  } else if (activeRoute === "databases") {
+    Promise.all([loadDatabases(), loadDatabaseEngines()]);
+  } else if (activeRoute === "services") {
+    Promise.all([loadServiceCatalog(), loadManagedServices(), loadConnections(), loadManagedServiceConnectionSources()]);
+  } else if (activeRoute === "storage") {
+    loadWorkspaceStorage();
+  } else if (activeRoute === "team") {
+    loadWorkspaceMembers();
+  } else if (activeRoute === "usage") {
+    loadWorkspaceUsage();
+  } else if (activeRoute === "applications") {
+    loadDeployments();
+  }
+}
+
+window.addEventListener("hashchange", () => renderRoute());
+
+document.querySelectorAll(".nav-link[href^='#']").forEach((link) => {
+  link.addEventListener("click", () => {
+    const target = (link.hash || "").replace(/^#/, "");
+    if (routeMap[target]) {
+      window.location.hash = target;
+    }
+  });
 });
-$("#prepare-infisical-deploy").addEventListener("click", () => {
-  $("#show-deploy-form").click();
+
+document.querySelectorAll(".template-nav-link").forEach((link) => link.addEventListener("click", (event) => {
+  event.preventDefault();
+  window.location.hash = link.hash.replace(/^#/, "");
+}));
+
+$("#show-deploy-form")?.addEventListener("click", () => {
+  window.location.hash = "deploy";
+});
+$("#prepare-infisical-deploy")?.addEventListener("click", () => {
+  window.location.hash = "deploy";
   $("#app-source").value = "image";
   updateSourceFields();
   $("#app-name").value = "infisical";
@@ -1238,7 +1280,8 @@ $("#signout-button").addEventListener("click", async () => {
 loadAccount().catch((cause) => {
   if (cause.message !== "Sign in required") window.location.assign("/login");
 });
-loadDeployments();
+renderRoute();
+
 
 async function loadWorkspaceMembers() {
   const container = $("#workspace-members");
@@ -1368,16 +1411,28 @@ async function loadTokens() {
     tokens.forEach((token) => {
       const row = document.createElement("div");
       row.className = "token-row";
+
       const details = document.createElement("div");
       details.className = "token-row-details";
       const name = document.createElement("strong");
       name.textContent = token.name;
+      const meta = document.createElement("small");
+      const createdStr = token.created_at ? new Date(token.created_at).toLocaleDateString() : "";
+      const expStr = token.expires_at ? ("Expires " + new Date(token.expires_at).toLocaleDateString()) : "Never expires";
+      meta.textContent = `${createdStr ? "Created " + createdStr + " · " : ""}${expStr}`;
+      meta.style.color = "#8491a2";
+      details.append(name, meta);
+
+      const keyCol = document.createElement("div");
       const prefix = document.createElement("code");
       prefix.textContent = token.prefix + "••••••••";
+      keyCol.append(prefix);
+
+      const scopesCol = document.createElement("div");
       const scopes = document.createElement("span");
       scopes.className = "token-scope-list";
-      scopes.textContent = (token.scopes || []).join(", ");
-      details.append(name, prefix, scopes);
+      scopes.textContent = (token.scopes || []).join(", ") || "full-access";
+      scopesCol.append(scopes);
 
       const status = document.createElement("span");
       const isRevoked = !!token.revoked_at;
@@ -1402,7 +1457,7 @@ async function loadTokens() {
         });
         action.append(revokeBtn);
       }
-      row.append(details, status, action);
+      row.append(details, keyCol, scopesCol, status, action);
       list.append(row);
     });
   } catch (err) {

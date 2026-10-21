@@ -39,91 +39,131 @@
           <span class="top-avatar" id="top-avatar">U</span>
         </header>
 
-        <section class="content" id="deployments-page">
-          <div class="welcome">
-            <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
-          </div>
-          <div class="token-layout app-deploy-layout">
-            <section class="panel token-builder" id="deploy-form-panel" hidden>
-              <div class="panel-heading"><div><h2>Deploy an application</h2><p>Deploy a public repository or a container image into your workspace.</p></div></div>
-              <form id="deployment-form">
-                <label class="form-label" for="app-source">Source type</label>
-                <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
-                <label class="form-label" for="app-name">Deployment name</label>
-                <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
-                <div id="repository-source-fields">
-                  <label class="form-label" for="app-repository">GitHub repository URL</label>
-                  <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
-                  <div class="deployment-two-col">
-                    <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
-                    <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
-                  </div>
-                  <div class="deployment-two-col">
-                    <div>
-                      <label class="form-label" for="app-build-strategy">Build mechanism</label>
-                      <select class="text-input deployment-input" id="app-build-strategy" name="build_strategy">
-                        <option value="auto">Auto-detect (Dockerfile or Buildpack)</option>
-                        <option value="dockerfile">Dockerfile (BuildKit)</option>
-                        <option value="buildpack">Cloud Native Buildpack (kpack)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label class="form-label" for="app-dockerfile">Dockerfile path</label>
-                      <input class="text-input deployment-input" id="app-dockerfile" name="dockerfile" value="Dockerfile" placeholder="Dockerfile">
-                    </div>
-                  </div>
-                  <div class="deployment-two-col" style="align-items: center; margin-top: 6px;">
-                    <div>
-                      <label class="form-label" for="app-git-token">Private repo token <span>(optional, for private GitHub repos)</span></label>
-                      <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
-                    </div>
-                    <div style="padding-top: 18px;">
-                      <button class="inline-action" id="open-dockerfile-generator" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
-                    </div>
-                  </div>
-                </div>
-                <div id="image-source-fields" hidden>
-                  <label class="form-label" for="app-image">Container image</label>
-                  <input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest">
-                  <label class="form-label" for="image-pull-secret">Private registry credential <span>(optional)</span></label>
-                  <select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select>
-                  <button class="inline-action" id="show-registry-form" type="button">Add private registry token / credential</button>
-                  <label class="form-label" for="image-port">Application port</label>
-                  <input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080">
-                  <div id="registry-form" class="registry-form" hidden>
-                    <label class="form-label" for="registry-name">Credential name</label>
-                    <input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63">
-                    <label class="form-label" for="registry-server">Registry host</label>
-                    <input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io">
-                    <label class="form-label" for="registry-username">Username <span>(leave blank if using personal access token)</span></label>
-                    <input class="text-input deployment-input" id="registry-username" autocomplete="username" placeholder="e.g. github username (optional)">
-                    <label class="form-label" for="registry-password">Personal Access Token or Password</label>
-                    <input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password" placeholder="ghp_... or registry access token">
-                    <p class="field-help">Works with GitHub Container Registry (ghcr.io), Docker Hub, GitLab, and AWS ECR.</p>
-                    <p class="deployment-form-error" id="registry-error" role="alert" hidden></p>
-                    <button class="primary-button" id="registry-submit" type="button">Save credential securely</button>
-                  </div>
-                </div>
-                <label class="checkbox-label"><input type="checkbox" id="app-volume-enabled"> Attach persistent storage (single replica)</label>
-                <div id="app-volume-fields" class="app-volume-fields" hidden><p class="field-help">Single writer (RWO) storage requires one app replica. Shared (RWX) storage can be used by multiple replicas only when the platform has configured a compatible durable storage class. Persistent claims are retained after app deletion; use Retained volumes to permanently purge data.</p><div class="deployment-two-col"><div><label class="form-label" for="app-volume-size">Volume size</label><select class="text-input deployment-input" id="app-volume-size"><option value="5Gi">5 GiB</option><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option></select></div><div><label class="form-label" for="app-volume-access-mode">Volume access</label><select class="text-input deployment-input" id="app-volume-access-mode"><option value="single_writer">Single writer (RWO)</option><option value="shared">Shared (RWX, platform configured)</option></select></div></div><label class="form-label" for="app-volume-mount">Mount path</label><input class="text-input deployment-input" id="app-volume-mount" value="/data" placeholder="/data"></div>
-                <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
-                <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy application</button>
-              </form>
-            </section>
+        <section class="content">
+          <!-- 1. Applications Page -->
+          <div class="dashboard-page" id="applications-page">
+            <div class="welcome">
+              <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
+              <div class="welcome-actions">
+                <a class="primary-button" href="#deploy" style="text-decoration: none;"><span>＋</span> Deploy an app</a>
+              </div>
+            </div>
             <section class="panel issued-tokens deployment-list-panel">
-              <div class="panel-heading"><div><h2>Your applications</h2><p>Applications in this workspace.</p></div><div><button class="inline-action" id="show-deploy-form" type="button">Deploy an app</button> <button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div></div>
+              <div class="panel-heading"><div><h2>Your applications</h2><p>Applications in this workspace.</p></div><div><a class="inline-action" href="#deploy" style="margin-right: 14px; text-decoration: none;">＋ Deploy an app</a> <button class="inline-action" id="refresh-deployments" type="button">Refresh</button></div></div>
               <div class="token-list" id="deployment-list"><div class="token-empty">Loading deployments…</div></div>
             </section>
+            <section class="panel infisical-template" id="infisical-template" style="margin-top: 20px;">
+              <div class="panel-heading"><div><div class="eyebrow">SERVICE TEMPLATE</div><h2>Self-host Infisical</h2><p>Prepare a pinned Infisical image deployment and connect workspace services.</p></div><span class="template-status">Setup flow</span></div>
+              <div class="infisical-template-grid">
+                <div><h3>1. Prepare the services</h3><ol><li>Create a PostgreSQL database in <a href="#databases" class="template-nav-link">Databases</a> and wait for it to be ready.</li><li>Create Redis or Valkey in <a href="#services" class="template-nav-link">Services & storage</a>. Infisical requires Redis; Valkey compatibility is not guaranteed by Infisical, so use Redis where available or verify compatibility yourself.</li><li>Save each ready service as a workspace connection with a connection URL. The app details page can attach <code>CONNECTION_URL</code> as <code>DB_CONNECTION_URI</code> or <code>REDIS_URL</code>.</li></ol></div>
+                <div><h3>2. Deploy and configure the app</h3><p>Infisical’s official Docker guide requires <code>ENCRYPTION_KEY</code>, <code>AUTH_SECRET</code>, <code>DB_CONNECTION_URI</code>, <code>REDIS_URL</code>, and <code>SITE_URL</code>. The app details flow stores the two keys as Kubernetes Secret values, sets the public URL, and attaches database/cache connection keys by reference.</p><code class="template-image">infisical/infisical:v0.166.8</code><button class="primary-button" id="prepare-infisical-deploy" type="button">Prepare pinned image deployment</button><p class="field-help">Deploy the app first. Open its details to apply Infisical configuration after the workload exists. You will need ready PostgreSQL and Redis/Valkey connections.</p></div>
+              </div>
+              <div class="template-gap"><strong>Deployment prerequisite:</strong> create PostgreSQL and Redis/Valkey first. After deploying the pinned image, configure it from app details. The UI applies settings and connection references; it does not claim an HA guarantee. Valkey compatibility with Infisical is not guaranteed by Infisical.</div>
+              <p class="template-reference">Official references: <a href="https://infisical.com/docs/self-hosting/deployment-options/standalone-infisical" target="_blank" rel="noopener noreferrer">Docker deployment and required variables</a> · <a href="https://github.com/Infisical/infisical/releases/tag/v0.166.8" target="_blank" rel="noopener noreferrer">pinned v0.166.8 release</a> · <a href="https://infisical.com/videos/self-host-infisical" target="_blank" rel="noopener noreferrer">Infisical setup walkthrough</a></p>
+            </section>
           </div>
-          <section class="panel infisical-template" id="infisical-template">
-            <div class="panel-heading"><div><div class="eyebrow">SERVICE TEMPLATE</div><h2>Self-host Infisical</h2><p>Prepare a pinned Infisical image deployment and connect workspace services.</p></div><span class="template-status">Setup flow</span></div>
-            <div class="infisical-template-grid">
-              <div><h3>1. Prepare the services</h3><ol><li>Create a PostgreSQL database in <a href="#databases" class="template-nav-link">Databases</a> and wait for it to be ready.</li><li>Create Redis or Valkey in <a href="#services" class="template-nav-link">Services & storage</a>. Infisical requires Redis; Valkey compatibility is not guaranteed by Infisical, so use Redis where available or verify compatibility yourself.</li><li>Save each ready service as a workspace connection with a connection URL. The app details page can attach <code>CONNECTION_URL</code> as <code>DB_CONNECTION_URI</code> or <code>REDIS_URL</code>.</li></ol></div>
-              <div><h3>2. Deploy and configure the app</h3><p>Infisical’s official Docker guide requires <code>ENCRYPTION_KEY</code>, <code>AUTH_SECRET</code>, <code>DB_CONNECTION_URI</code>, <code>REDIS_URL</code>, and <code>SITE_URL</code>. The app details flow stores the two keys as Kubernetes Secret values, sets the public URL, and attaches database/cache connection keys by reference.</p><code class="template-image">infisical/infisical:v0.166.8</code><button class="primary-button" id="prepare-infisical-deploy" type="button">Prepare pinned image deployment</button><p class="field-help">Deploy the app first. Open its details to apply Infisical configuration after the workload exists. You will need ready PostgreSQL and Redis/Valkey connections.</p></div>
+
+          <!-- 2. Deploy Page -->
+          <div class="dashboard-page" id="deploy-page" hidden>
+            <div class="welcome">
+              <div><div class="eyebrow">NEW DEPLOYMENT</div><h1>Deploy an application</h1><p>Deploy a Git repository or a pre-built container image into your workspace.</p></div>
+              <div class="welcome-actions">
+                <a class="inline-action" href="#applications" style="font-size: 11px; text-decoration: none;">← Back to applications</a>
+              </div>
             </div>
-            <div class="template-gap"><strong>Deployment prerequisite:</strong> create PostgreSQL and Redis/Valkey first. After deploying the pinned image, configure it from app details. The UI applies settings and connection references; it does not claim an HA guarantee. Valkey compatibility with Infisical is not guaranteed by Infisical.</div>
-            <p class="template-reference">Official references: <a href="https://infisical.com/docs/self-hosting/deployment-options/standalone-infisical" target="_blank" rel="noopener noreferrer">Docker deployment and required variables</a> · <a href="https://github.com/Infisical/infisical/releases/tag/v0.166.8" target="_blank" rel="noopener noreferrer">pinned v0.166.8 release</a> · <a href="https://infisical.com/videos/self-host-infisical" target="_blank" rel="noopener noreferrer">Infisical setup walkthrough</a></p>
-          </section>
+            <div class="deploy-card-wrapper">
+              <section class="panel token-builder" id="deploy-form-panel">
+                <div class="panel-heading"><div><h2>Deployment configuration</h2><p>Provide your source code repository or container image coordinates.</p></div></div>
+                <form id="deployment-form">
+                  <label class="form-label" for="app-source">Source type</label>
+                  <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
+                  <label class="form-label" for="app-name">Deployment name</label>
+                  <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
+                  <div id="repository-source-fields">
+                    <label class="form-label" for="app-repository">GitHub repository URL</label>
+                    <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
+                    <div class="deployment-two-col">
+                      <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
+                      <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
+                    </div>
+                    <div class="deployment-two-col">
+                      <div>
+                        <label class="form-label" for="app-build-strategy">Build mechanism</label>
+                        <select class="text-input deployment-input" id="app-build-strategy" name="build_strategy">
+                          <option value="auto">Auto-detect (Dockerfile or Buildpack)</option>
+                          <option value="dockerfile">Dockerfile (BuildKit)</option>
+                          <option value="buildpack">Cloud Native Buildpack (kpack)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="form-label" for="app-dockerfile">Dockerfile path</label>
+                        <input class="text-input deployment-input" id="app-dockerfile" name="dockerfile" value="Dockerfile" placeholder="Dockerfile">
+                      </div>
+                    </div>
+                    <div class="deployment-two-col" style="align-items: center; margin-top: 6px;">
+                      <div>
+                        <label class="form-label" for="app-git-token">Private repo token <span>(optional, for private GitHub repos)</span></label>
+                        <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
+                      </div>
+                      <div style="padding-top: 18px;">
+                        <button class="inline-action" id="open-dockerfile-generator" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div id="image-source-fields" hidden>
+                    <label class="form-label" for="app-image">Container image</label>
+                    <input class="text-input deployment-input" id="app-image" name="image" placeholder="ghcr.io/owner/app:latest">
+                    <div class="registry-credential-group">
+                      <div class="registry-credential-header">
+                        <label class="form-label" for="image-pull-secret" style="margin: 0;">Private registry credential <span>(optional)</span></label>
+                        <button class="inline-action" id="show-registry-form" type="button" style="font-weight: 600;">＋ Add registry credential</button>
+                      </div>
+                      <select class="text-input deployment-input" id="image-pull-secret"><option value="">Use public image or platform registry</option></select>
+                    </div>
+                    <div id="registry-form" class="registry-form-panel" hidden>
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="font-size: 11px; color: #344054;">Add Private Registry Credential</strong>
+                        <span style="font-size: 9px; color: #667085;">Stores as K8s dockerconfigjson secret</span>
+                      </div>
+                      <div class="deployment-two-col">
+                        <div>
+                          <label class="form-label" for="registry-name">Credential name</label>
+                          <input class="text-input deployment-input" id="registry-name" placeholder="ghcr-production" maxlength="63">
+                        </div>
+                        <div>
+                          <label class="form-label" for="registry-server">Registry host</label>
+                          <input class="text-input deployment-input" id="registry-server" placeholder="ghcr.io">
+                        </div>
+                      </div>
+                      <div class="deployment-two-col">
+                        <div>
+                          <label class="form-label" for="registry-username">Username <span>(leave blank for tokens)</span></label>
+                          <input class="text-input deployment-input" id="registry-username" autocomplete="username" placeholder="e.g. github username">
+                        </div>
+                        <div>
+                          <label class="form-label" for="registry-password">Personal Access Token / Password</label>
+                          <input class="text-input deployment-input" id="registry-password" type="password" autocomplete="new-password" placeholder="ghp_... or registry access token">
+                        </div>
+                      </div>
+                      <p class="field-help" style="margin: 0;">Works with GitHub Container Registry (ghcr.io), Docker Hub, GitLab, and AWS ECR.</p>
+                      <p class="deployment-form-error" id="registry-error" role="alert" hidden></p>
+                      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px;">
+                        <button class="primary-button" id="registry-submit" type="button" style="width: auto;">Save credential securely</button>
+                      </div>
+                    </div>
+                    <div style="margin-top: 14px;">
+                      <label class="form-label" for="image-port">Application port</label>
+                      <input class="text-input deployment-input" id="image-port" name="image_port" type="number" min="1" max="65535" value="8080">
+                    </div>
+                  </div>
+                  <label class="checkbox-label" style="margin-top: 12px;"><input type="checkbox" id="app-volume-enabled"> Attach persistent storage (single replica)</label>
+                  <div id="app-volume-fields" class="app-volume-fields" hidden><p class="field-help">Single writer (RWO) storage requires one app replica. Shared (RWX) storage can be used by multiple replicas only when the platform has configured a compatible durable storage class. Persistent claims are retained after app deletion; use Retained volumes to permanently purge data.</p><div class="deployment-two-col"><div><label class="form-label" for="app-volume-size">Volume size</label><select class="text-input deployment-input" id="app-volume-size"><option value="5Gi">5 GiB</option><option value="10Gi">10 GiB</option><option value="20Gi">20 GiB</option><option value="50Gi">50 GiB</option></select></div><div><label class="form-label" for="app-volume-access-mode">Volume access</label><select class="text-input deployment-input" id="app-volume-access-mode"><option value="single_writer">Single writer (RWO)</option><option value="shared">Shared (RWX, platform configured)</option></select></div></div><label class="form-label" for="app-volume-mount">Mount path</label><input class="text-input deployment-input" id="app-volume-mount" value="/data" placeholder="/data"></div>
+                  <p class="deployment-form-error" id="deployment-error" role="alert" hidden></p>
+                  <button class="primary-button token-submit" id="deploy-submit" type="submit">Deploy application</button>
+                </form>
+              </section>
+            </div>
+          </div>
           <section class="panel app-runtime-panel" id="app-runtime" hidden>
             <div class="panel-heading"><div><div class="eyebrow">APPLICATION DETAILS</div><h2 id="runtime-app-name">Application</h2><p id="runtime-app-summary">Resources and logs for this application.</p></div><button class="inline-action" id="close-runtime" type="button">Close details</button></div>
             <div class="runtime-actions"><button class="inline-action" id="refresh-runtime" type="button">Refresh resources</button><button class="inline-action" id="refresh-logs" type="button">Refresh logs</button></div>
@@ -175,56 +215,79 @@
             <div class="token-list" id="database-list"><div class="token-empty">Loading databases…</div></div>
           </section>
           <section class="panel databases-panel" id="workspace-storage-page" hidden><div class="panel-heading"><div><div class="eyebrow">PERSISTENT DATA</div><h2>Retained app volumes</h2><p>Volumes stay after app deletion so you can recover data. Purging a volume permanently deletes its contents.</p></div><button class="inline-action" id="refresh-workspace-storage" type="button">Refresh</button></div><div class="token-list" id="workspace-storage-list"><div class="token-empty">Loading retained volumes…</div></div></section>
-          <section class="panel databases-panel" id="tokens-page" hidden>
-            <div class="panel-heading">
+          <!-- Page: API Tokens -->
+          <div class="dashboard-page" id="tokens-page" hidden>
+            <div class="welcome">
               <div>
                 <div class="eyebrow">API ACCESS</div>
-                <h2>Workspace API tokens</h2>
+                <h1>Workspace API tokens</h1>
                 <p>Generate secure tokens for the Crelan CLI, GitHub Actions, GitLab CI, Terraform, and Pulumi.</p>
               </div>
-              <button class="inline-action" id="refresh-tokens" type="button">Refresh</button>
-            </div>
-            <form id="token-create-form" class="database-create-form">
-              <h3>Create a new API token</h3>
-              <div class="deployment-two-col">
-                <div>
-                  <label class="form-label" for="token-name">Token name</label>
-                  <input class="text-input deployment-input" id="token-name" placeholder="github-actions-deployer" maxlength="80" required>
-                </div>
-                <div>
-                  <label class="form-label" for="token-expiry">Expiration</label>
-                  <select class="text-input deployment-input" id="token-expiry">
-                    <option value="30">30 days</option>
-                    <option value="7">7 days</option>
-                    <option value="90">90 days</option>
-                    <option value="365">1 year (365 days)</option>
-                    <option value="">No expiration</option>
-                  </select>
-                </div>
+              <div class="welcome-actions">
+                <button class="inline-action" id="refresh-tokens" type="button" style="font-size: 11px;">Refresh tokens</button>
               </div>
-              <label class="form-label">Access scopes</label>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 8px 0 16px;">
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="deployments:write" checked> <strong>deployments:write</strong> <small style="display:block;color:#667085;">Create/delete apps</small></label>
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="deployments:read" checked> <strong>deployments:read</strong> <small style="display:block;color:#667085;">Read rollout status</small></label>
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="logs:read" checked> <strong>logs:read</strong> <small style="display:block;color:#667085;">Stream container logs</small></label>
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="resources:read" checked> <strong>resources:read</strong> <small style="display:block;color:#667085;">Inspect K8s pods</small></label>
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="usage:read"> <strong>usage:read</strong> <small style="display:block;color:#667085;">Quota consumption</small></label>
-                <label class="checkbox-label"><input type="checkbox" name="token_scope" value="audit:read"> <strong>audit:read</strong> <small style="display:block;color:#667085;">Audit history</small></label>
-              </div>
-              <p class="deployment-form-error" id="token-error" role="alert" hidden></p>
-              <button class="primary-button" id="token-submit" type="submit">Generate API token</button>
-            </form>
-            <div class="database-credentials" id="token-created-card" hidden>
-              <strong>Save your access token now</strong>
-              <p>This token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
-              <code id="token-secret-value" style="user-select: all; word-break: break-all;"></code>
-              <button class="inline-action" id="copy-token-secret" type="button">Copy token</button>
             </div>
-            <h3 style="margin-top: 24px;">Active & revoked tokens</h3>
-            <div class="token-list" id="tokens-list">
-              <div class="token-empty">Loading workspace tokens…</div>
+
+            <div style="display: grid; gap: 20px;">
+              <section class="panel token-builder">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Create a new API token</h2>
+                    <p>Issue an API token with granular access scopes for automated pipelines.</p>
+                  </div>
+                </div>
+                <form id="token-create-form" class="database-create-form" style="border-bottom: 0; padding-bottom: 0;">
+                  <div class="deployment-two-col">
+                    <div>
+                      <label class="form-label" for="token-name">Token name</label>
+                      <input class="text-input deployment-input" id="token-name" placeholder="github-actions-deployer" maxlength="80" required>
+                    </div>
+                    <div>
+                      <label class="form-label" for="token-expiry">Expiration</label>
+                      <select class="text-input deployment-input" id="token-expiry">
+                        <option value="30">30 days</option>
+                        <option value="7">7 days</option>
+                        <option value="90">90 days</option>
+                        <option value="365">1 year (365 days)</option>
+                        <option value="">No expiration</option>
+                      </select>
+                    </div>
+                  </div>
+                  <label class="form-label">Access scopes</label>
+                  <div class="token-scopes-grid">
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="deployments:write" checked> <div><strong>deployments:write</strong> <small>Create, update, and delete apps</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="deployments:read" checked> <div><strong>deployments:read</strong> <small>Read deployment and rollout status</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="logs:read" checked> <div><strong>logs:read</strong> <small>Stream live container logs</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="resources:read" checked> <div><strong>resources:read</strong> <small>Inspect Kubernetes pods & resources</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="usage:read"> <div><strong>usage:read</strong> <small>Read workspace quota consumption</small></div></label>
+                    <label class="token-scope-card"><input type="checkbox" name="token_scope" value="audit:read"> <div><strong>audit:read</strong> <small>Inspect audit log trail</small></div></label>
+                  </div>
+                  <p class="deployment-form-error" id="token-error" role="alert" hidden></p>
+                  <div>
+                    <button class="primary-button" id="token-submit" type="submit" style="width: auto; min-width: 180px;">Generate API token</button>
+                  </div>
+                </form>
+                <div class="database-credentials" id="token-created-card" hidden style="margin-top: 18px;">
+                  <strong>Save your access token now</strong>
+                  <p>This token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
+                  <code id="token-secret-value" style="user-select: all; word-break: break-all; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #b8d4c2; display: block; font-size: 11px; margin: 8px 0;"></code>
+                  <button class="inline-action" id="copy-token-secret" type="button" style="font-weight: 600;">Copy token</button>
+                </div>
+              </section>
+
+              <section class="panel issued-tokens">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Active & revoked tokens</h2>
+                    <p>API tokens registered for this workspace.</p>
+                  </div>
+                </div>
+                <div class="token-list" id="tokens-list">
+                  <div class="token-empty">Loading workspace tokens…</div>
+                </div>
+              </section>
             </div>
-          </section>
+          </div>
           <section class="panel databases-panel" id="services-page" hidden>
             <div class="panel-heading"><div><div class="eyebrow">WORKSPACE ADD-ONS</div><h2>Services & storage</h2><p>Provision managed services and save external connection details, including existing S3-compatible buckets.</p></div><button class="inline-action" id="refresh-services" type="button">Refresh</button></div>
             <div class="service-panels">

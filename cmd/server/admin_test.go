@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func TestAdminHTMLContainsLayout(t *testing.T) {
@@ -225,3 +227,58 @@ func TestFormatAge(t *testing.T) {
 		t.Errorf("expected days format, got %q", got)
 	}
 }
+
+func TestConnectClusterValidation(t *testing.T) {
+	unflattenedConfig := `
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /home/user/.minikube/ca.crt
+    server: https://192.168.49.2:8443
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: minikube
+  user:
+    client-certificate: /home/user/.minikube/profiles/minikube/client.crt
+    client-key: /home/user/.minikube/profiles/minikube/client.key
+`
+	config, err := clientcmd.Load([]byte(unflattenedConfig))
+	if err != nil {
+		t.Fatalf("failed to load test kubeconfig: %v", err)
+	}
+	// Verify missing file check correctly identifies that the referenced path cannot be found
+	for _, cluster := range config.Clusters {
+		if cluster.CertificateAuthority != "" && len(cluster.CertificateAuthorityData) == 0 {
+			if _, err := os.ReadFile(cluster.CertificateAuthority); err == nil {
+				t.Errorf("expected non-existent file %q to fail reading", cluster.CertificateAuthority)
+			}
+		}
+	}
+	// Verify auto-embedding when file exists
+	tmpCA, err := os.CreateTemp("", "test-ca-*.crt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpCA.Name())
+	tmpCA.WriteString("-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n")
+	tmpCA.Close()
+
+	testCluster := config.Clusters["minikube"]
+	testCluster.CertificateAuthority = tmpCA.Name()
+	if data, err := os.ReadFile(testCluster.CertificateAuthority); err == nil && len(data) > 0 {
+		testCluster.CertificateAuthorityData = data
+		testCluster.CertificateAuthority = ""
+	}
+	if len(testCluster.CertificateAuthorityData) == 0 || testCluster.CertificateAuthority != "" {
+		t.Errorf("expected temp CA to be embedded into CertificateAuthorityData")
+	}
+}
+

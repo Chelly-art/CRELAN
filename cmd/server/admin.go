@@ -166,14 +166,33 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, cluster := range config.Clusters {
 		if cluster.CertificateAuthority != "" && len(cluster.CertificateAuthorityData) == 0 {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig references local file %q. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", cluster.CertificateAuthority))
-			return
+			if data, err := os.ReadFile(cluster.CertificateAuthority); err == nil && len(data) > 0 {
+				cluster.CertificateAuthorityData = data
+				cluster.CertificateAuthority = ""
+			} else {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig references local file %q which cannot be found on this server. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", cluster.CertificateAuthority))
+				return
+			}
 		}
 	}
 	for name, authInfo := range config.AuthInfos {
-		if (authInfo.ClientCertificate != "" && len(authInfo.ClientCertificateData) == 0) || (authInfo.ClientKey != "" && len(authInfo.ClientKeyData) == 0) {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig user %q references local cert/key files. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", name))
-			return
+		if authInfo.ClientCertificate != "" && len(authInfo.ClientCertificateData) == 0 {
+			if data, err := os.ReadFile(authInfo.ClientCertificate); err == nil && len(data) > 0 {
+				authInfo.ClientCertificateData = data
+				authInfo.ClientCertificate = ""
+			} else {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig user %q references local certificate file %q which cannot be found on this server. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", name, authInfo.ClientCertificate))
+				return
+			}
+		}
+		if authInfo.ClientKey != "" && len(authInfo.ClientKeyData) == 0 {
+			if data, err := os.ReadFile(authInfo.ClientKey); err == nil && len(data) > 0 {
+				authInfo.ClientKeyData = data
+				authInfo.ClientKey = ""
+			} else {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("Kubeconfig user %q references local key file %q which cannot be found on this server. Please flatten your kubeconfig before pasting: run 'kubectl config view --raw --flatten'", name, authInfo.ClientKey))
+				return
+			}
 		}
 	}
 	restConfig, err := clientcmd.NewNonInteractiveClientConfig(*config, contextName, &clientcmd.ConfigOverrides{}, nil).ClientConfig()
@@ -239,7 +258,7 @@ func (s *adminService) currentKubernetesProvisioner() *kubernetesProvisioner {
 func (s *adminService) servePage(w http.ResponseWriter, r *http.Request) {
 	userID, err := s.auth.sessionUserID(r)
 	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		http.Redirect(w, r, "/login?redirect=/admin", http.StatusSeeOther)
 		return
 	}
 	var email string

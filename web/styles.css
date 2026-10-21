@@ -646,3 +646,110 @@ dialog::backdrop { background: #26334466; }
   .deployment-row { grid-template-columns: minmax(0, 1fr) auto; }
   .deployment-row .deployment-link { grid-column: 1 / -1; }
 }
+
+/* Dashboard Page & Isolated Views */
+.dashboard-page {
+  display: block;
+}
+.dashboard-page[hidden] {
+  display: none !important;
+}
+
+/* Deploy Page Styling */
+.deploy-card-wrapper {
+  max-width: 840px;
+  margin: 0 auto;
+}
+.deploy-card-wrapper .panel {
+  padding: 24px;
+}
+
+/* Private Registry Credential Group */
+.registry-credential-group {
+  margin: 12px 0 6px;
+}
+.registry-credential-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.registry-form-panel {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 16px;
+  border: 1px solid #d4dbe5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+/* API Tokens Page Styling */
+.token-scopes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+.token-scope-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d4dbe5;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.token-scope-card:hover {
+  border-color: #b44b00;
+  background: #fffaf5;
+  box-shadow: 0 1px 3px rgba(180, 75, 0, 0.08);
+}
+.token-scope-card input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: #c45100;
+  width: 15px;
+  height: 15px;
+}
+.token-scope-card div {
+  display: grid;
+  gap: 2px;
+}
+.token-scope-card strong {
+  font-size: 11px;
+  color: #202938;
+}
+.token-scope-card small {
+  font-size: 10px;
+  color: #667085;
+  line-height: 1.35;
+}
+
+.token-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(130px, 1.2fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-top: 1px solid #e6e9ee;
+}
+.token-row:hover {
+  background: #fafbfc;
+}
+.token-row-details strong {
+  font-size: 11px;
+  color: #202938;
+}
+.token-row-details code {
+  color: #667085;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+}
+.token-scope-list {
+  color: #667085;
+  font-size: 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
