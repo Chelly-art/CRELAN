@@ -430,6 +430,9 @@ async function renderCurrentView() {
       case "cluster-connect":
         renderClusterConnect(container);
         break;
+      case "access-control":
+        await renderAccessControl(container);
+        break;
       case "readiness":
         await renderReadiness(container);
         break;
@@ -1934,79 +1937,479 @@ async function renderEfficiency(container) {
 function renderClusterConnect(container) {
   container.innerHTML = `
     <div class="admin-view-header"><div class="admin-view-title"><h1>Connect Deployment Cluster</h1></div></div>
-    <div style="max-width: 760px; background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 9px; padding: 24px; box-shadow: var(--admin-shadow-sm);">
-      <p style="color: var(--admin-text-muted); font-size: 13px; margin-top: 0; line-height: 1.6;">
-        Connect the Kubernetes cluster that customer workspaces deploy to. Paste a self-contained kubeconfig with certificate data embedded.
-      </p>
-      <form id="admin-connect-form">
-        <label class="form-label" for="cluster-kubeconfig">Kubeconfig YAML</label>
-        <textarea class="text-input" id="cluster-kubeconfig" rows="10" placeholder="apiVersion: v1&#10;clusters:&#10;  - cluster:&#10;      server: https://127.0.0.1:6443&#10;..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
-        
-        <label class="form-label" for="cluster-context" style="margin-top: 14px;">Context (optional, defaults to current-context)</label>
-        <input class="text-input" id="cluster-context" placeholder="e.g. minikube, kind-crelan, arn:aws:eks:..." style="width: 100%;">
-        
-        <div id="cluster-connect-state" style="margin: 14px 0;"></div>
-        <button class="admin-btn admin-btn-primary" id="cluster-connect-submit" type="submit" style="padding: 9px 18px; font-size: 12px;">Validate and Connect Cluster</button>
-      </form>
+    <div style="max-width: 820px; background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 9px; padding: 24px; box-shadow: var(--admin-shadow-sm);">
+      <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--admin-border); padding-bottom: 12px;">
+        <button class="admin-btn admin-btn-primary" id="tab-btn-kubeconfig" type="button" style="font-size: 12px;">1. Kubeconfig YAML</button>
+        <button class="admin-btn" id="tab-btn-token" type="button" style="font-size: 12px;">2. ServiceAccount Token</button>
+        <button class="admin-btn" id="tab-btn-agent" type="button" style="font-size: 12px;">3. In-Cluster Agent (Tunnel)</button>
+      </div>
+
+      <!-- Tab 1: Kubeconfig YAML -->
+      <div id="tab-content-kubeconfig">
+        <p style="color: var(--admin-text-muted); font-size: 13px; margin-top: 0; line-height: 1.6;">
+          Connect the Kubernetes cluster that customer workspaces deploy to. Paste a self-contained kubeconfig with certificate data embedded.
+        </p>
+        <form id="admin-connect-form">
+          <label class="form-label" for="cluster-kubeconfig">Kubeconfig YAML</label>
+          <textarea class="text-input" id="cluster-kubeconfig" rows="10" placeholder="apiVersion: v1&#10;clusters:&#10;  - cluster:&#10;      server: https://127.0.0.1:6443&#10;..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
+          
+          <label class="form-label" for="cluster-context" style="margin-top: 14px;">Context (optional, defaults to current-context)</label>
+          <input class="text-input" id="cluster-context" placeholder="e.g. minikube, kind-crelan, arn:aws:eks:..." style="width: 100%;">
+          
+          <div id="cluster-connect-state" style="margin: 14px 0;"></div>
+          <button class="admin-btn admin-btn-primary" id="cluster-connect-submit" type="submit" style="padding: 9px 18px; font-size: 12px;">Validate and Connect Cluster</button>
+        </form>
+      </div>
+
+      <!-- Tab 2: ServiceAccount Token -->
+      <div id="tab-content-token" style="display: none;">
+        <p style="color: var(--admin-text-muted); font-size: 13px; margin-top: 0; line-height: 1.6;">
+          Connect directly via the Kubernetes API server endpoint and a long-lived ServiceAccount Bearer Token. Ideal for avoiding local cert file references and expired cloud CLI plugins.
+        </p>
+
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--admin-border); border-radius: 6px; padding: 12px 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 12px; font-weight: 600; color: #38bdf8;">1-Click Setup: Generate credentials in your cluster</span>
+            <button class="admin-btn admin-btn-xs" id="btn-copy-sa-cmd" type="button">Copy Script</button>
+          </div>
+          <pre id="sa-setup-script" style="font-family: var(--admin-mono); font-size: 11px; margin: 0; color: #cbd5e1; overflow-x: auto; white-space: pre-wrap;">kubectl create serviceaccount crelan-admin -n default && kubectl create clusterrolebinding crelan-admin-binding --clusterrole=cluster-admin --serviceaccount=default:crelan-admin && kubectl create token crelan-admin -n default --duration=8760h</pre>
+        </div>
+
+        <form id="admin-token-connect-form">
+          <label class="form-label" for="token-api-url">Kubernetes API Server URL *</label>
+          <input class="text-input" id="token-api-url" placeholder="https://10.0.0.1:6443 or https://k8s.yourdomain.com:6443" required style="width: 100%;">
+
+          <label class="form-label" for="token-bearer-token" style="margin-top: 14px;">ServiceAccount Bearer Token *</label>
+          <textarea class="text-input" id="token-bearer-token" rows="4" placeholder="eyJhbGciOiJSUzI1NiIs..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
+
+          <label class="form-label" for="token-cluster-name" style="margin-top: 14px;">Context / Cluster Name (optional)</label>
+          <input class="text-input" id="token-cluster-name" placeholder="e.g. production-k8s, staging-eks" style="width: 100%;">
+
+          <label class="form-label" for="token-ca-cert" style="margin-top: 14px;">CA Certificate (optional PEM string or base64)</label>
+          <textarea class="text-input" id="token-ca-cert" rows="2" placeholder="-----BEGIN CERTIFICATE-----&#10;... (Leave empty to use cluster default or skip verify)" style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
+
+          <div style="margin-top: 12px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="token-insecure-verify" checked>
+            <label for="token-insecure-verify" style="font-size: 12px; cursor: pointer;">Skip TLS Certificate Verification (recommended for internal/self-signed IP endpoints)</label>
+          </div>
+
+          <div id="token-connect-state" style="margin: 14px 0;"></div>
+          <button class="admin-btn admin-btn-primary" id="token-connect-submit" type="submit" style="padding: 9px 18px; font-size: 12px;">Validate and Connect with Token</button>
+        </form>
+      </div>
+
+      <!-- Tab 3: In-Cluster Agent (Tunnel) -->
+      <div id="tab-content-agent" style="display: none;">
+        <p style="color: var(--admin-text-muted); font-size: 13px; margin-top: 0; line-height: 1.6;">
+          Ideal for <strong>private VPCs, firewalled clusters, or local clusters (k3s / minikube)</strong> without an inbound public IP or VPN. The agent dials outbound to Crelan.
+        </p>
+
+        <div id="agent-manifest-loading" style="padding: 12px; color: var(--admin-accent); font-size: 12px;">Loading agent configuration…</div>
+        <div id="agent-manifest-view" style="display: none;">
+          <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--admin-border); border-radius: 6px; padding: 14px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <strong style="font-size: 12px; color: #38bdf8;">1-Line Install Command (Run in your cluster terminal)</strong>
+              <button class="admin-btn admin-btn-xs" id="btn-copy-agent-cmd" type="button">Copy Command</button>
+            </div>
+            <code id="agent-install-cmd" style="display: block; font-family: var(--admin-mono); font-size: 11px; color: #f8fafc; background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 4px; overflow-x: auto; word-break: break-all;"></code>
+          </div>
+
+          <details style="margin-top: 12px;">
+            <summary style="font-size: 12px; color: var(--admin-accent); cursor: pointer; font-weight: 600;">View Raw Kubernetes YAML Manifest</summary>
+            <div style="position: relative; margin-top: 8px;">
+              <button class="admin-btn admin-btn-xs" id="btn-copy-agent-yaml" style="position: absolute; top: 8px; right: 8px;" type="button">Copy YAML</button>
+              <pre id="agent-raw-yaml" style="font-family: var(--admin-mono); font-size: 10px; max-height: 250px; overflow-y: auto; background: var(--admin-surface-muted, #0f172a); border: 1px solid var(--admin-border); border-radius: 6px; padding: 12px; color: #cbd5e1;"></pre>
+            </div>
+          </details>
+        </div>
+      </div>
     </div>`;
 
-  $("#admin-connect-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const btn = $("#cluster-connect-submit");
-    const st = $("#cluster-connect-state");
-    btn.disabled = true;
-    st.innerHTML = `<p style="color: var(--admin-accent); font-weight: 600; font-size: 12px; margin: 8px 0;">Connecting to Kubernetes API server and verifying access…</p>`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+  // Tab switching logic
+  const tabKube = $("#tab-btn-kubeconfig");
+  const tabToken = $("#tab-btn-token");
+  const tabAgent = $("#tab-btn-agent");
+  const viewKube = $("#tab-content-kubeconfig");
+  const viewToken = $("#tab-content-token");
+  const viewAgent = $("#tab-content-agent");
+
+  function switchTab(activeBtn, activeView) {
+    [tabKube, tabToken, tabAgent].forEach(b => {
+      b.classList.remove("admin-btn-primary");
+    });
+    activeBtn.classList.add("admin-btn-primary");
+    [viewKube, viewToken, viewAgent].forEach(v => {
+      v.style.display = "none";
+    });
+    activeView.style.display = "block";
+  }
+
+  tabKube.addEventListener("click", () => switchTab(tabKube, viewKube));
+  tabToken.addEventListener("click", () => switchTab(tabToken, viewToken));
+  tabAgent.addEventListener("click", async () => {
+    switchTab(tabAgent, viewAgent);
+    const loading = $("#agent-manifest-loading");
+    const view = $("#agent-manifest-view");
+    if (view.dataset.loaded) return;
     try {
-      const res = await fetch("/api/v1/admin/clusters/connect", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          kubeconfig: $("#cluster-kubeconfig").value,
-          context: $("#cluster-context").value.trim(),
-        }),
-      });
-      clearTimeout(timeoutId);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || ("Connection failed (" + res.status + ")"));
-      const warningHtml = data.persist_warning
-        ? `<p style="font-size: 11px; margin: 6px 0 0; color: var(--admin-amber);">${escapeHTML(data.persist_warning)}</p>`
-        : "";
-      st.innerHTML = `
-        <div style="padding: 14px 16px; background: var(--admin-green-bg); border: 1px solid var(--admin-green-border); border-radius: 6px; color: var(--admin-green); margin: 12px 0;">
-          <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connected successfully to “${escapeHTML(data.context)}”!</strong>
-          <span style="font-size: 12px;">The cluster is active and ready for platform administration and workloads.</span>
-          ${warningHtml}
-        </div>
-        <div style="display: flex; gap: 8px; margin-top: 12px;">
-          <a class="admin-btn admin-btn-primary" href="#pods">View Pods</a>
-          <a class="admin-btn" href="#nodes">View Nodes</a>
-          <a class="admin-btn" href="#overview">Go to Overview</a>
-        </div>
-      `;
-      await loadClusterHeader();
-      await loadNamespacesDropdown();
+      const data = await request("/api/v1/admin/clusters/agent-manifest");
+      $("#agent-install-cmd").textContent = data.install_command;
+      $("#agent-raw-yaml").textContent = data.manifest_yaml;
+      loading.style.display = "none";
+      view.style.display = "block";
+      view.dataset.loaded = "true";
+
+      $("#btn-copy-agent-cmd").onclick = () => {
+        navigator.clipboard.writeText(data.install_command);
+        $("#btn-copy-agent-cmd").textContent = "Copied!";
+        setTimeout(() => { $("#btn-copy-agent-cmd").textContent = "Copy Command"; }, 2000);
+      };
+      $("#btn-copy-agent-yaml").onclick = () => {
+        navigator.clipboard.writeText(data.manifest_yaml);
+        $("#btn-copy-agent-yaml").textContent = "Copied!";
+        setTimeout(() => { $("#btn-copy-agent-yaml").textContent = "Copy YAML"; }, 2000);
+      };
     } catch (err) {
-      clearTimeout(timeoutId);
-      const isTimeout = err.name === "AbortError" || (err.message && err.message.toLowerCase().includes("timeout"));
-      const errMsg = isTimeout
-        ? "Connection attempt timed out after 15 seconds. Ensure the Kubernetes API server URL is reachable from this server and any network/firewall allows access."
-        : err.message;
-      st.innerHTML = `
-        <div style="padding: 14px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 6px; color: var(--admin-red); margin: 12px 0;">
-          <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connection Failed</strong>
-          <span style="font-size: 12px;">${escapeHTML(errMsg)}</span>
-        </div>
-      `;
-    } finally {
-      clearTimeout(timeoutId);
-      btn.disabled = false;
+      loading.textContent = "Could not load agent manifest: " + err.message;
     }
   });
+
+  // Copy helper for SA script
+  const copySaBtn = $("#btn-copy-sa-cmd");
+  if (copySaBtn) {
+    copySaBtn.onclick = () => {
+      navigator.clipboard.writeText($("#sa-setup-script").textContent.trim());
+      copySaBtn.textContent = "Copied!";
+      setTimeout(() => { copySaBtn.textContent = "Copy Script"; }, 2000);
+    };
+  }
+
+  // Handle Tab 1 (Kubeconfig) Submission
+  $("#admin-connect-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleClusterConnectSubmission({
+      method: "kubeconfig",
+      kubeconfig: $("#cluster-kubeconfig").value,
+      context: $("#cluster-context").value.trim(),
+    }, $("#cluster-connect-submit"), $("#cluster-connect-state"));
+  });
+
+  // Handle Tab 2 (Token) Submission
+  $("#admin-token-connect-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await handleClusterConnectSubmission({
+      method: "token",
+      api_server_url: $("#token-api-url").value.trim(),
+      bearer_token: $("#token-bearer-token").value.trim(),
+      context: $("#token-cluster-name").value.trim(),
+      ca_cert: $("#token-ca-cert").value.trim(),
+      insecure_skip_verify: $("#token-insecure-verify").checked,
+    }, $("#token-connect-submit"), $("#token-connect-state"));
+  });
 }
+
+async function handleClusterConnectSubmission(payload, btn, st) {
+  btn.disabled = true;
+  st.innerHTML = `<p style="color: var(--admin-accent); font-weight: 600; font-size: 12px; margin: 8px 0;">Connecting to Kubernetes API server and verifying access…</p>`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch("/api/v1/admin/clusters/connect", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify(payload),
+    });
+    clearTimeout(timeoutId);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ("Connection failed (" + res.status + ")"));
+    const warningHtml = data.persist_warning
+      ? `<p style="font-size: 11px; margin: 6px 0 0; color: var(--admin-amber);">${escapeHTML(data.persist_warning)}</p>`
+      : "";
+    st.innerHTML = `
+      <div style="padding: 14px 16px; background: var(--admin-green-bg); border: 1px solid var(--admin-green-border); border-radius: 6px; color: var(--admin-green); margin: 12px 0;">
+        <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connected successfully to “${escapeHTML(data.context)}”!</strong>
+        <span style="font-size: 12px;">The cluster is active and ready for platform administration and workloads.</span>
+        ${warningHtml}
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <a class="admin-btn admin-btn-primary" href="#pods">View Pods</a>
+        <a class="admin-btn" href="#nodes">View Nodes</a>
+        <a class="admin-btn" href="#overview">Go to Overview</a>
+      </div>
+    `;
+    await loadClusterHeader();
+    await loadNamespacesDropdown();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === "AbortError" || (err.message && err.message.toLowerCase().includes("timeout"));
+    const errMsg = isTimeout
+      ? "Connection attempt timed out after 15 seconds. Ensure the Kubernetes API server URL is reachable from this server and any network/firewall allows access."
+      : err.message;
+    st.innerHTML = `
+      <div style="padding: 14px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 6px; color: var(--admin-red); margin: 12px 0;">
+        <strong style="display: block; font-size: 13px; margin-bottom: 2px;">Connection Failed</strong>
+        <span style="font-size: 12px;">${escapeHTML(errMsg)}</span>
+      </div>
+    `;
+  } finally {
+    clearTimeout(timeoutId);
+    btn.disabled = false;
+  }
+}
+
+// -------------------------------------------------------------
+// Granular Cluster & Resource Access Control UI
+// -------------------------------------------------------------
+
+async function renderAccessControl(container) {
+  container.innerHTML = `<div class="admin-loading-state">Loading team access & permissions…</div>`;
+  try {
+    const data = await request("/api/v1/admin/access/grants");
+    const grants = data.grants || [];
+    const members = data.members || [];
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Cluster & Resource Access Control</h1>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="admin-btn admin-btn-primary" id="btn-toggle-grant-form">+ Grant Permission</button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px;">
+        <div style="background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 8px; padding: 16px;">
+          <span style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Active Granular Grants</span>
+          <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: var(--admin-accent);">${grants.length}</div>
+        </div>
+        <div style="background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 8px; padding: 16px;">
+          <span style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Workspace Members</span>
+          <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: var(--admin-text);">${members.length}</div>
+        </div>
+        <div style="background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 8px; padding: 16px;">
+          <span style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Resource Scopes</span>
+          <div style="font-size: 24px; font-weight: 700; margin-top: 4px; color: var(--admin-green);">6 Types</div>
+          <div style="font-size: 11px; color: var(--admin-text-muted); margin-top: 2px;">Cluster, Deployment, Database, Service, Storage, Settings</div>
+        </div>
+      </div>
+
+      <!-- Add Grant Form Card (Collapsible) -->
+      <div id="grant-form-card" style="display: none; background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">Grant Resource / Cluster Permission</h3>
+        <p style="font-size: 12px; color: var(--admin-text-muted); margin: 0 0 16px 0;">
+          Assign read, write, or admin authority to a team member on specific clusters or components.
+        </p>
+        <form id="create-grant-form">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+            <div>
+              <label class="form-label" for="grant-user-id">Target Member *</label>
+              <select class="text-input" id="grant-user-id" required style="width: 100%;">
+                ${members.map(m => `<option value="${m.user_id}">${escapeHTML(m.name || m.email)} (${m.role})</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="grant-resource-type">Resource Scope *</label>
+              <select class="text-input" id="grant-resource-type" required style="width: 100%;">
+                <option value="cluster">Cluster</option>
+                <option value="deployment">Deployment</option>
+                <option value="database">Database</option>
+                <option value="service">Service</option>
+                <option value="storage">Storage</option>
+                <option value="settings">Settings</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="grant-resource-id">Cluster / Resource Name</label>
+              <input class="text-input" id="grant-resource-id" placeholder="e.g. minikube, prod-cluster, or *" value="*" style="width: 100%;">
+              <span style="font-size: 10px; color: var(--admin-text-muted);">Use '*' for all resources of this type</span>
+            </div>
+            <div>
+              <label class="form-label" for="grant-permission">Permission Level *</label>
+              <select class="text-input" id="grant-permission" required style="width: 100%;">
+                <option value="read">Read-Only (Viewer)</option>
+                <option value="write" selected>Read & Write (Developer / Operator)</option>
+                <option value="admin">Full Administrative Control (Admin)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 16px; align-items: center;">
+            <button class="admin-btn admin-btn-primary" type="submit">Save Access Grant</button>
+            <button class="admin-btn" type="button" id="btn-cancel-grant-form">Cancel</button>
+            <span id="grant-form-msg" style="font-size: 12px; margin-left: 10px;"></span>
+          </div>
+        </form>
+      </div>
+
+      <!-- Live Access Tester -->
+      <div style="background: var(--admin-surface); border: 1px solid var(--admin-border); border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 600;">Live Access Tester & Validator</h3>
+        <p style="font-size: 12px; color: var(--admin-text-muted); margin: 0 0 14px 0;">
+          Test whether a user is authorized to perform an action on a specific cluster or resource in real time.
+        </p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+          <div style="flex: 1; min-width: 160px;">
+            <label class="form-label" style="font-size: 11px;">User</label>
+            <select class="text-input" id="check-user-select" style="width: 100%; padding: 6px 10px; font-size: 12px;">
+              ${members.map(m => `<option value="${m.user_id}">${escapeHTML(m.name || m.email)} (${m.role})</option>`).join("")}
+            </select>
+          </div>
+          <div style="flex: 1; min-width: 130px;">
+            <label class="form-label" style="font-size: 11px;">Resource Type</label>
+            <select class="text-input" id="check-resource-type" style="width: 100%; padding: 6px 10px; font-size: 12px;">
+              <option value="cluster">Cluster</option>
+              <option value="deployment">Deployment</option>
+              <option value="database">Database</option>
+              <option value="service">Service</option>
+              <option value="storage">Storage</option>
+              <option value="settings">Settings</option>
+            </select>
+          </div>
+          <div style="flex: 1; min-width: 140px;">
+            <label class="form-label" style="font-size: 11px;">Target Scope / Name</label>
+            <input class="text-input" id="check-resource-id" placeholder="e.g. minikube or *" value="*" style="width: 100%; padding: 6px 10px; font-size: 12px;">
+          </div>
+          <div style="flex: 1; min-width: 120px;">
+            <label class="form-label" style="font-size: 11px;">Required Action</label>
+            <select class="text-input" id="check-perm-verb" style="width: 100%; padding: 6px 10px; font-size: 12px;">
+              <option value="read">read (inspect)</option>
+              <option value="write">write (mutate/deploy)</option>
+              <option value="admin">admin (manage)</option>
+            </select>
+          </div>
+          <button class="admin-btn admin-btn-primary" id="btn-run-access-check" style="height: 33px; font-size: 12px;">Run Test</button>
+        </div>
+        <div id="check-result-box" style="margin-top: 12px; display: none;"></div>
+      </div>
+
+      <!-- Active Grants Table -->
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Resource Scope</th>
+              <th>Target / Cluster Name</th>
+              <th>Permission Level</th>
+              <th>Granted At</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${grants.length === 0 ? `
+              <tr><td colspan="6" style="text-align: center; color: var(--admin-text-muted); padding: 24px;">No granular access grants configured. Workspace baseline roles (Owner, Developer, Viewer) apply across all clusters.</td></tr>
+            ` : grants.map(g => `
+              <tr>
+                <td class="admin-table-name">
+                  <strong>${escapeHTML(g.user_name || "User #" + g.user_id)}</strong>
+                  <div style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(g.user_email)}</div>
+                </td>
+                <td><span class="admin-badge" style="font-family: var(--admin-mono);">${escapeHTML(g.resource_type)}</span></td>
+                <td><code style="font-family: var(--admin-mono); font-size: 11px; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px;">${escapeHTML(g.resource_id)}</code></td>
+                <td>
+                  <span class="admin-badge ${g.permission === 'admin' ? 'admin-badge-danger' : g.permission === 'write' ? 'admin-badge-warning' : 'admin-badge-ready'}">
+                    ${escapeHTML(g.permission.toUpperCase())}
+                  </span>
+                </td>
+                <td style="font-size: 11px; color: var(--admin-text-muted);">${g.created_at ? escapeHTML(g.created_at.slice(0, 19).replace("T", " ")) : "-"}</td>
+                <td style="text-align: right;">
+                  <button class="admin-btn admin-btn-xs admin-btn-danger" onclick="revokeAccessGrant(${g.id})">Revoke</button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Toggle Grant Form
+    const grantCard = $("#grant-form-card");
+    $("#btn-toggle-grant-form").onclick = () => {
+      grantCard.style.display = grantCard.style.display === "none" ? "block" : "none";
+    };
+    $("#btn-cancel-grant-form").onclick = () => {
+      grantCard.style.display = "none";
+    };
+
+    // Handle Create Grant Submission
+    $("#create-grant-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const msg = $("#grant-form-msg");
+      msg.style.color = "var(--admin-accent)";
+      msg.textContent = "Saving grant…";
+      try {
+        const res = await fetch("/api/v1/admin/access/grants", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: parseInt($("#grant-user-id").value, 10),
+            resource_type: $("#grant-resource-type").value,
+            resource_id: $("#grant-resource-id").value.trim(),
+            permission: $("#grant-permission").value,
+          }),
+        });
+        const respData = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(respData.error || ("Failed (" + res.status + ")"));
+        msg.style.color = "var(--admin-green)";
+        msg.textContent = "Saved successfully!";
+        setTimeout(() => renderAccessControl(container), 800);
+      } catch (err) {
+        msg.style.color = "var(--admin-red)";
+        msg.textContent = err.message;
+      }
+    };
+
+    // Live Access Tester
+    $("#btn-run-access-check").onclick = async () => {
+      const resultBox = $("#check-result-box");
+      resultBox.style.display = "block";
+      resultBox.innerHTML = `<span style="font-size: 12px; color: var(--admin-accent);">Evaluating access policy…</span>`;
+      try {
+        const checkRes = await fetch("/api/v1/admin/access/check", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: parseInt($("#check-user-select").value, 10),
+            resource_type: $("#check-resource-type").value,
+            resource_id: $("#check-resource-id").value.trim(),
+            required_permission: $("#check-perm-verb").value,
+          }),
+        });
+        const evalData = await checkRes.json().catch(() => ({}));
+        if (!checkRes.ok) throw new Error(evalData.error || "Evaluation failed");
+        resultBox.innerHTML = `
+          <div style="padding: 10px 14px; border-radius: 6px; font-size: 12px; background: ${evalData.allowed ? "var(--admin-green-bg)" : "var(--admin-red-bg)"}; border: 1px solid ${evalData.allowed ? "var(--admin-green-border)" : "var(--admin-red-border)"}; color: ${evalData.allowed ? "var(--admin-green)" : "var(--admin-red)"};">
+            <strong>${evalData.allowed ? "✓ ACCESS PERMITTED" : "✗ ACCESS DENIED"}</strong>: ${escapeHTML(evalData.reason)}
+          </div>
+        `;
+      } catch (err) {
+        resultBox.innerHTML = `<div style="color: var(--admin-red); font-size: 12px;">Error evaluating access: ${escapeHTML(err.message)}</div>`;
+      }
+    };
+
+  } catch (err) {
+    container.innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Failed to load access control: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+window.revokeAccessGrant = async function(grantID) {
+  if (!confirm("Are you sure you want to revoke this access grant?")) return;
+  try {
+    const res = await fetch("/api/v1/admin/access/grants/" + grantID, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Revoke failed");
+    renderAccessControl($("#admin-content-area"));
+  } catch (err) {
+    alert("Could not revoke access grant: " + err.message);
+  }
+};
 
 async function renderReadiness(container) {
   const readiness = await request("/api/v1/admin/readiness");
