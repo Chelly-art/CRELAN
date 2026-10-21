@@ -120,3 +120,57 @@ func TestRunDoesNotPrintWorkspaceToken(t *testing.T) {
 		t.Fatal("CLI printed the workspace token")
 	}
 }
+
+func TestRollbackDeployment(t *testing.T) {
+	t.Setenv("CRELAN_TOKEN", "crl_example")
+	var requestedRunID int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/deployments/42/rollback" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var payload struct {
+			RunID int64 `json:"run_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode rollback payload: %v", err)
+		}
+		requestedRunID = payload.RunID
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":42,"status":"queued","status_message":"Rollback queued"}`))
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"rollback", "42", "--run-id", "12", "--api-url", server.URL}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("rollback error = %v", err)
+	}
+	if requestedRunID != 12 {
+		t.Fatalf("requested run_id = %d, want 12", requestedRunID)
+	}
+	if !strings.Contains(stdout.String(), "Rollback queued") {
+		t.Fatalf("unexpected output: %s", stdout.String())
+	}
+}
+
+func TestDeploymentEvents(t *testing.T) {
+	t.Setenv("CRELAN_TOKEN", "crl_example")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/deployments/42/events" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"reason":"BackOff","message":"Back-off restarting failed container"}]`))
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"events", "42", "--api-url", server.URL}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("events error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "BackOff") {
+		t.Fatalf("unexpected output: %s", stdout.String())
+	}
+}

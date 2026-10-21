@@ -501,7 +501,9 @@ pulumi up</code></pre>
           <tr><td><code>crelan deploy --name APP --repo URL</code></td><td>Build and deploy from a GitHub repository.</td><td><code>deployments:write</code></td></tr>
           <tr><td><code>crelan deployments</code> (or <code>list</code>)</td><td>List all workspace deployments.</td><td><code>deployments:read</code></td></tr>
           <tr><td><code>crelan status ID</code></td><td>Check current application deployment status.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>crelan rollback ID [--run-id N]</code></td><td>Roll back application to previous or specified run.</td><td><code>deployments:write</code></td></tr>
           <tr><td><code>crelan history ID</code></td><td>Inspect prior deployment runs and rollout history.</td><td><code>deployments:read</code></td></tr>
+          <tr><td><code>crelan events ID</code></td><td>Inspect real-time Kubernetes pod warning events.</td><td><code>resources:read</code>, <code>deployments:read</code></td></tr>
           <tr><td><code>crelan logs ID</code></td><td>Read real-time or recent application logs.</td><td><code>logs:read</code></td></tr>
           <tr><td><code>crelan resources ID</code></td><td>Read application runtime and configuration metadata.</td><td><code>resources:read</code></td></tr>
           <tr><td><code>crelan delete ID</code></td><td>Delete an application deployment.</td><td><code>deployments:write</code></td></tr>

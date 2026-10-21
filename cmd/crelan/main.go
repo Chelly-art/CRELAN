@@ -66,8 +66,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return deleteDeployment(client, base, token, commandArgs, stdout)
 	case "status":
 		return getDeployment(client, base, token, commandArgs, stdout)
+	case "rollback":
+		return rollbackDeployment(client, base, token, commandArgs, stdout)
 	case "history":
 		return deploymentSubresource(client, base, token, commandArgs, "history", stdout)
+	case "events":
+		return deploymentSubresource(client, base, token, commandArgs, "events", stdout)
 	case "logs":
 		return deploymentSubresource(client, base, token, commandArgs, "logs", stdout)
 	case "resources":
@@ -251,6 +255,35 @@ func deleteDeployment(client *http.Client, base, token string, args []string, st
 	return nil
 }
 
+func rollbackDeployment(client *http.Client, base, token string, args []string, stdout io.Writer) error {
+	if len(args) < 1 {
+		return errors.New("usage: crelan rollback DEPLOYMENT_ID [--run-id RUN_ID]")
+	}
+	id, err := parseDeploymentID(args[0])
+	if err != nil {
+		return err
+	}
+	flags := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	runID := flags.Int64("run-id", 0, "previous run ID to roll back to")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	payload := map[string]int64{}
+	if *runID > 0 {
+		payload["run_id"] = *runID
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	var response any
+	err = doAPIRequest(client, http.MethodPost, base+"/api/v1/deployments/"+url.PathEscape(strconv.FormatInt(id, 10))+"/rollback", token, body, &response)
+	if err != nil {
+		return err
+	}
+	return printJSON(stdout, response)
+}
+
 func doAPIRequest(client *http.Client, method, endpoint, token string, body []byte, result any) error {
 	var reader io.Reader
 	if body != nil {
@@ -328,7 +361,9 @@ func printUsage(w io.Writer) {
   crelan deploy --name APP (--repo https://github.com/OWNER/REPO | --image IMAGE) [--branch BRANCH] [--dockerfile PATH] [--port PORT]
   crelan deployments
   crelan status DEPLOYMENT_ID
+  crelan rollback DEPLOYMENT_ID [--run-id RUN_ID]
   crelan history DEPLOYMENT_ID
+  crelan events DEPLOYMENT_ID
   crelan logs DEPLOYMENT_ID
   crelan resources DEPLOYMENT_ID
   crelan delete DEPLOYMENT_ID
