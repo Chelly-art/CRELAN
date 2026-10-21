@@ -75,8 +75,70 @@ function renderTable(container, columns, rows, emptyMessage) {
   container.append(table);
 }
 
+async function loadClusterContexts() {
+  const select = $("#app-cluster");
+  if (!select) return;
+  try {
+    const data = await api("/api/v1/cluster/contexts");
+    const contexts = data?.contexts || [];
+    const active = data?.active || "";
+    select.replaceChildren();
+
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = active ? `Primary: ${active} (Default)` : "Default cluster (platform managed)";
+    select.append(defaultOption);
+
+    contexts.forEach((ctx) => {
+      if (ctx && ctx !== active) {
+        const opt = document.createElement("option");
+        opt.value = ctx;
+        opt.textContent = ctx;
+        select.append(opt);
+      }
+    });
+  } catch (err) {
+    console.debug("loadClusterContexts:", err);
+  }
+}
+
+async function checkGitHubInstallation() {
+  const badge = $("#github-connected-badge");
+  const connectBtn = $("#github-connect-btn");
+  const accountName = $("#github-account-name");
+  const autoDeployHintText = $("#github-app-status-text");
+  const autoDeployHintLink = $("#github-app-connect-link");
+  if (!badge && !connectBtn) return;
+
+  try {
+    const data = await api("/api/v1/github/installation");
+    if (data?.connected && data?.account) {
+      if (accountName) accountName.textContent = "@" + data.account;
+      if (badge) badge.hidden = false;
+      if (connectBtn) connectBtn.hidden = true;
+      if (autoDeployHintText) {
+        autoDeployHintText.textContent = `✓ Auto-deploy active: GitHub connected (@${data.account}). Pushes to this branch will automatically trigger rolling deployments.`;
+        autoDeployHintText.style.color = "#167044";
+      }
+      if (autoDeployHintLink) autoDeployHintLink.hidden = true;
+    } else {
+      if (badge) badge.hidden = true;
+      if (connectBtn) connectBtn.hidden = false;
+      if (autoDeployHintText) {
+        autoDeployHintText.textContent = "💡 Connect GitHub to automatically trigger zero-downtime deployments on git push.";
+        autoDeployHintText.style.color = "#667085";
+      }
+      if (autoDeployHintLink) autoDeployHintLink.hidden = false;
+    }
+  } catch (err) {
+    if (badge) badge.hidden = true;
+    if (connectBtn) connectBtn.hidden = false;
+  }
+}
+
 async function loadDeployments() {
   const list = $("#deployment-list");
+  checkGitHubInstallation();
   $("#deployment-status").textContent = "Loading deployments…";
   try {
     const deployments = await api("/api/v1/deployments");
@@ -97,6 +159,12 @@ async function loadDeployments() {
       const source = document.createElement("code");
       source.textContent = item.image ? `Image: ${item.image}` : (item.repository_url || "Container application");
       details.append(name, source);
+      if (item.cluster_context) {
+        const clusterTag = document.createElement("small");
+        clusterTag.style.cssText = "display: block; color: #667085; font-size: 10px; margin-top: 2px;";
+        clusterTag.textContent = `Target: ${item.cluster_context}`;
+        details.append(clusterTag);
+      }
       const status = document.createElement("span");
       status.className = `token-row-state ${["ready", "running"].includes(item.status) ? "active" : ""}`;
       status.textContent = item.status;
@@ -166,6 +234,9 @@ $("#deployment-form").addEventListener("submit", async (event) => {
   const payload = Object.fromEntries(new FormData(form));
   const sourceType = payload.source_type;
   delete payload.source_type;
+  if (!payload.cluster_context) {
+    delete payload.cluster_context;
+  }
   if (sourceType === "image") {
     payload.port = Number(payload.image_port);
     delete payload.image_port;
@@ -1105,6 +1176,8 @@ function renderRoute(route) {
   // Trigger page-specific data fetching
   if (activeRoute === "deploy") {
     $("#app-name")?.focus();
+    loadClusterContexts();
+    checkGitHubInstallation();
   } else if (activeRoute === "tokens") {
     loadTokens();
   } else if (activeRoute === "databases") {
@@ -1119,6 +1192,7 @@ function renderRoute(route) {
     loadWorkspaceUsage();
   } else if (activeRoute === "applications") {
     loadDeployments();
+    checkGitHubInstallation();
   }
 }
 
@@ -1281,6 +1355,8 @@ $("#signout-button").addEventListener("click", async () => {
 loadAccount().catch((cause) => {
   if (cause.message !== "Sign in required") window.location.assign("/login");
 });
+loadClusterContexts();
+checkGitHubInstallation();
 renderRoute();
 
 
