@@ -18,6 +18,8 @@ import (
 
 	assets "crelan"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -47,9 +49,14 @@ func TestAdminHTMLContainsLayout(t *testing.T) {
 		"admin-rollback-modal",
 		"admin-drain-modal",
 		"admin-webhook-modal",
+		"admin-debug-modal",
 		"data-view=\"certificates\"",
 		"data-view=\"webhooks\"",
 		"data-view=\"dangling-configs\"",
+		"data-view=\"event-storm\"",
+		"data-view=\"autoscaling\"",
+		"data-view=\"gitops-drift\"",
+		"data-view=\"backup-radar\"",
 	}
 	for _, marker := range expectedMarkers {
 		if !strings.Contains(content, marker) {
@@ -1288,6 +1295,249 @@ func TestDanglingConfigReferencesScanner(t *testing.T) {
 	}
 	if !foundSecret || !foundCM {
 		t.Errorf("missing expected dangling issues: %+v", report.Issues)
+	}
+}
+
+func TestEphemeralDebugContainerLaunch(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "distroless-app",
+			Namespace: "production",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "node-worker-1",
+			Containers: []corev1.Container{
+				{Name: "app", Image: "gcr.io/distroless/static:nonroot"},
+			},
+		},
+	}
+	client := k8sfake.NewSimpleClientset(pod)
+	ctx := context.Background()
+
+	req := ephemeralDebugRequest{
+		Image:   "nicolaka/netshoot",
+		Command: []string{"/bin/sh"},
+	}
+	resp, err := injectEphemeralDebugContainer(ctx, client, "production", "distroless-app", req)
+	if err != nil {
+		t.Fatalf("injectEphemeralDebugContainer failed: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected debug container injection to succeed, got %+v", resp)
+	}
+	if resp.Namespace != "production" {
+		t.Errorf("expected namespace production, got %s", resp.Namespace)
+	}
+	if !strings.HasPrefix(resp.ContainerName, "debug-") {
+		t.Errorf("expected containerName to start with debug-, got %s", resp.ContainerName)
+	}
+}
+
+func TestEventStormClusteringAndVelocity(t *testing.T) {
+	now := metav1.Now()
+	ev1 := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "ev-1", Namespace: "prod"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api-1", Namespace: "prod"},
+		Reason:         "BackOff",
+		Type:           "Warning",
+		Count:          15,
+		LastTimestamp:  now,
+		Message:        "Back-off restarting failed container",
+	}
+	ev2 := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "ev-2", Namespace: "prod"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api-2", Namespace: "prod"},
+		Reason:         "BackOff",
+		Type:           "Warning",
+		Count:          10,
+		LastTimestamp:  now,
+		Message:        "Back-off restarting failed container",
+	}
+	ev3 := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "ev-3", Namespace: "prod"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "api-3", Namespace: "prod"},
+		Reason:         "Scheduled",
+		Type:           "Normal",
+		Count:          1,
+		LastTimestamp:  now,
+		Message:        "Successfully assigned prod/api-3 to node-1",
+	}
+
+	client := k8sfake.NewSimpleClientset(ev1, ev2, ev3)
+	ctx := context.Background()
+
+	report, err := calculateEventStormClusters(ctx, client)
+	if err != nil {
+		t.Fatalf("calculateEventStormClusters failed: %v", err)
+	}
+	if report.TotalEvents != 26 {
+		t.Fatalf("expected 26 total events, got %d", report.TotalEvents)
+	}
+	if report.WarningEvents != 25 {
+		t.Errorf("expected 25 warning events, got %d", report.WarningEvents)
+	}
+	if len(report.TopClusters) == 0 {
+		t.Fatalf("expected top clusters to be populated")
+	}
+	top := report.TopClusters[0]
+	if top.Reason != "BackOff" || top.Occurrences != 25 {
+		t.Errorf("unexpected top cluster: %+v", top)
+	}
+	if top.AnomalyScore < 70 {
+		t.Errorf("expected high anomaly score for BackOff loop, got %d", top.AnomalyScore)
+	}
+}
+
+func TestAutoscalingHPAAnalysis(t *testing.T) {
+	minR := int32(2)
+	maxR := int32(10)
+	targetUtil := int32(80)
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-api-hpa",
+			Namespace: "default",
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				Kind: "Deployment",
+				Name: "web-api",
+			},
+			MinReplicas: &minR,
+			MaxReplicas: maxR,
+			Metrics: []autoscalingv2.MetricSpec{
+				{
+					Type: autoscalingv2.ResourceMetricSourceType,
+					Resource: &autoscalingv2.ResourceMetricSource{
+						Name: corev1.ResourceCPU,
+						Target: autoscalingv2.MetricTarget{
+							Type:               autoscalingv2.UtilizationMetricType,
+							AverageUtilization: &targetUtil,
+						},
+					},
+				},
+			},
+		},
+		Status: autoscalingv2.HorizontalPodAutoscalerStatus{
+			CurrentReplicas: 10,
+			DesiredReplicas: 10,
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(hpa)
+	ctx := context.Background()
+
+	report, err := fetchAutoscalingAnalysis(ctx, client)
+	if err != nil {
+		t.Fatalf("fetchAutoscalingAnalysis failed: %v", err)
+	}
+	if report.TotalHPAs != 1 {
+		t.Fatalf("expected 1 HPA, got %d", report.TotalHPAs)
+	}
+	if report.ThrottledHPAs != 1 {
+		t.Errorf("expected 1 throttled HPA (pegged at max), got %d", report.ThrottledHPAs)
+	}
+	item := report.HPAs[0]
+	if item.Status != "At Max Limit" {
+		t.Errorf("expected status 'At Max Limit', got %s", item.Status)
+	}
+	if item.Headroom != 0 {
+		t.Errorf("expected 0 headroom at max limit, got %d", item.Headroom)
+	}
+}
+
+func TestGitOpsDriftDetectionAndReconcile(t *testing.T) {
+	threeReplicas := int32(3)
+	sixReplicas := int32(6)
+	lastApplied := `{
+		"kind": "Deployment",
+		"apiVersion": "apps/v1",
+		"metadata": {"name": "frontend-api", "namespace": "default"},
+		"spec": {
+			"replicas": 3,
+			"template": {
+				"spec": {
+					"containers": [{"name": "app", "image": "nginx:1.20-alpine"}]
+				}
+			}
+		}
+	}`
+
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "frontend-api",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"kubectl.kubernetes.io/last-applied-configuration": lastApplied,
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &sixReplicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app", Image: "nginx:1.21-alpine"},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(dep)
+	ctx := context.Background()
+
+	// 1. Scan Drift
+	report, err := scanGitOpsDrift(ctx, client)
+	if err != nil {
+		t.Fatalf("scanGitOpsDrift failed: %v", err)
+	}
+	if report.DriftedCount != 1 {
+		t.Fatalf("expected 1 drifted deployment, got %d", report.DriftedCount)
+	}
+	if len(report.DriftItems) != 2 {
+		t.Fatalf("expected 2 drift items (replicas + image), got %d", len(report.DriftItems))
+	}
+
+	// 2. Reconcile Drift
+	err = reconcileGitOpsDrift(ctx, client, "default", "Deployment", "frontend-api")
+	if err != nil {
+		t.Fatalf("reconcileGitOpsDrift failed: %v", err)
+	}
+
+	reconciledDep, _ := client.AppsV1().Deployments("default").Get(ctx, "frontend-api", metav1.GetOptions{})
+	if *reconciledDep.Spec.Replicas != threeReplicas {
+		t.Errorf("expected replicas reconciled to 3, got %d", *reconciledDep.Spec.Replicas)
+	}
+	if reconciledDep.Spec.Template.Spec.Containers[0].Image != "nginx:1.20-alpine" {
+		t.Errorf("expected image reconciled to nginx:1.20-alpine, got %s", reconciledDep.Spec.Template.Spec.Containers[0].Image)
+	}
+}
+
+func TestDisasterRecoveryRadar(t *testing.T) {
+	pvc1 := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "postgres-pvc", Namespace: "db"},
+	}
+	cron := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{Name: "velero-backup-daily", Namespace: "kube-system"},
+		Spec: batchv1.CronJobSpec{
+			Schedule: "0 2 * * *",
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(pvc1, cron)
+	ctx := context.Background()
+
+	dr, err := scanDisasterRecoveryStatus(ctx, client)
+	if err != nil {
+		t.Fatalf("scanDisasterRecoveryStatus failed: %v", err)
+	}
+	if dr.TotalPVCs != 1 {
+		t.Fatalf("expected 1 total PVC, got %d", dr.TotalPVCs)
+	}
+	if dr.Status != "PROTECTED" {
+		t.Errorf("expected PROTECTED status due to backup cron, got %s", dr.Status)
+	}
+	if dr.ReadinessScore < 70 {
+		t.Errorf("expected high readiness score, got %d", dr.ReadinessScore)
 	}
 }
 

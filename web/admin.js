@@ -286,6 +286,18 @@ async function renderCurrentView() {
       case "dangling-configs":
         await renderDanglingConfigs(container);
         break;
+      case "event-storm":
+        await renderEventStorm(container);
+        break;
+      case "autoscaling":
+        await renderAutoscaling(container);
+        break;
+      case "gitops-drift":
+        await renderGitOpsDrift(container);
+        break;
+      case "backup-radar":
+        await renderDisasterRecoveryRadar(container);
+        break;
       case "cluster-connect":
         renderClusterConnect(container);
         break;
@@ -637,6 +649,7 @@ async function renderPods(container) {
                     <a class="admin-action-btn" href="#war-room?ns=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}" onclick="event.stopPropagation();" title="Open Incident War Room">War Room</a>
                     <button class="admin-action-btn" onclick="event.stopPropagation(); openPodLogs('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="View Container Logs">Logs</button>
                     <button class="admin-action-btn" onclick="event.stopPropagation(); openPodTerminal('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Interactive Terminal">Exec</button>
+                    <button class="admin-action-btn" onclick="event.stopPropagation(); openEphemeralDebugModal('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Inject Ephemeral Debug Container (netshoot, alpine, etc)">Debug</button>
                     <button class="admin-action-btn btn-delete" onclick="event.stopPropagation(); confirmDeletePod('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Delete Pod">Delete</button>
                   </div>
                 </td>
@@ -1913,8 +1926,9 @@ async function openInspector(kind, namespace, name) {
     const btnDiag = createBtn("Diagnose", "", () => openAIDiagnosis(namespace, name));
     const btnLogs = createBtn("Logs", "", () => openPodLogs(namespace, name));
     const btnExec = createBtn("Terminal", "", () => openPodTerminal(namespace, name));
+    const btnDebug = createBtn("Debug Shell", "", () => openEphemeralDebugModal(namespace, name));
     const btnDel = createBtn("Delete", "admin-btn-danger", () => confirmDeletePod(namespace, name));
-    toolbar.append(btnDiag, btnLogs, btnExec, btnDel);
+    toolbar.append(btnDiag, btnLogs, btnExec, btnDebug, btnDel);
   } else if (kind === "deployment") {
     const btnRestart = createBtn("Rollout Restart", "", () => triggerRolloutRestart(namespace, name));
     const btnScale = createBtn("Scale", "", () => openScaleModal(namespace, name, 1));
@@ -2627,6 +2641,20 @@ function setupEventListeners() {
   $("#webhook-modal-close")?.addEventListener("click", () => $("#admin-webhook-modal").classList.remove("open"));
   $("#webhook-modal-dismiss")?.addEventListener("click", () => $("#admin-webhook-modal").classList.remove("open"));
   $("#webhook-form")?.addEventListener("submit", handleCreateWebhook);
+
+  // Ephemeral Debug Modal
+  $("#debug-modal-close")?.addEventListener("click", closeEphemeralDebugModal);
+  $("#debug-modal-dismiss")?.addEventListener("click", closeEphemeralDebugModal);
+  $("#debug-image-select")?.addEventListener("change", (e) => {
+    const customWrap = $("#debug-custom-image-wrap");
+    if (e.target.value === "custom") {
+      customWrap.hidden = false;
+      $("#debug-custom-image-input").focus();
+    } else {
+      customWrap.hidden = true;
+    }
+  });
+  $("#debug-form")?.addEventListener("submit", handleLaunchDebugContainer);
 
   // Sign out
   $("#admin-signout").addEventListener("click", async () => {
@@ -3947,6 +3975,575 @@ async function renderDanglingConfigs(container) {
               </td>
               <td style="font-family: var(--admin-mono);">${issue.missing_key ? escapeHTML(issue.missing_key) : `<span style="color: var(--admin-text-muted);">(entire object missing)</span>`}</td>
               <td style="font-size: 11px; color: var(--admin-text-muted); max-width: 320px;">${escapeHTML(issue.remediation)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------------
+// Next-Gen Capability 1: In-Browser Ephemeral Debug Containers
+// -------------------------------------------------------------
+
+function openEphemeralDebugModal(namespace, podName) {
+  const modal = $("#admin-debug-modal");
+  if (!modal) return;
+  $("#debug-target-pod").value = `${namespace}/${podName}`;
+  $("#debug-target-container").value = "";
+  $("#debug-image-select").value = "nicolaka/netshoot";
+  $("#debug-custom-image-wrap").hidden = true;
+  $("#debug-custom-image-input").value = "";
+  modal.dataset.namespace = namespace;
+  modal.dataset.pod = podName;
+  modal.classList.add("open");
+}
+
+function closeEphemeralDebugModal() {
+  $("#admin-debug-modal")?.classList.remove("open");
+}
+
+async function handleLaunchDebugContainer(e) {
+  e.preventDefault();
+  const modal = $("#admin-debug-modal");
+  const ns = modal.dataset.namespace;
+  const pod = modal.dataset.pod;
+  const selectVal = $("#debug-image-select").value;
+  let image = selectVal;
+  if (selectVal === "custom") {
+    image = $("#debug-custom-image-input").value.trim();
+    if (!image) {
+      alert("Please provide a valid custom image URI.");
+      return;
+    }
+  }
+  const targetContainer = $("#debug-target-container").value.trim();
+  const launchBtn = $("#debug-modal-launch-btn");
+  launchBtn.disabled = true;
+  launchBtn.textContent = "Injecting Debug Container…";
+
+  try {
+    const resp = await request(`/api/v1/admin/pods/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}/debug`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: image,
+        target_container: targetContainer,
+      }),
+    });
+    closeEphemeralDebugModal();
+    // Directly attach interactive terminal to the newly injected container
+    openPodTerminal(ns, resp.pod_name, resp.container_name);
+  } catch (err) {
+    alert("Debug container injection failed: " + err.message);
+  } finally {
+    launchBtn.disabled = false;
+    launchBtn.textContent = "Launch Debug Shell";
+  }
+}
+
+// -------------------------------------------------------------
+// Next-Gen Capability 2: Live Event Storm & Velocity Radar
+// -------------------------------------------------------------
+
+async function renderEventStorm(container) {
+  let storm;
+  try {
+    storm = await request("/api/v1/admin/events/storm");
+  } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header"><div class="admin-view-title"><h1>Event Storm Radar</h1></div></div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 16px;">
+            <h3>No Kubernetes Cluster Connected</h3>
+            <p style="color: var(--admin-text-muted); margin: 8px auto 16px;">Connect a cluster to monitor cluster event storms and velocity anomalies.</p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>`;
+      return;
+    }
+    throw err;
+  }
+
+  const clusters = storm.clusters || [];
+  let statusBadge = `<span class="admin-storm-badge normal">NORMAL VELOCITY</span>`;
+  if (storm.status === "critical") statusBadge = `<span class="admin-storm-badge critical">CRITICAL STORM</span>`;
+  else if (storm.status === "warning") statusBadge = `<span class="admin-storm-badge warning">ELEVATED NOISE</span>`;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Live Event Storm & Anomaly Radar</h1>
+        <span class="admin-view-count">${clusters.length} Clusters</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderEventStorm($('#admin-content-area'))">Refresh Radar</button>
+      </div>
+    </div>
+
+    <!-- Storm Stat Cards -->
+    <div class="admin-storm-grid">
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Status</div>
+        <div style="margin: 8px 0;">${statusBadge}</div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Anomaly Score: <strong>${storm.anomaly_score}/100</strong></div>
+      </div>
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Cluster Velocity</div>
+        <div style="font-size: 26px; font-weight: 800; color: ${storm.velocity_per_minute > 20 ? "var(--admin-red)" : "var(--admin-accent)"}; margin: 4px 0;">
+          ${storm.velocity_per_minute.toFixed(1)} <span style="font-size: 13px; font-weight: 500; color: var(--admin-text-muted);">events / min</span>
+        </div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Total Ingestion Window: <strong>${storm.total_events} events</strong></div>
+      </div>
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Event Suppression</div>
+        <div style="font-size: 26px; font-weight: 800; color: var(--admin-text); margin: 4px 0;">
+          ${clusters.length > 0 ? ((1 - clusters.length / Math.max(storm.total_events, 1)) * 100).toFixed(0) : 100}%
+        </div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Noise reduction ratio via root-clustering</div>
+      </div>
+    </div>
+
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Anomaly Score</th>
+            <th>Reason & Kind</th>
+            <th>Namespace</th>
+            <th>Count</th>
+            <th>Velocity</th>
+            <th>Sample Targets</th>
+            <th>Latest Event Signature</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${clusters.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No repetitive event storms or warning clusters detected. Cluster event baseline is calm.</td></tr>` : ""}
+          ${clusters.map((c) => {
+            let scoreClass = "admin-badge-ready";
+            if (c.anomaly_score >= 70) scoreClass = "admin-badge-danger";
+            else if (c.anomaly_score >= 35) scoreClass = "admin-badge-warning";
+
+            return `
+              <tr>
+                <td><span class="admin-badge ${scoreClass}">${c.anomaly_score} / 100</span></td>
+                <td>
+                  <span class="admin-kind-badge">${escapeHTML(c.kind)}</span>
+                  <strong style="color: var(--admin-red); font-size: 12px;">${escapeHTML(c.reason)}</strong>
+                </td>
+                <td class="admin-table-ns">${escapeHTML(c.namespace)}</td>
+                <td style="font-weight: 700;">${c.count}</td>
+                <td>
+                  <div class="admin-velocity-meter">
+                    <span>${c.velocity.toFixed(1)}/m</span>
+                    <div class="admin-velocity-bar-wrap">
+                      <div class="admin-velocity-bar-fill" style="width: ${Math.min(100, c.velocity * 5)}%;"></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div style="display: flex; gap: 4px; flex-wrap: wrap; max-width: 220px;">
+                    ${(c.sample_objects || []).slice(0, 3).map((obj) => `<span class="admin-badge" style="font-size: 10px;">${escapeHTML(obj)}</span>`).join("")}
+                  </div>
+                </td>
+                <td style="font-size: 11px; color: var(--admin-text-muted); max-width: 340px; line-height: 1.4;">
+                  ${escapeHTML(c.message)}
+                </td>
+                <td style="text-align: right;">
+                  <a class="admin-btn admin-btn-sm" href="#war-room?ns=${encodeURIComponent(c.namespace)}">War Room</a>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------------
+// Next-Gen Capability 3: Autoscaling & HPA Flapping Detector
+// -------------------------------------------------------------
+
+async function renderAutoscaling(container) {
+  let res;
+  try {
+    res = await request("/api/v1/admin/autoscaling");
+  } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header"><div class="admin-view-title"><h1>Autoscaling & HPA</h1></div></div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 16px;">
+            <h3>No Kubernetes Cluster Connected</h3>
+            <p style="color: var(--admin-text-muted); margin: 8px auto 16px;">Connect a cluster to inspect HorizontalPodAutoscalers and scaling limits.</p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>`;
+      return;
+    }
+    throw err;
+  }
+
+  const hpas = res.hpas || [];
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Autoscaling & HPA Flapping Detector</h1>
+        <span class="admin-view-count">${res.total_hpas} HPAs</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderAutoscaling($('#admin-content-area'))">Refresh</button>
+      </div>
+    </div>
+
+    <!-- HPA KPI Cards -->
+    <div class="admin-storm-grid">
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Managed Autoscalers</div>
+        <div style="font-size: 26px; font-weight: 800; color: var(--admin-text); margin: 4px 0;">${res.total_hpas}</div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Configured HorizontalPodAutoscalers</div>
+      </div>
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">At Scaling Ceiling</div>
+        <div style="font-size: 26px; font-weight: 800; color: ${res.at_capacity_count > 0 ? "var(--admin-red)" : "var(--admin-green)"}; margin: 4px 0;">
+          ${res.at_capacity_count}
+        </div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Replicas capped at maximum ceiling limit</div>
+      </div>
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Flapping HPAs</div>
+        <div style="font-size: 26px; font-weight: 800; color: ${res.flapping_count > 0 ? "var(--admin-amber)" : "var(--admin-green)"}; margin: 4px 0;">
+          ${res.flapping_count}
+        </div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Scaling limited or oscillation detected</div>
+      </div>
+    </div>
+
+    <!-- HPA Cards Grid -->
+    ${hpas.length === 0 ? `
+      <div class="admin-table-container">
+        <div class="admin-empty-state" style="padding: 40px 16px;">
+          <h3>No HorizontalPodAutoscalers Found</h3>
+          <p style="color: var(--admin-text-muted); max-width: 420px; margin: 8px auto 0;">
+            No HPA resources are currently defined in this cluster. Add an HPA to enable automatic horizontal workload scaling.
+          </p>
+        </div>
+      </div>
+    ` : `
+      <div class="admin-hpa-grid">
+        ${hpas.map((h) => {
+          let badge = `<span class="admin-badge admin-badge-ready">HEALTHY</span>`;
+          let headroomClass = "";
+          if (h.status === "at_capacity") {
+            badge = `<span class="admin-badge admin-badge-danger">CEILING REACHED</span>`;
+            headroomClass = "danger";
+          } else if (h.status === "flapping") {
+            badge = `<span class="admin-badge admin-badge-warning">FLAPPING / LIMITED</span>`;
+            headroomClass = "warning";
+          }
+
+          return `
+            <div class="admin-hpa-card">
+              <div class="admin-hpa-header">
+                <div>
+                  <div style="font-weight: 700; font-size: 14px; margin-bottom: 2px;">${escapeHTML(h.name)}</div>
+                  <div class="admin-table-ns">${escapeHTML(h.namespace)} &bull; ${escapeHTML(h.target_kind)}/${escapeHTML(h.target_name)}</div>
+                </div>
+                ${badge}
+              </div>
+
+              <div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                  <span>Replicas: <strong>${h.current_replicas}</strong> (Desired: ${h.desired_replicas})</span>
+                  <span style="color: var(--admin-text-muted);">Range: [${h.min_replicas} - ${h.max_replicas}]</span>
+                </div>
+                <div class="admin-headroom-bar">
+                  <div class="admin-headroom-fill ${headroomClass}" style="width: ${Math.max(4, h.headroom_pct)}%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--admin-text-muted);">
+                  <span>Headroom: ${h.headroom_pct.toFixed(0)}%</span>
+                  <span>${h.current_replicas >= h.max_replicas ? "Maxed Out" : `${h.max_replicas - h.current_replicas} Pods Available`}</span>
+                </div>
+              </div>
+
+              <div>
+                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--admin-text-muted); margin-bottom: 4px;">Active Metrics</div>
+                <span class="admin-hpa-metric-pill">${escapeHTML(h.metrics_summary || "cpu: target pending")}</span>
+              </div>
+
+              ${h.reason ? `
+                <div style="background: var(--admin-bg-secondary); padding: 8px 10px; border-radius: 4px; font-size: 11px; color: ${h.status === "at_capacity" ? "var(--admin-red)" : "var(--admin-amber)"}; line-height: 1.4;">
+                  ⚠️ ${escapeHTML(h.reason)}
+                </div>
+              ` : ""}
+
+              <div style="margin-top: auto; display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="admin-btn admin-btn-sm" onclick="openScaleModal('${escapeHTML(h.namespace)}', '${escapeHTML(h.target_name)}', ${h.current_replicas})">Adjust Scale</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `}
+  `;
+}
+
+// -------------------------------------------------------------
+// Next-Gen Capability 4: GitOps Drift & Out-of-Band Mutation Radar
+// -------------------------------------------------------------
+
+async function renderGitOpsDrift(container) {
+  let report;
+  try {
+    report = await request("/api/v1/admin/gitops/drift");
+  } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header"><div class="admin-view-title"><h1>GitOps Drift Radar</h1></div></div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 16px;">
+            <h3>No Kubernetes Cluster Connected</h3>
+            <p style="color: var(--admin-text-muted); margin: 8px auto 16px;">Connect a cluster to detect out-of-band mutations and GitOps drift.</p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>`;
+      return;
+    }
+    throw err;
+  }
+
+  const drifts = (report.drifts || []).filter((d) => d.has_drift);
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>GitOps Drift & Out-of-Band Mutation Radar</h1>
+        <span class="admin-view-count">${report.drift_count} Drifted</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderGitOpsDrift($('#admin-content-area'))">Scan Drift</button>
+      </div>
+    </div>
+
+    <!-- Drift Banner -->
+    <div style="background: ${report.drift_count === 0 ? "var(--admin-green-bg)" : "var(--admin-red-bg)"}; border: 1px solid ${report.drift_count === 0 ? "var(--admin-green-border)" : "var(--admin-red-border)"}; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="margin: 0 0 4px; font-size: 15px; color: ${report.drift_count === 0 ? "var(--admin-green)" : "var(--admin-red)"};">
+            ${report.drift_count === 0 ? "✓ All Workloads In Sync with Declared GitOps State" : `⚠️ ${report.drift_count} Out-of-Band Mutation(s) Detected`}
+          </h3>
+          <p style="margin: 0; font-size: 13px; color: ${report.drift_count === 0 ? "var(--admin-green)" : "var(--admin-red)"};">
+            ${report.drift_count === 0 ? `Scanned ${report.total_scanned} managed workloads against 'kubectl.kubernetes.io/last-applied-configuration'. Zero configuration drift.` : `Live cluster state differs from the declarative GitOps specification. Use 1-Click Reconcile to restore intended state.`}
+          </p>
+        </div>
+        <span class="admin-badge ${report.drift_count === 0 ? "admin-badge-ready" : "admin-badge-danger"}">
+          ${report.total_scanned} Workloads Scanned
+        </span>
+      </div>
+    </div>
+
+    ${drifts.length === 0 ? `
+      <div class="admin-table-container">
+        <div class="admin-empty-state" style="padding: 48px 16px;">
+          <h3>Cluster Declarative State Intact</h3>
+          <p style="color: var(--admin-text-muted); max-width: 440px; margin: 8px auto 0;">
+            No out-of-band hotfixes, ad-hoc image mutations, or uncommitted replica modifications detected.
+          </p>
+        </div>
+      </div>
+    ` : `
+      <div>
+        ${drifts.map((d) => `
+          <div class="admin-drift-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+              <div>
+                <span class="admin-kind-badge">${escapeHTML(d.kind)}</span>
+                <strong style="font-size: 15px;">${escapeHTML(d.name)}</strong>
+                <span class="admin-table-ns" style="margin-left: 8px;">ns: ${escapeHTML(d.namespace)}</span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span class="admin-badge admin-badge-warning" style="text-transform: uppercase;">${escapeHTML(d.drift_type || "mutation")}</span>
+                <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="reconcileGitOps('${escapeHTML(d.kind)}', '${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">1-Click Reconcile</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+              <div style="background: var(--admin-bg-secondary); padding: 10px; border-radius: 6px; font-size: 12px;">
+                <div style="font-weight: 700; color: var(--admin-text-muted); margin-bottom: 4px;">DECLARED (GitOps)</div>
+                <code>${escapeHTML(d.declared_summary)}</code>
+              </div>
+              <div style="background: var(--admin-bg-secondary); padding: 10px; border-radius: 6px; font-size: 12px;">
+                <div style="font-weight: 700; color: var(--admin-red); margin-bottom: 4px;">LIVE MUTATION</div>
+                <code>${escapeHTML(d.live_summary)}</code>
+              </div>
+            </div>
+
+            <div class="admin-diff-box">
+              ${(d.diff || "").split("\n").map((line) => {
+                let cls = "";
+                if (line.startsWith("-")) cls = "del";
+                else if (line.startsWith("+")) cls = "add";
+                return `<div class="admin-diff-line ${cls}">${escapeHTML(line)}</div>`;
+              }).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `}
+  `;
+}
+
+async function reconcileGitOps(kind, namespace, name) {
+  if (!confirm(`Are you sure you want to reconcile ${kind}/${name} in ${namespace} back to its declared GitOps configuration? This will undo any live out-of-band mutations.`)) {
+    return;
+  }
+  try {
+    const res = await request("/api/v1/admin/gitops/reconcile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, namespace, name }),
+    });
+    alert(res.message || "Reconciliation complete.");
+    renderGitOpsDrift($("#admin-content-area"));
+  } catch (err) {
+    alert("Reconciliation failed: " + err.message);
+  }
+}
+
+// -------------------------------------------------------------
+// Next-Gen Capability 5: Cluster Disaster Recovery & Backup Radar
+// -------------------------------------------------------------
+
+async function renderDisasterRecoveryRadar(container) {
+  let dr;
+  try {
+    dr = await request("/api/v1/admin/dr/radar");
+  } catch (err) {
+    if (err.message && err.message.includes("No Kubernetes cluster is connected")) {
+      container.innerHTML = `
+        <div class="admin-view-header"><div class="admin-view-title"><h1>Disaster Recovery Radar</h1></div></div>
+        <div class="admin-table-container">
+          <div class="admin-empty-state" style="padding: 48px 16px;">
+            <h3>No Kubernetes Cluster Connected</h3>
+            <p style="color: var(--admin-text-muted); margin: 8px auto 16px;">Connect a cluster to evaluate disaster recovery coverage and PVC backup schedules.</p>
+            <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+          </div>
+        </div>`;
+      return;
+    }
+    throw err;
+  }
+
+  const schedules = dr.schedules || [];
+  const pvcs = dr.pvc_protection || [];
+
+  let scoreColorClass = "good";
+  if (dr.dr_score < 50) scoreColorClass = "poor";
+  else if (dr.dr_score < 75) scoreColorClass = "warning";
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Cluster Disaster Recovery & Backup Radar</h1>
+        <span class="admin-view-count">Score: ${dr.dr_score}/100</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderDisasterRecoveryRadar($('#admin-content-area'))">Refresh Coverage</button>
+      </div>
+    </div>
+
+    <!-- DR KPI Row -->
+    <div class="admin-dr-stats">
+      <div class="admin-storm-card" style="display: flex; align-items: center; gap: 16px;">
+        <div class="admin-dr-score-circle ${scoreColorClass}">
+          ${dr.dr_score}
+          <span style="font-size: 10px; font-weight: 600;">/ 100</span>
+        </div>
+        <div>
+          <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">DR Compliance</div>
+          <div style="font-size: 15px; font-weight: 700; text-transform: capitalize; margin: 2px 0;">
+            ${dr.compliance_status} Coverage
+          </div>
+          <div style="font-size: 11px; color: var(--admin-text-muted);">Backup provider: <strong>${escapeHTML(dr.backup_tool || "none")}</strong></div>
+        </div>
+      </div>
+
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Persistent Storage Protection</div>
+        <div style="font-size: 26px; font-weight: 800; color: ${dr.unbacked_pvcs > 0 ? "var(--admin-red)" : "var(--admin-green)"}; margin: 4px 0;">
+          ${dr.protected_pvcs} / ${dr.total_pvcs}
+        </div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">${dr.unbacked_pvcs} unbacked PersistentVolumeClaim(s)</div>
+      </div>
+
+      <div class="admin-storm-card">
+        <div style="font-size: 11px; text-transform: uppercase; color: var(--admin-text-muted); font-weight: 600;">Backup Schedules</div>
+        <div style="font-size: 26px; font-weight: 800; color: var(--admin-text); margin: 4px 0;">${schedules.length}</div>
+        <div style="font-size: 12px; color: var(--admin-text-muted);">Automated snapshot / backup cron jobs</div>
+      </div>
+    </div>
+
+    <!-- Schedules Table -->
+    <h2 style="font-size: 14px; margin: 18px 0 8px;">Active Backup Schedules</h2>
+    <div class="admin-table-container" style="margin-bottom: 24px;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Schedule Name</th>
+            <th>Cron Expression</th>
+            <th>Last Backup</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${schedules.length === 0 ? `<tr><td colspan="4" class="admin-empty-state">No Velero or CSI snapshot schedules detected. Storage volumes lack automated backup policies.</td></tr>` : ""}
+          ${schedules.map((s) => `
+            <tr>
+              <td><strong>${escapeHTML(s.name)}</strong></td>
+              <td><code>${escapeHTML(s.schedule)}</code></td>
+              <td>${escapeHTML(s.last_backup || "Never")}</td>
+              <td><span class="admin-badge admin-badge-ready">${escapeHTML(s.status || "Active")}</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- PVC Protection Table -->
+    <h2 style="font-size: 14px; margin: 18px 0 8px;">Persistent Volume Protection & RPO Radar</h2>
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>PVC Name</th>
+            <th>Namespace</th>
+            <th>Capacity</th>
+            <th>StorageClass</th>
+            <th>Protection Status</th>
+            <th>Schedule</th>
+            <th>Target RPO</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pvcs.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No PersistentVolumeClaims detected in cluster.</td></tr>` : ""}
+          ${pvcs.map((p) => `
+            <tr>
+              <td><strong>${escapeHTML(p.name)}</strong></td>
+              <td class="admin-table-ns">${escapeHTML(p.namespace)}</td>
+              <td>${escapeHTML(p.size)}</td>
+              <td class="admin-table-ns">${escapeHTML(p.storage_class || "standard")}</td>
+              <td>
+                <span class="admin-badge ${p.is_protected ? "admin-badge-ready" : "admin-badge-danger"}">
+                  ${p.is_protected ? "PROTECTED" : "UNBACKED"}
+                </span>
+              </td>
+              <td>${p.backup_schedule ? `<code>${escapeHTML(p.backup_schedule)}</code>` : `<span style="color: var(--admin-text-muted); font-size: 11px;">None</span>`}</td>
+              <td style="font-weight: 600;">${p.rpo_hours > 0 ? `&le; ${p.rpo_hours}h` : `<span style="color: var(--admin-red);">N/A (At Risk)</span>`}</td>
             </tr>
           `).join("")}
         </tbody>

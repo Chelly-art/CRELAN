@@ -176,6 +176,22 @@
             <a class="admin-tree-item" href="#isolation-matrix" data-view="isolation-matrix">
               <span>Tenant Isolation Matrix</span>
             </a>
+            <a class="admin-tree-item" href="#event-storm" data-view="event-storm">
+              <span>Event Storm Radar</span>
+              <span class="admin-item-badge admin-badge-warning" id="badge-storm">Radar</span>
+            </a>
+            <a class="admin-tree-item" href="#autoscaling" data-view="autoscaling">
+              <span>Autoscaling & HPA</span>
+              <span class="admin-item-badge" id="badge-autoscaling">HPA</span>
+            </a>
+            <a class="admin-tree-item" href="#gitops-drift" data-view="gitops-drift">
+              <span>GitOps Drift Radar</span>
+              <span class="admin-item-badge" id="badge-drift">Drift</span>
+            </a>
+            <a class="admin-tree-item" href="#backup-radar" data-view="backup-radar">
+              <span>Disaster Recovery</span>
+              <span class="admin-item-badge" id="badge-dr">DR</span>
+            </a>
           </div>
 
           <!-- PLATFORM OPERATIONS -->
@@ -613,6 +629,57 @@
               <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
                 <button class="admin-btn" id="webhook-modal-dismiss" type="button">Cancel</button>
                 <button class="admin-btn admin-btn-primary" type="submit">Save Webhook</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 16. Ephemeral Debug Container Injection Modal -->
+        <div class="admin-modal-overlay" id="admin-debug-modal">
+          <div class="admin-modal" style="width: 580px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge admin-badge-warning">DEBUGGER</span>
+                <h2 id="debug-modal-title" style="margin: 0; font-size: 16px;">Inject Ephemeral Debug Container</h2>
+              </div>
+              <button class="admin-drawer-close" id="debug-modal-close" type="button">Close</button>
+            </div>
+            <form id="debug-form">
+              <div class="admin-modal-body">
+                <p style="font-size: 13px; color: var(--admin-text-muted); margin-top: 0; margin-bottom: 14px;">
+                  Attach an interactive debugging container into the pod’s network and process namespaces without modifying or restarting your application containers. Perfect for distroless, scratch, and minimal production images.
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Target Pod</label>
+                    <input class="admin-form-input" id="debug-target-pod" type="text" readonly style="width: 100%; background: var(--admin-bg-secondary);">
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Target Container (for process namespace sharing)</label>
+                    <input class="admin-form-input" id="debug-target-container" type="text" placeholder="Optional (e.g. main)" style="width: 100%;">
+                  </div>
+                  <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Debug Toolkit Image</label>
+                    <select class="admin-form-input" id="debug-image-select" style="width: 100%;">
+                      <option value="nicolaka/netshoot">nicolaka/netshoot (Network Swiss-Army Knife: curl, tcpdump, dig, iperf, strace)</option>
+                      <option value="alpine:latest">alpine:latest (Lightweight POSIX shell & apk package manager)</option>
+                      <option value="busybox:latest">busybox:latest (Ultra-lightweight core utilities)</option>
+                      <option value="curlimages/curl:latest">curlimages/curl:latest (Simple HTTP probe)</option>
+                      <option value="custom">Custom Image URI...</option>
+                    </select>
+                  </div>
+                  <div id="debug-custom-image-wrap" hidden>
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Custom Container Image</label>
+                    <input class="admin-form-input" id="debug-custom-image-input" type="text" placeholder="e.g. my-registry.io/tools/debug:latest" style="width: 100%;">
+                  </div>
+                  <div style="font-size: 12px; color: var(--admin-text-muted); line-height: 1.4; background: var(--admin-bg-secondary); padding: 8px 12px; border-radius: var(--admin-radius-sm);">
+                    ⚡ A terminal session will open automatically upon container attachment.
+                  </div>
+                </div>
+              </div>
+              <div class="admin-modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="admin-btn" id="debug-modal-dismiss" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-primary" id="debug-modal-launch-btn" type="submit">Launch Debug Shell</button>
               </div>
             </form>
           </div>

@@ -1790,4 +1790,187 @@ body.admin-body {
   background: var(--admin-red);
 }
 
+/* ==========================================================================
+   Next-Gen Platform Capabilities Styles
+   ========================================================================== */
+
+/* 1. Event Storm Radar */
+.admin-storm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-storm-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-storm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+.admin-storm-badge.critical {
+  background: var(--admin-red-bg);
+  color: var(--admin-red);
+  border: 1px solid var(--admin-red-border);
+}
+
+.admin-storm-badge.warning {
+  background: var(--admin-amber-bg);
+  color: var(--admin-amber);
+  border: 1px solid var(--admin-amber-border);
+}
+
+.admin-storm-badge.normal {
+  background: var(--admin-green-bg);
+  color: var(--admin-green);
+  border: 1px solid var(--admin-green-border);
+}
+
+.admin-velocity-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-velocity-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--admin-border-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.admin-velocity-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--admin-accent);
+}
+
+/* 2. Autoscaling & HPA */
+.admin-hpa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-hpa-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--admin-shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-hpa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.admin-hpa-metric-pill {
+  display: inline-block;
+  background: var(--admin-bg-secondary, #f1f5f9);
+  border: 1px solid var(--admin-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--admin-mono);
+}
+
+/* 3. GitOps Drift Radar */
+.admin-drift-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-diff-box {
+  background: #1e293b;
+  color: #e2e8f0;
+  font-family: var(--admin-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin-top: 10px;
+}
+
+.admin-diff-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.admin-diff-line.del {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.admin-diff-line.add {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+/* 4. Disaster Recovery & Backup Radar */
+.admin-dr-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-dr-score-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 24px;
+  border: 4px solid var(--admin-border);
+}
+
+.admin-dr-score-circle.good {
+  border-color: var(--admin-green);
+  color: var(--admin-green);
+  background: var(--admin-green-bg);
+}
+
+.admin-dr-score-circle.warning {
+  border-color: var(--admin-amber);
+  color: var(--admin-amber);
+  background: var(--admin-amber-bg);
+}
+
+.admin-dr-score-circle.poor {
+  border-color: var(--admin-red);
+  color: var(--admin-red);
+  background: var(--admin-red-bg);
+}
+
+
 

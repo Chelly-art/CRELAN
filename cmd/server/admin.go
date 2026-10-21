@@ -150,6 +150,14 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/admin/webhooks/{id}", s.deleteWebhook)
 	mux.HandleFunc("POST /api/v1/admin/webhooks/{id}/test", s.testWebhook)
 	mux.HandleFunc("GET /api/v1/admin/security/dangling-configs", s.getDanglingConfigs)
+
+	// Day-2 Superpowers Round 2 (Ephemeral Debug, Event Storm, Autoscaling, GitOps Drift, DR Radar)
+	mux.HandleFunc("POST /api/v1/admin/pods/{namespace}/{name}/debug", s.injectDebugContainer)
+	mux.HandleFunc("GET /api/v1/admin/events/storm", s.getEventStorm)
+	mux.HandleFunc("GET /api/v1/admin/autoscaling", s.getAutoscaling)
+	mux.HandleFunc("GET /api/v1/admin/gitops/drift", s.getGitOpsDrift)
+	mux.HandleFunc("POST /api/v1/admin/gitops/reconcile", s.reconcileGitOpsDrift)
+	mux.HandleFunc("GET /api/v1/admin/dr/radar", s.getDisasterRecoveryRadar)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
@@ -1902,6 +1910,132 @@ func (s *adminService) getDanglingConfigs(w http.ResponseWriter, r *http.Request
 	report, err := scanDanglingConfigReferences(r.Context(), provisioner.client)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not scan dangling configs: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) injectDebugContainer(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+
+	var req ephemeralDebugRequest
+	_ = decodeJSON(w, r, &req)
+
+	resp, err := injectEphemeralDebugContainer(r.Context(), provisioner.client, ns, name, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not inject debug container: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "debug", "Pod", ns, name, fmt.Sprintf("Injected %s debug container (%s)", resp.ContainerName, resp.Mode))
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *adminService) getEventStorm(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := calculateEventStormClusters(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not calculate event storm clusters: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getAutoscaling(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := fetchAutoscalingAnalysis(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch autoscaling report: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getGitOpsDrift(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := scanGitOpsDrift(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not scan GitOps drift: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) reconcileGitOpsDrift(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	var input struct {
+		Kind      string `json:"kind"`
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid reconcile payload")
+		return
+	}
+	if err := reconcileGitOpsDrift(r.Context(), provisioner.client, input.Namespace, input.Kind, input.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, "Reconciliation failed: "+err.Error())
+		return
+	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "reconcile", input.Kind, input.Namespace, input.Name, "Reconciled out-of-band drift back to declared GitOps last-applied configuration")
+	writeJSON(w, http.StatusOK, map[string]any{"status": "reconciled", "kind": input.Kind, "name": input.Name})
+}
+
+func (s *adminService) getDisasterRecoveryRadar(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := scanDisasterRecoveryStatus(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not scan disaster recovery status: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
