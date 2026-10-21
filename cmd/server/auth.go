@@ -972,20 +972,57 @@ func callbackURL(r *http.Request) string {
 func (a *authService) sameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return false
+		origin = r.Header.Get("Referer")
+	}
+	if origin == "" {
+		return true
 	}
 	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host != r.Host {
+	if err != nil || parsed.Host == "" {
 		return false
 	}
-	if a.secureRequest(r) {
-		return parsed.Scheme == "https"
+
+	cleanHost := func(h string) string {
+		h = strings.TrimSpace(h)
+		if host, _, err := net.SplitHostPort(h); err == nil {
+			return strings.ToLower(host)
+		}
+		return strings.ToLower(h)
 	}
-	return parsed.Scheme == "http"
+
+	originHost := cleanHost(parsed.Host)
+	expectedHosts := []string{cleanHost(r.Host)}
+	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+		for _, part := range strings.Split(fwdHost, ",") {
+			expectedHosts = append(expectedHosts, cleanHost(part))
+		}
+	}
+
+	matchedHost := false
+	for _, expected := range expectedHosts {
+		if expected != "" && expected == originHost {
+			matchedHost = true
+			break
+		}
+	}
+	if !matchedHost {
+		return false
+	}
+
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 
 func (a *authService) secureRequest(r *http.Request) bool {
-	return a.cookieSecure || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	if a.cookieSecure || r.TLS != nil {
+		return true
+	}
+	fwdProto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	for _, proto := range strings.Split(fwdProto, ",") {
+		if strings.TrimSpace(proto) == "https" {
+			return true
+		}
+	}
+	return r.Header.Get("X-Forwarded-Ssl") == "on"
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {

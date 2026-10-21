@@ -1670,45 +1670,67 @@ $("#token-create-form")?.addEventListener("submit", async (event) => {
   const error = $("#token-error");
   const submit = $("#token-submit");
   error.hidden = true;
-  submit.disabled = true;
-  submit.textContent = "Generating token…";
+
+  let tokenName = $("#token-name")?.value.trim();
+  if (!tokenName) {
+    tokenName = "ci-deploy-token";
+    if ($("#token-name")) $("#token-name").value = tokenName;
+  }
 
   const scopes = Array.from(document.querySelectorAll("input[name='token_scope']:checked")).map((cb) => cb.value);
   if (!scopes.length) {
     error.textContent = "Select at least one access scope.";
     error.hidden = false;
-    submit.disabled = false;
-    submit.textContent = "Generate API token";
+    error.scrollIntoView({ behavior: "smooth", block: "nearest" });
     return;
   }
 
-  const expiryValue = $("#token-expiry").value;
+  submit.disabled = true;
+  submit.textContent = "Generating token…";
+
+  const expiryValue = $("#token-expiry")?.value;
   const payload = {
-    name: $("#token-name").value.trim(),
+    name: tokenName,
     scopes: scopes,
     expires_in_days: expiryValue ? Number(expiryValue) : undefined,
   };
 
   try {
     const created = await api("/api/v1/tokens", { method: "POST", body: JSON.stringify(payload) });
-    $("#token-created-card").hidden = false;
-    $("#token-secret-value").textContent = created.token;
-    $("#token-name").value = "";
+    const card = $("#token-created-card");
+    if (card) {
+      card.hidden = false;
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    const val = $("#token-secret-value");
+    if (val) val.textContent = created.token;
     await loadTokens();
   } catch (err) {
     error.textContent = err.message;
     error.hidden = false;
+    error.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } finally {
     submit.disabled = false;
     submit.textContent = "Generate API token";
   }
 });
 
-$("#copy-token-secret")?.addEventListener("click", () => {
-  const val = $("#token-secret-value").textContent;
-  navigator.clipboard.writeText(val);
-  $("#copy-token-secret").textContent = "Copied!";
-  setTimeout(() => { $("#copy-token-secret").textContent = "Copy token"; }, 2000);
+$("#copy-token-secret")?.addEventListener("click", async () => {
+  const val = $("#token-secret-value")?.textContent || "";
+  const btn = $("#copy-token-secret");
+  try {
+    await navigator.clipboard.writeText(val);
+    btn.textContent = "✓ Copied to clipboard!";
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = val;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+    btn.textContent = "✓ Copied!";
+  }
+  setTimeout(() => { if (btn) btn.textContent = "Copy token to clipboard"; }, 2500);
 });
 
 $("#refresh-tokens")?.addEventListener("click", loadTokens);

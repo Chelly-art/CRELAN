@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -239,17 +238,5 @@ WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`, now, id, workspaceID)
 }
 
 func (a *authService) sessionIdentity(r *http.Request) (userID, workspaceID int64, err error) {
-	userID, err = a.sessionUserID(r)
-	if err != nil {
-		return 0, 0, err
-	}
-	err = a.db.QueryRowContext(r.Context(), `
-SELECT workspace_id FROM workspace_members
-WHERE user_id = ?
-ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, workspace_id
-LIMIT 1`, userID).Scan(&workspaceID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("resolve session workspace: %w", err)
-	}
-	return userID, workspaceID, nil
+	return a.sessionWorkspace(r)
 }

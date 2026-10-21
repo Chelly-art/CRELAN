@@ -283,7 +283,7 @@
                   <div class="deployment-two-col">
                     <div>
                       <label class="form-label" for="token-name">Token name</label>
-                      <input class="text-input deployment-input" id="token-name" placeholder="github-actions-deployer" maxlength="80" required>
+                      <input class="text-input deployment-input" id="token-name" value="ci-deploy-token" placeholder="e.g. github-actions-deployer" maxlength="80">
                     </div>
                     <div>
                       <label class="form-label" for="token-expiry">Expiration</label>
@@ -310,11 +310,16 @@
                     <button class="primary-button" id="token-submit" type="submit" style="width: auto; min-width: 180px;">Generate API token</button>
                   </div>
                 </form>
-                <div class="database-credentials" id="token-created-card" hidden style="margin-top: 18px;">
-                  <strong>Save your access token now</strong>
-                  <p>This token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
-                  <code id="token-secret-value" style="user-select: all; word-break: break-all; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #b8d4c2; display: block; font-size: 11px; margin: 8px 0;"></code>
-                  <button class="inline-action" id="copy-token-secret" type="button" style="font-weight: 600;">Copy token</button>
+                <div class="database-credentials" id="token-created-card" hidden style="margin-top: 18px; border: 2px solid #38a169; background: #f0fff4;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong style="color: #22543d; font-size: 13px;">✓ API Token Generated Successfully</strong>
+                    <span style="font-size: 10px; color: #276749; font-weight: 600;">Save now (shown once)</span>
+                  </div>
+                  <p style="margin: 4px 0 8px; color: #2d3748;">This secret token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
+                  <code id="token-secret-value" style="user-select: all; word-break: break-all; background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #9ae6b4; display: block; font-size: 12px; font-weight: 700; margin: 8px 0; color: #22543d; font-family: monospace;"></code>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="primary-button" id="copy-token-secret" type="button" style="width: auto; padding: 8px 16px; font-weight: 600;">Copy token to clipboard</button>
+                  </div>
                 </div>
               </section>
 
