@@ -1523,3 +1523,185 @@ body.admin-body {
   word-break: break-all;
 }
 
+/* ==========================================================================
+   Operational Intelligence & Advanced Admin Tools Styles
+   ========================================================================== */
+
+/* Tabs */
+.admin-tab-btn {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-tab-btn:hover {
+  color: var(--admin-text);
+  background: var(--admin-surface-hover);
+}
+
+.admin-tab-btn.active {
+  color: var(--admin-accent);
+  background: var(--admin-accent-bg);
+  border: 1px solid var(--admin-accent-border);
+}
+
+/* Action Audit Badges */
+.admin-audit-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--admin-mono);
+  letter-spacing: 0.5px;
+}
+.admin-audit-badge.restart { background: rgba(196, 81, 0, 0.12); color: #a44708; border: 1px solid rgba(196, 81, 0, 0.3); }
+.admin-audit-badge.scale { background: rgba(37, 99, 235, 0.1); color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.25); }
+.admin-audit-badge.patch-env { background: rgba(13, 148, 136, 0.1); color: #0d9488; border: 1px solid rgba(13, 148, 136, 0.25); }
+.admin-audit-badge.harden { background: rgba(124, 58, 237, 0.1); color: #7c3aed; border: 1px solid rgba(124, 58, 237, 0.25); }
+.admin-audit-badge.rightsize { background: rgba(5, 150, 105, 0.1); color: #059669; border: 1px solid rgba(5, 150, 105, 0.25); }
+.admin-audit-badge.delete { background: rgba(220, 38, 38, 0.1); color: #dc2626; border: 1px solid rgba(220, 38, 38, 0.25); }
+.admin-audit-badge.create { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); }
+
+/* Traffic & Ingress Topology Flow */
+.admin-topology-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-topology-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.admin-topology-node {
+  background: #f8fafc;
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-width: 180px;
+  position: relative;
+}
+
+.admin-topology-node.ingress {
+  border-left: 3px solid #2563eb;
+}
+
+.admin-topology-node.service {
+  border-left: 3px solid #0d9488;
+}
+
+.admin-topology-node.pod {
+  border-left: 3px solid #16a34a;
+}
+
+.admin-topology-arrow {
+  color: var(--admin-text-dim);
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+
+/* Upgrade Radar Dial */
+.admin-radar-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: linear-gradient(135deg, #ffffff, #fbfcfd);
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-radar-score-dial {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--admin-font-heading);
+  font-size: 26px;
+  font-weight: 800;
+  border: 5px solid var(--admin-green);
+  background: var(--admin-green-bg);
+  color: var(--admin-green);
+  flex-shrink: 0;
+}
+
+.admin-radar-score-dial.warning {
+  border-color: var(--admin-amber);
+  background: var(--admin-amber-bg);
+  color: var(--admin-amber);
+}
+
+.admin-radar-score-dial.danger {
+  border-color: var(--admin-red);
+  background: var(--admin-red-bg);
+  color: var(--admin-red);
+}
+
+/* Incident War Room Split Layout */
+.admin-warroom-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.admin-warroom-console {
+  background: #111822;
+  border: 1px solid #283547;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-warroom-console-header {
+  padding: 8px 14px;
+  background: #192230;
+  border-bottom: 1px solid #283547;
+  color: #dce2ea;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-warroom-console-body {
+  padding: 14px;
+  max-height: 440px;
+  overflow-y: auto;
+  font-family: var(--admin-mono);
+  font-size: 11px;
+  color: #e2e8f0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Timeline */
+.admin-timeline-table td {
+  vertical-align: top;
+  font-size: 12px;
+}
+
+

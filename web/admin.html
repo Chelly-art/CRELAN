@@ -150,6 +150,24 @@
             <a class="admin-tree-item" href="#efficiency" data-view="efficiency">
               <span>Resource Heatmap</span>
             </a>
+            <a class="admin-tree-item" href="#war-room" data-view="war-room">
+              <span>Incident War Room</span>
+              <span class="admin-item-badge admin-badge-danger" id="badge-warroom">Live</span>
+            </a>
+            <a class="admin-tree-item" href="#audit" data-view="audit">
+              <span>Platform Audit Trail</span>
+              <span class="admin-item-badge" id="badge-audit">Logs</span>
+            </a>
+            <a class="admin-tree-item" href="#upgrade-radar" data-view="upgrade-radar">
+              <span>Cluster Upgrade Radar</span>
+              <span class="admin-item-badge" id="badge-upgrade">Radar</span>
+            </a>
+            <a class="admin-tree-item" href="#topology" data-view="topology">
+              <span>Traffic & Ingress Topology</span>
+            </a>
+            <a class="admin-tree-item" href="#isolation-matrix" data-view="isolation-matrix">
+              <span>Tenant Isolation Matrix</span>
+            </a>
           </div>
 
           <!-- PLATFORM OPERATIONS -->
@@ -446,6 +464,46 @@
             </div>
             <div class="admin-modal-footer">
               <button class="admin-btn" id="copilot-modal-dismiss" type="button">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 12. AI Post-Mortem & Runbook Generator Modal -->
+        <div class="admin-modal-overlay" id="admin-postmortem-modal">
+          <div class="admin-modal" style="width: 800px; max-width: 95vw;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="admin-badge admin-badge-danger" id="postmortem-modal-severity">CRITICAL</span>
+                <h2 id="postmortem-modal-title" style="margin: 0; font-size: 16px;">Incident Post-Mortem & Preventative Runbook</h2>
+              </div>
+              <button class="admin-drawer-close" id="postmortem-modal-close" type="button">Close</button>
+            </div>
+            <div class="admin-modal-body">
+              <div class="admin-postmortem-tabs" style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--admin-border); padding-bottom: 8px;">
+                <button class="admin-tab-btn active" id="tab-btn-postmortem-preview" type="button">Executive Report</button>
+                <button class="admin-tab-btn" id="tab-btn-postmortem-markdown" type="button">Markdown & Jira Export</button>
+                <button class="admin-tab-btn" id="tab-btn-postmortem-runbook" type="button">Preventative Runbook</button>
+              </div>
+              <div id="postmortem-tab-preview" class="admin-postmortem-tab-content">
+                <div id="postmortem-preview-body"></div>
+              </div>
+              <div id="postmortem-tab-markdown" class="admin-postmortem-tab-content" hidden>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="font-size: 12px; color: var(--admin-text-muted);">Standard GitHub-Flavored Markdown for Jira, Notion, GitHub Issues, Slack:</span>
+                  <button class="admin-btn admin-btn-primary" id="btn-copy-postmortem-markdown" type="button">Copy Markdown to Clipboard</button>
+                </div>
+                <textarea id="postmortem-markdown-textarea" readonly style="width: 100%; height: 350px; font-family: monospace; font-size: 12px; padding: 12px; border: 1px solid var(--admin-border); border-radius: 4px; resize: vertical;"></textarea>
+              </div>
+              <div id="postmortem-tab-runbook" class="admin-postmortem-tab-content" hidden>
+                <div id="postmortem-runbook-body"></div>
+              </div>
+            </div>
+            <div class="admin-modal-footer" style="display: flex; justify-content: space-between;">
+              <span id="postmortem-modal-id" style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">INC-POSTMORTEM</span>
+              <div>
+                <button class="admin-btn" id="postmortem-modal-dismiss" type="button">Close</button>
+                <button class="admin-btn admin-btn-primary" id="postmortem-modal-copy-btn" type="button">1-Click Copy Markdown</button>
+              </div>
             </div>
           </div>
         </div>

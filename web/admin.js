@@ -262,6 +262,21 @@ async function renderCurrentView() {
       case "efficiency":
         await renderEfficiency(container);
         break;
+      case "war-room":
+        await renderWarRoom(container);
+        break;
+      case "audit":
+        await renderAuditTrail(container);
+        break;
+      case "upgrade-radar":
+        await renderUpgradeRadar(container);
+        break;
+      case "topology":
+        await renderNetworkTopology(container);
+        break;
+      case "isolation-matrix":
+        await renderTenantIsolationMatrix(container);
+        break;
       case "cluster-connect":
         renderClusterConnect(container);
         break;
@@ -603,6 +618,8 @@ async function renderPods(container) {
                 <td>
                   <div class="admin-row-actions" style="justify-content: flex-end;">
                     <button class="admin-action-btn" onclick="event.stopPropagation(); openAIDiagnosis('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Run Root-Cause Diagnosis">Diagnose</button>
+                    <button class="admin-action-btn" onclick="event.stopPropagation(); openPostMortem('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Generate Post-Mortem & Runbook">Post-Mortem</button>
+                    <a class="admin-action-btn" href="#war-room?ns=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}" onclick="event.stopPropagation();" title="Open Incident War Room">War Room</a>
                     <button class="admin-action-btn" onclick="event.stopPropagation(); openPodLogs('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="View Container Logs">Logs</button>
                     <button class="admin-action-btn" onclick="event.stopPropagation(); openPodTerminal('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Interactive Terminal">Exec</button>
                     <button class="admin-action-btn btn-delete" onclick="event.stopPropagation(); confirmDeletePod('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Delete Pod">Delete</button>
@@ -2134,7 +2151,11 @@ async function openAIDiagnosis(namespace, podName) {
           </div>
           ${exitCodeHtml}
         </div>
-        <div style="font-size: 11px; color: var(--admin-text-muted);">Confidence: <strong>${escapeHTML(diag.confidence)}</strong> · Severity: <strong>${escapeHTML(diag.severity.toUpperCase())}</strong></div>
+        <div style="font-size: 11px; color: var(--admin-text-muted); margin-bottom: 8px;">Confidence: <strong>${escapeHTML(diag.confidence)}</strong> · Severity: <strong>${escapeHTML(diag.severity.toUpperCase())}</strong></div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button class="admin-btn admin-btn-primary admin-btn-sm" type="button" onclick="$('#admin-ai-modal').classList.remove('open'); openPostMortem('${escapeHTML(namespace)}', '${escapeHTML(podName)}')">Generate Post-Mortem & Runbook</button>
+          <a class="admin-btn admin-btn-sm" href="#war-room?ns=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}" onclick="$('#admin-ai-modal').classList.remove('open')">Incident War Room</a>
+        </div>
       </div>
 
       ${diag.log_anomaly ? `
@@ -2568,12 +2589,802 @@ function setupEventListeners() {
     }
   });
 
+  // Post-Mortem Modal
+  $("#postmortem-modal-close")?.addEventListener("click", () => $("#admin-postmortem-modal").classList.remove("open"));
+  $("#postmortem-modal-dismiss")?.addEventListener("click", () => $("#admin-postmortem-modal").classList.remove("open"));
+  $("#postmortem-modal-copy-btn")?.addEventListener("click", copyPostMortemMarkdown);
+  $("#btn-copy-postmortem-markdown")?.addEventListener("click", copyPostMortemMarkdown);
+
+  $("#tab-btn-postmortem-preview")?.addEventListener("click", () => switchPostMortemTab("preview"));
+  $("#tab-btn-postmortem-markdown")?.addEventListener("click", () => switchPostMortemTab("markdown"));
+  $("#tab-btn-postmortem-runbook")?.addEventListener("click", () => switchPostMortemTab("runbook"));
+
   // Sign out
   $("#admin-signout").addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
     window.location.assign("/login");
   });
 }
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 1: Incident War Room
+// -------------------------------------------------------------
+
+async function renderWarRoom(container) {
+  const hash = window.location.hash.split("?")[1] || "";
+  const params = new URLSearchParams(hash);
+  const ns = params.get("ns") || "";
+  const pod = params.get("pod") || "";
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Incident War Room</h1>
+        <p>Live incident triage, root-cause investigation, and shared war room console</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" id="btn-share-warroom" type="button">Copy War Room Link</button>
+        <button class="admin-btn admin-btn-primary admin-btn-sm" id="btn-warroom-postmortem" type="button" disabled>Generate AI Post-Mortem</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Connecting to active incident telemetry…</div>
+  `;
+
+  try {
+    const url = `/api/v1/admin/incidents/snapshot?namespace=${encodeURIComponent(ns)}&pod=${encodeURIComponent(pod)}`;
+    const snapshot = await request(url);
+
+    const diag = snapshot.diagnosis || {};
+    let exitBadge = "";
+    if (snapshot.exit_code !== undefined && snapshot.exit_code !== 0) {
+      exitBadge = `<span class="admin-badge admin-badge-crashloop">Exit ${escapeHTML(snapshot.exit_code)} (${escapeHTML(snapshot.reason || "Terminated")})</span>`;
+    }
+
+    let eventsHtml = `<div style="color: var(--admin-text-muted); font-size: 12px; padding: 10px 0;">No warning events recorded for this workload.</div>`;
+    if (snapshot.warning_events && snapshot.warning_events.length > 0) {
+      eventsHtml = `
+        <table class="admin-table admin-timeline-table" style="font-size: 11px;">
+          <thead>
+            <tr>
+              <th style="width: 140px;">Timestamp</th>
+              <th style="width: 110px;">Reason</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${snapshot.warning_events.map(ev => `
+              <tr>
+                <td style="color: var(--admin-text-muted);">${escapeHTML(ev.last_timestamp || ev.first_timestamp || "recently")}</td>
+                <td><span class="admin-badge admin-badge-warning">${escapeHTML(ev.reason)}</span></td>
+                <td>${escapeHTML(ev.message)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="admin-badge admin-badge-danger" style="font-size: 11px;">INCIDENT WAR ROOM</span>
+            <span style="font-family: var(--admin-mono); font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(snapshot.incident_id)}</span>
+          </div>
+          <h1>${escapeHTML(snapshot.pod_name)}</h1>
+          <p>Target Workload in namespace <strong>${escapeHTML(snapshot.namespace)}</strong> · Captured: ${escapeHTML(snapshot.captured_at)}</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-sm" id="btn-share-warroom" type="button">Copy War Room Link</button>
+          <button class="admin-btn admin-btn-primary admin-btn-sm" id="btn-warroom-postmortem" type="button">Generate AI Post-Mortem</button>
+        </div>
+      </div>
+
+      <!-- Incident KPI Banner -->
+      <div class="admin-overview-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 16px;">
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Phase & State</span></div>
+          <div class="admin-stat-value" style="font-size: 18px; color: var(--admin-red);">${escapeHTML(snapshot.phase)}</div>
+          <div class="admin-stat-subtext">${exitBadge || "Non-zero exit"}</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Severity</span></div>
+          <div class="admin-stat-value" style="font-size: 18px; text-transform: uppercase;">${escapeHTML(diag.severity || "CRITICAL")}</div>
+          <div class="admin-stat-subtext">Confidence: ${escapeHTML(diag.confidence || "High")}</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Warning Events</span></div>
+          <div class="admin-stat-value" style="font-size: 18px;">${snapshot.warning_events ? snapshot.warning_events.length : 0}</div>
+          <div class="admin-stat-subtext">Cluster controller events</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Quick Remediations</span></div>
+          <div style="margin-top: 10px; display: flex; gap: 6px;">
+            <button class="admin-btn admin-btn-danger admin-btn-sm" type="button" onclick="confirmDeletePod('${escapeHTML(snapshot.namespace)}', '${escapeHTML(snapshot.pod_name)}')">Evict Pod</button>
+            <button class="admin-btn admin-btn-sm" type="button" onclick="openInspector('pod', '${escapeHTML(snapshot.namespace)}', '${escapeHTML(snapshot.pod_name)}')">Inspect Pod</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Split Layout: RCA & Timeline vs Live Logs -->
+      <div class="admin-warroom-split">
+        <!-- Left: Diagnosis & Events -->
+        <div>
+          <div class="admin-ai-banner" style="margin-bottom: 14px;">
+            <div class="admin-ai-banner-title">${escapeHTML(diag.summary || "Workload failure detected")}</div>
+            <p style="margin: 6px 0 0; font-size: 12px; color: var(--admin-text); line-height: 1.5;">${escapeHTML(diag.probable_cause || "")}</p>
+          </div>
+
+          ${diag.log_anomaly ? `
+            <div style="background: rgba(220, 38, 38, 0.08); border-left: 3px solid var(--admin-red); padding: 10px 14px; margin-bottom: 14px; border-radius: 4px;">
+              <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--admin-red); margin-bottom: 4px;">Extracted Anomaly / Exception</div>
+              <div style="font-family: var(--admin-mono); font-size: 11px; color: var(--admin-red); word-break: break-all;">${escapeHTML(diag.log_anomaly)}</div>
+            </div>
+          ` : ""}
+
+          ${diag.stack_trace ? `
+            <div class="admin-spec-group" style="margin-bottom: 14px;">
+              <div class="admin-spec-group-title">Application Stack Trace</div>
+              <pre class="admin-stacktrace-block">${escapeHTML(diag.stack_trace)}</pre>
+            </div>
+          ` : ""}
+
+          <div class="admin-spec-group">
+            <div class="admin-spec-group-title">Cluster Controller Events Timeline</div>
+            <div class="admin-table-container" style="max-height: 260px; overflow-y: auto;">
+              ${eventsHtml}
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Recent Container Logs Console -->
+        <div>
+          <div class="admin-warroom-console">
+            <div class="admin-warroom-console-header">
+              <span>Container Logs Tail (Incident Telemetry)</span>
+              <button class="admin-btn admin-btn-sm" style="padding: 2px 8px; font-size: 10px;" type="button" onclick="navigator.clipboard.writeText($('#warroom-logs-code').textContent); this.textContent='✓ Copied'; setTimeout(() => this.textContent='Copy Logs', 1800);">Copy Logs</button>
+            </div>
+            <div class="admin-warroom-console-body" id="warroom-logs-code">${escapeHTML(snapshot.recent_logs || "No logs available for container.")}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $("#btn-warroom-postmortem").onclick = () => openPostMortem(snapshot.namespace, snapshot.pod_name);
+    $("#btn-share-warroom").onclick = () => {
+      const fullUrl = `${window.location.origin}/admin#war-room?ns=${encodeURIComponent(snapshot.namespace)}&pod=${encodeURIComponent(snapshot.pod_name)}`;
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        $("#btn-share-warroom").textContent = "✓ Link Copied";
+        setTimeout(() => { $("#btn-share-warroom").textContent = "Copy War Room Link"; }, 2000);
+      });
+    };
+  } catch (err) {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title"><h1>Incident War Room</h1></div>
+      </div>
+      <div class="admin-empty-state">
+        <h2 style="font-size: 16px; margin-bottom: 8px;">No Active Workload Incidents Found</h2>
+        <p style="color: var(--admin-text-muted); max-width: 460px; margin: 0 auto 16px;">
+          All workloads are running smoothly. If you suspect a failure, navigate to <a href="#pods">Pods</a> and click "AI RCA" or "War Room" on any specific workload.
+        </p>
+        <a class="admin-btn admin-btn-primary" href="#pods">View Cluster Pods</a>
+      </div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 2: Platform Audit Trail
+// -------------------------------------------------------------
+
+async function renderAuditTrail(container) {
+  state.auditNs = state.auditNs || "";
+  state.auditAction = state.auditAction || "";
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Platform Action Audit Trail</h1>
+        <p>Immutable forensic record of all administrative operations, rollouts, scaling, and security hardening executed on the platform</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" type="button" onclick="renderAuditTrail(document.getElementById('admin-content-area'))">Refresh Trail</button>
+      </div>
+    </div>
+    <div class="admin-filter-bar" style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center;">
+      <select class="admin-select" id="audit-ns-select" style="min-width: 180px;">
+        <option value="">All Namespaces</option>
+        ${state.namespaces.map(ns => `<option value="${escapeHTML(ns)}" ${ns === state.auditNs ? "selected" : ""}>${escapeHTML(ns)}</option>`).join("")}
+      </select>
+      <select class="admin-select" id="audit-action-select" style="min-width: 160px;">
+        <option value="">All Action Types</option>
+        <option value="restart" ${state.auditAction === "restart" ? "selected" : ""}>restart</option>
+        <option value="scale" ${state.auditAction === "scale" ? "selected" : ""}>scale</option>
+        <option value="patch-env" ${state.auditAction === "patch-env" ? "selected" : ""}>patch-env</option>
+        <option value="harden" ${state.auditAction === "harden" ? "selected" : ""}>harden</option>
+        <option value="rightsize" ${state.auditAction === "rightsize" ? "selected" : ""}>rightsize</option>
+        <option value="delete" ${state.auditAction === "delete" ? "selected" : ""}>delete</option>
+        <option value="create" ${state.auditAction === "create" ? "selected" : ""}>create</option>
+      </select>
+      <input class="text-input" id="audit-search-filter" placeholder="Filter audit trail by operator or resource..." style="flex: 1; max-width: 320px;">
+    </div>
+    <div class="admin-table-container">
+      <div class="admin-empty-state">Loading platform audit logs…</div>
+    </div>
+  `;
+
+  $("#audit-ns-select").onchange = (e) => {
+    state.auditNs = e.target.value;
+    renderAuditTrail(container);
+  };
+  $("#audit-action-select").onchange = (e) => {
+    state.auditAction = e.target.value;
+    renderAuditTrail(container);
+  };
+
+  try {
+    const logs = await request(`/api/v1/admin/audit-trail?namespace=${encodeURIComponent(state.auditNs)}&action_type=${encodeURIComponent(state.auditAction)}`);
+
+    const tableWrap = container.querySelector(".admin-table-container");
+    if (!logs || logs.length === 0) {
+      tableWrap.innerHTML = `
+        <div class="admin-empty-state">
+          <h3>No Audit Records Found</h3>
+          <p>No operator actions matching the selected filter criteria have been recorded yet.</p>
+        </div>
+      `;
+      return;
+    }
+
+    function renderAuditTable(filteredLogs) {
+      tableWrap.innerHTML = `
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width: 160px;">Timestamp (UTC)</th>
+              <th style="width: 180px;">Operator</th>
+              <th style="width: 100px;">Action</th>
+              <th style="width: 100px;">Resource Kind</th>
+              <th style="width: 220px;">Namespace / Name</th>
+              <th>Execution Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredLogs.map(l => `
+              <tr>
+                <td style="color: var(--admin-text-muted); font-size: 11px;">${escapeHTML(l.created_at)}</td>
+                <td style="font-weight: 600;">${escapeHTML(l.operator_email)}</td>
+                <td><span class="admin-audit-badge ${escapeHTML(l.action_type)}">${escapeHTML(l.action_type)}</span></td>
+                <td><strong>${escapeHTML(l.resource_kind)}</strong></td>
+                <td>
+                  <span style="font-family: var(--admin-mono); font-size: 12px;">${l.namespace ? `${escapeHTML(l.namespace)}/` : ""}${escapeHTML(l.name)}</span>
+                </td>
+                <td style="color: var(--admin-text); font-size: 12px;">${escapeHTML(l.details || "—")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    renderAuditTable(logs);
+
+    $("#audit-search-filter").oninput = (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        renderAuditTable(logs);
+      } else {
+        const filtered = logs.filter(l => 
+          (l.operator_email && l.operator_email.toLowerCase().includes(q)) ||
+          (l.name && l.name.toLowerCase().includes(q)) ||
+          (l.namespace && l.namespace.toLowerCase().includes(q)) ||
+          (l.details && l.details.toLowerCase().includes(q)) ||
+          (l.action_type && l.action_type.toLowerCase().includes(q))
+        );
+        renderAuditTable(filtered);
+      }
+    };
+  } catch (err) {
+    container.querySelector(".admin-table-container").innerHTML = `
+      <div class="admin-empty-state" style="color: var(--admin-red);">Failed to load audit trail: ${escapeHTML(err.message)}</div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 3: Cluster Upgrade Radar
+// -------------------------------------------------------------
+
+async function renderUpgradeRadar(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Cluster Upgrade Radar & API Deprecation Scanner</h1>
+        <p>Continuous compatibility assessment for upcoming Kubernetes releases and breaking API removals</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" type="button" onclick="renderUpgradeRadar(document.getElementById('admin-content-area'))">Rescan Cluster</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Evaluating cluster APIs against enterprise Kubernetes target version…</div>
+  `;
+
+  try {
+    const radar = await request("/api/v1/admin/cluster/upgrade-radar");
+
+    let dialClass = "admin-radar-score-dial";
+    if (radar.upgrade_readiness_score < 70) {
+      dialClass += " danger";
+    } else if (radar.upgrade_readiness_score < 90) {
+      dialClass += " warning";
+    }
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Cluster Upgrade Radar & API Deprecation Scanner</h1>
+          <p>Continuous compatibility assessment for upcoming Kubernetes releases and breaking API removals</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-sm" type="button" onclick="renderUpgradeRadar(document.getElementById('admin-content-area'))">Rescan Cluster</button>
+        </div>
+      </div>
+
+      <!-- Hero Dial -->
+      <div class="admin-radar-hero">
+        <div class="${dialClass}">
+          ${radar.upgrade_readiness_score}%
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--admin-text-muted); margin-bottom: 4px;">Upgrade Readiness Score</div>
+          <h2 style="margin: 0 0 6px; font-family: var(--admin-font-heading); font-size: 20px;">
+            Current: <span style="font-family: var(--admin-mono);">${escapeHTML(radar.current_server_version)}</span> → Target: <span style="font-family: var(--admin-mono); color: var(--admin-accent);">${escapeHTML(radar.target_version)}</span>
+          </h2>
+          <p style="margin: 0; color: var(--admin-text-muted); font-size: 13px;">
+            ${radar.critical_blockers_count > 0 
+              ? `<strong style="color: var(--admin-red);">${radar.critical_blockers_count} critical upgrade blocker(s)</strong> must be remediated before initiating control-plane upgrade.` 
+              : (radar.deprecated_count > 0 ? `Cluster has ${radar.deprecated_count} deprecated API usage(s) flagged for migration.` : "All workloads comply with target Kubernetes APIs. Zero upgrade blockers detected.")}
+          </p>
+        </div>
+        <div style="display: flex; gap: 14px; text-align: center;">
+          <div style="padding: 10px 16px; background: #ffffff; border: 1px solid var(--admin-border); border-radius: 8px;">
+            <div style="font-size: 22px; font-weight: 700; color: var(--admin-text);">${radar.deprecated_count}</div>
+            <div style="font-size: 10px; text-transform: uppercase; color: var(--admin-text-muted);">Deprecated APIs</div>
+          </div>
+          <div style="padding: 10px 16px; background: #ffffff; border: 1px solid var(--admin-border); border-radius: 8px;">
+            <div style="font-size: 22px; font-weight: 700; color: ${radar.critical_blockers_count > 0 ? "var(--admin-red)" : "var(--admin-green);"}">${radar.critical_blockers_count}</div>
+            <div style="font-size: 10px; text-transform: uppercase; color: var(--admin-text-muted);">Critical Blockers</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deprecations Table -->
+      <div class="admin-table-container">
+        <div style="padding: 14px 18px; border-bottom: 1px solid var(--admin-border); background: #ffffff; display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="margin: 0; font-size: 14px;">Detected Deprecated APIs & Migration Action Plan</h3>
+        </div>
+        ${(!radar.findings || radar.findings.length === 0) ? `
+          <div class="admin-empty-state">
+            <h3 style="color: var(--admin-green);">No Deprecated APIs Detected</h3>
+            <p>Your cluster workloads are fully aligned with modern Kubernetes API standards.</p>
+          </div>
+        ` : `
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th style="width: 100px;">Kind</th>
+                <th style="width: 180px;">Resource</th>
+                <th style="width: 140px;">Current Version / Field</th>
+                <th style="width: 100px;">Removed In</th>
+                <th style="width: 140px;">Replacement</th>
+                <th style="width: 90px;">Severity</th>
+                <th>Remediation Guide</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${radar.findings.map(f => `
+                <tr>
+                  <td><strong>${escapeHTML(f.kind)}</strong></td>
+                  <td>
+                    <span style="font-family: var(--admin-mono); font-size: 12px;">${f.namespace ? `${escapeHTML(f.namespace)}/` : ""}${escapeHTML(f.name)}</span>
+                  </td>
+                  <td><span class="admin-badge admin-badge-warning">${escapeHTML(f.current_api_version)}</span></td>
+                  <td><span class="admin-badge admin-badge-danger">${escapeHTML(f.removed_in)}</span></td>
+                  <td><span style="font-family: var(--admin-mono); font-size: 11px;">${escapeHTML(f.replacement_gvk)}</span></td>
+                  <td><span class="admin-badge ${f.severity === "critical" ? "admin-badge-danger" : "admin-badge-warning"}">${escapeHTML(f.severity.toUpperCase())}</span></td>
+                  <td style="font-size: 12px; color: var(--admin-text);">${escapeHTML(f.migration_steps)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title"><h1>Cluster Upgrade Radar</h1></div>
+      </div>
+      <div class="admin-empty-state" style="color: var(--admin-red);">Failed to run upgrade radar: ${escapeHTML(err.message)}</div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 4: Visual Traffic Topology
+// -------------------------------------------------------------
+
+async function renderNetworkTopology(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Visual Traffic & Ingress Routing Topology</h1>
+        <p>End-to-end traffic routing mapping from public Ingress domains through Services to healthy Pod endpoints</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" type="button" onclick="renderNetworkTopology(document.getElementById('admin-content-area'))">Refresh Topology</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Mapping network traffic routes…</div>
+  `;
+
+  try {
+    const topo = await request("/api/v1/admin/network/topology");
+
+    let orphanAlertsHtml = "";
+    if (topo.orphan_alerts && topo.orphan_alerts.length > 0) {
+      orphanAlertsHtml = `
+        <div style="background: rgba(220, 38, 38, 0.08); border-left: 4px solid var(--admin-red); padding: 14px 18px; margin-bottom: 20px; border-radius: 6px;">
+          <div style="font-weight: 700; color: var(--admin-red); margin-bottom: 6px; font-size: 13px;">Orphan Service Warning: Traffic Black Hole Detected</div>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: var(--admin-text);">
+            ${topo.orphan_alerts.map(a => `
+              <li style="margin-bottom: 4px;">
+                <strong>${escapeHTML(a.namespace)}/${escapeHTML(a.service_name)}</strong>: ${escapeHTML(a.reason)} (${escapeHTML(a.remediation)})
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Visual Traffic & Ingress Routing Topology</h1>
+          <p>End-to-end traffic routing mapping from public Ingress domains through Services to healthy Pod endpoints</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-sm" type="button" onclick="renderNetworkTopology(document.getElementById('admin-content-area'))">Refresh Topology</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary -->
+      <div class="admin-overview-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Ingress Gateways</span></div>
+          <div class="admin-stat-value">${topo.total_ingresses || 0}</div>
+          <div class="admin-stat-subtext">Active ingress rules</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Cluster Services</span></div>
+          <div class="admin-stat-value">${topo.total_services || 0}</div>
+          <div class="admin-stat-subtext">ClusterIP & LoadBalancer</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Live Pod Endpoints</span></div>
+          <div class="admin-stat-value">${topo.total_endpoints || 0}</div>
+          <div class="admin-stat-subtext">Target backend replicas</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Orphan Services</span></div>
+          <div class="admin-stat-value" style="color: ${topo.orphan_services_count > 0 ? "var(--admin-red)" : "var(--admin-green);"}">${topo.orphan_services_count || 0}</div>
+          <div class="admin-stat-subtext">${topo.orphan_services_count > 0 ? "0 matching backend pods" : "All services routed"}</div>
+        </div>
+      </div>
+
+      ${orphanAlertsHtml}
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="margin: 0; font-size: 15px;">Live Traffic Pipelines</h3>
+        <input class="text-input" id="topology-search" placeholder="Filter routes by domain, path, or service..." style="width: 280px; font-size: 12px;">
+      </div>
+
+      <div id="topology-cards-container">
+        ${(!topo.routes || topo.routes.length === 0) ? `
+          <div class="admin-empty-state">No ingress traffic routes detected in cluster.</div>
+        ` : topo.routes.map(r => `
+          <div class="admin-topology-card" data-search="${escapeHTML(r.host + ' ' + r.path + ' ' + r.service_name).toLowerCase()}">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: var(--admin-text-muted); text-transform: uppercase;">
+                Namespace: <strong style="color: var(--admin-text);">${escapeHTML(r.namespace)}</strong>
+              </span>
+              <span class="admin-badge ${r.tls ? "admin-badge-success" : "admin-badge-warning"}">
+                ${r.tls ? "TLS / HTTPS" : "HTTP (Insecure)"}
+              </span>
+            </div>
+            <div class="admin-topology-flow">
+              <!-- Ingress Node -->
+              <div class="admin-topology-node ingress">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #2563eb;">Ingress Gateway</div>
+                <div style="font-family: var(--admin-mono); font-weight: 700; font-size: 13px; color: var(--admin-text); margin: 2px 0;">${escapeHTML(r.host)}</div>
+                <div style="font-family: var(--admin-mono); font-size: 11px; color: var(--admin-text-muted);">Path: ${escapeHTML(r.path)} (${escapeHTML(r.path_type)})</div>
+              </div>
+
+              <div class="admin-topology-arrow">→</div>
+
+              <!-- Service Node -->
+              <div class="admin-topology-node service">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #0d9488;">Kubernetes Service</div>
+                <div style="font-family: var(--admin-mono); font-weight: 700; font-size: 13px; color: var(--admin-text); margin: 2px 0;">${escapeHTML(r.service_name || "—")}</div>
+                <div style="font-family: var(--admin-mono); font-size: 11px; color: var(--admin-text-muted);">Port: ${escapeHTML(r.service_port)} · ${escapeHTML(r.service_type)}</div>
+              </div>
+
+              <div class="admin-topology-arrow">→</div>
+
+              <!-- Target Pod Endpoints -->
+              <div class="admin-topology-node pod" style="flex: 1; min-width: 240px;">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #16a34a; margin-bottom: 4px;">Target Pod Endpoints (${r.target_pods ? r.target_pods.length : 0})</div>
+                ${(!r.target_pods || r.target_pods.length === 0) ? `
+                  <div style="color: var(--admin-red); font-size: 11px; font-weight: 600;">No running pods match this service selector</div>
+                ` : `
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    ${r.target_pods.map(p => `
+                      <span class="admin-tag-chip" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" onclick="openInspector('pod', '${escapeHTML(r.namespace)}', '${escapeHTML(p.pod_name)}')">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${p.ready ? "var(--admin-green)" : "var(--admin-red);"}"></span>
+                        ${escapeHTML(p.pod_name)} (${escapeHTML(p.pod_ip || "pending")})
+                      </span>
+                    `).join("")}
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    $("#topology-search").oninput = (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      $$("#topology-cards-container .admin-topology-card").forEach(card => {
+        if (!q || card.dataset.search.includes(q)) {
+          card.style.display = "";
+        } else {
+          card.style.display = "none";
+        }
+      });
+    };
+  } catch (err) {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title"><h1>Visual Traffic Topology</h1></div>
+      </div>
+      <div class="admin-empty-state" style="color: var(--admin-red);">Failed to map network topology: ${escapeHTML(err.message)}</div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 5: Tenant Isolation Matrix
+// -------------------------------------------------------------
+
+async function renderTenantIsolationMatrix(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Multi-Tenant Network Firewall & Isolation Matrix</h1>
+        <p>Capsule tenant boundary checks and NetworkPolicy zero-trust enforcement across namespaces</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" type="button" onclick="renderTenantIsolationMatrix(document.getElementById('admin-content-area'))">Rescan Matrix</button>
+      </div>
+    </div>
+    <div class="admin-empty-state">Analyzing cross-namespace network boundary enforcement…</div>
+  `;
+
+  try {
+    const matrix = await request("/api/v1/admin/network/matrix");
+
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Multi-Tenant Network Firewall & Isolation Matrix</h1>
+          <p>Capsule tenant boundary checks and NetworkPolicy zero-trust enforcement across namespaces</p>
+        </div>
+        <div class="admin-view-actions">
+          <button class="admin-btn admin-btn-sm" type="button" onclick="renderTenantIsolationMatrix(document.getElementById('admin-content-area'))">Rescan Matrix</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary -->
+      <div class="admin-overview-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 20px;">
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Cluster Isolation Score</span></div>
+          <div class="admin-stat-value" style="color: ${matrix.isolation_score >= 80 ? "var(--admin-green)" : (matrix.isolation_score >= 50 ? "var(--admin-amber)" : "var(--admin-red);")}">${matrix.isolation_score || 0}%</div>
+          <div class="admin-stat-subtext">Zero-trust network posture</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Fully Isolated Tenants</span></div>
+          <div class="admin-stat-value" style="color: var(--admin-green);">${matrix.fully_isolated_tenants || 0}</div>
+          <div class="admin-stat-subtext">Default-deny ingress & egress</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Partially Isolated</span></div>
+          <div class="admin-stat-value" style="color: var(--admin-amber);">${matrix.partially_isolated || 0}</div>
+          <div class="admin-stat-subtext">Partial policy coverage</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-header"><span>Unisolated Tenants</span></div>
+          <div class="admin-stat-value" style="color: ${matrix.unisolated_tenants > 0 ? "var(--admin-red)" : "var(--admin-green);"}">${matrix.unisolated_tenants || 0}</div>
+          <div class="admin-stat-subtext">Open East-West traffic</div>
+        </div>
+      </div>
+
+      <!-- Matrix Table -->
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width: 160px;">Namespace</th>
+              <th style="width: 150px;">Capsule Tenant</th>
+              <th style="width: 130px;">Default Deny Ingress</th>
+              <th style="width: 130px;">Default Deny Egress</th>
+              <th>Cross-Namespace Peer Allowlist</th>
+              <th style="width: 90px;">Policies</th>
+              <th style="width: 150px;">Isolation Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(!matrix.tenants || matrix.tenants.length === 0) ? `
+              <tr><td colspan="7" class="admin-empty-state">No tenant namespaces found.</td></tr>
+            ` : matrix.tenants.map(t => `
+              <tr>
+                <td><strong>${escapeHTML(t.namespace)}</strong></td>
+                <td><span class="admin-tag-chip">${escapeHTML(t.tenant_name)}</span></td>
+                <td>
+                  <span class="admin-badge ${t.has_default_deny_ingress ? "admin-badge-success" : "admin-badge-danger"}">
+                    ${t.has_default_deny_ingress ? "Enforced" : "Open"}
+                  </span>
+                </td>
+                <td>
+                  <span class="admin-badge ${t.has_default_deny_egress ? "admin-badge-success" : "admin-badge-warning"}">
+                    ${t.has_default_deny_egress ? "Enforced" : "Open"}
+                  </span>
+                </td>
+                <td style="font-family: var(--admin-mono); font-size: 11px;">
+                  ${t.allowed_cross_namespaces && t.allowed_cross_namespaces.length > 0 
+                    ? t.allowed_cross_namespaces.map(peer => `<span class="admin-tag-chip" style="margin-right: 4px;">${escapeHTML(peer)}</span>`).join("") 
+                    : `<span style="color: var(--admin-text-muted);">Strictly Blocked</span>`}
+                </td>
+                <td><strong>${t.policy_count || 0}</strong></td>
+                <td>
+                  <span class="admin-badge ${t.has_default_deny_ingress && t.has_default_deny_egress ? "admin-badge-success" : (t.has_default_deny_ingress ? "admin-badge-warning" : "admin-badge-danger")}">
+                    ${escapeHTML(t.isolation_status)}
+                  </span>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title"><h1>Multi-Tenant Network Firewall</h1></div>
+      </div>
+      <div class="admin-empty-state" style="color: var(--admin-red);">Failed to calculate isolation matrix: ${escapeHTML(err.message)}</div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// Operational Intelligence Feature 6: AI Post-Mortem Modal Logic
+// -------------------------------------------------------------
+
+async function openPostMortem(namespace, podName) {
+  const modal = $("#admin-postmortem-modal");
+  modal.classList.add("open");
+  switchPostMortemTab("preview");
+
+  $("#postmortem-preview-body").innerHTML = `<div class="admin-empty-state">Synthesizing AI Post-Mortem & Preventative Runbook for ${escapeHTML(podName)}…</div>`;
+  $("#postmortem-markdown-textarea").value = "";
+  $("#postmortem-runbook-body").innerHTML = "";
+
+  try {
+    const report = await request(`/api/v1/admin/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/post-mortem`);
+
+    $("#postmortem-modal-title").textContent = report.title || "Incident Post-Mortem";
+    $("#postmortem-modal-severity").textContent = report.severity || "CRITICAL";
+    $("#postmortem-modal-id").textContent = report.incident_id || "INC-POSTMORTEM";
+    $("#postmortem-markdown-textarea").value = report.markdown_content || "";
+
+    // Tab 1: Preview
+    $("#postmortem-preview-body").innerHTML = `
+      <div class="admin-ai-banner">
+        <div class="admin-ai-banner-title">Executive Summary</div>
+        <p style="margin: 0; font-size: 13px; line-height: 1.6; color: var(--admin-text);">${escapeHTML(report.executive_summary)}</p>
+      </div>
+
+      <div class="admin-spec-group">
+        <div class="admin-spec-group-title">Incident Chronological Timeline</div>
+        <table class="admin-table admin-timeline-table" style="font-size: 11px;">
+          <thead>
+            <tr>
+              <th style="width: 160px;">Timestamp (UTC)</th>
+              <th style="width: 140px;">Source</th>
+              <th>Event Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(report.timeline || []).map(t => `
+              <tr>
+                <td style="color: var(--admin-text-muted); font-family: var(--admin-mono);">${escapeHTML(t.timestamp)}</td>
+                <td><strong>${escapeHTML(t.source)}</strong></td>
+                <td>${escapeHTML(t.event)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="admin-ai-cause-box">
+        <div class="admin-ai-cause-title">Technical Root Cause Analysis</div>
+        <p style="margin: 0 0 8px; font-size: 12px; line-height: 1.6; color: var(--admin-text);">${escapeHTML(report.root_cause_technical)}</p>
+        ${report.stack_trace ? `
+          <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--admin-red); margin-bottom: 4px;">Captured Stack Trace</div>
+          <pre class="admin-stacktrace-block">${escapeHTML(report.stack_trace)}</pre>
+        ` : ""}
+      </div>
+
+      <div class="admin-spec-group">
+        <div class="admin-spec-group-title">Multi-Tenant Impact & Blast Radius</div>
+        <p style="font-size: 12px; color: var(--admin-text); margin: 0;">${escapeHTML(report.blast_radius)}</p>
+      </div>
+    `;
+
+    // Tab 3: Preventative Runbook
+    $("#postmortem-runbook-body").innerHTML = `
+      <div style="margin-bottom: 14px; font-size: 13px; color: var(--admin-text-muted);">Action items synthesized to prevent workload recurrence:</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        ${(report.preventative_runbook || []).map((step, idx) => `
+          <div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; background: #f8fafc; border: 1px solid var(--admin-border); border-radius: 6px;">
+            <input type="checkbox" id="runbook-chk-${idx}" style="margin-top: 3px;">
+            <label for="runbook-chk-${idx}" style="font-size: 12px; color: var(--admin-text); cursor: pointer; flex: 1;">${escapeHTML(step)}</label>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } catch (err) {
+    $("#postmortem-preview-body").innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Failed to generate post-mortem: ${escapeHTML(err.message)}</div>`;
+  }
+}
+
+function switchPostMortemTab(tab) {
+  $("#tab-btn-postmortem-preview")?.classList.toggle("active", tab === "preview");
+  $("#tab-btn-postmortem-markdown")?.classList.toggle("active", tab === "markdown");
+  $("#tab-btn-postmortem-runbook")?.classList.toggle("active", tab === "runbook");
+
+  $("#postmortem-tab-preview").hidden = (tab !== "preview");
+  $("#postmortem-tab-markdown").hidden = (tab !== "markdown");
+  $("#postmortem-tab-runbook").hidden = (tab !== "runbook");
+}
+
+function copyPostMortemMarkdown() {
+  const text = $("#postmortem-markdown-textarea").value;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn1 = $("#btn-copy-postmortem-markdown");
+    const btn2 = $("#postmortem-modal-copy-btn");
+    if (btn1) btn1.textContent = "✓ Copied to Clipboard!";
+    if (btn2) btn2.textContent = "✓ Copied to Clipboard!";
+    setTimeout(() => {
+      if (btn1) btn1.textContent = "Copy Markdown to Clipboard";
+      if (btn2) btn2.textContent = "1-Click Copy Markdown";
+    }, 2000);
+  });
+}
+
 
 async function initializeAdmin() {
   try {

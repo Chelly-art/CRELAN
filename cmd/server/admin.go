@@ -128,6 +128,14 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/ai/copilot", s.aiCopilot)
 	mux.HandleFunc("GET /api/v1/admin/databases/topology", s.getDatabaseTopology)
 	mux.HandleFunc("GET /api/v1/admin/resources/efficiency", s.getResourceEfficiency)
+
+	// Operational Intelligence, Audit & Incident War Room
+	mux.HandleFunc("GET /api/v1/admin/audit-trail", s.getAuditTrail)
+	mux.HandleFunc("GET /api/v1/admin/incidents/snapshot", s.getIncidentSnapshot)
+	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}/post-mortem", s.getPodPostMortem)
+	mux.HandleFunc("GET /api/v1/admin/cluster/upgrade-radar", s.getUpgradeRadar)
+	mux.HandleFunc("GET /api/v1/admin/network/topology", s.getNetworkTopology)
+	mux.HandleFunc("GET /api/v1/admin/network/matrix", s.getTenantNetworkMatrix)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
@@ -365,6 +373,18 @@ func (s *adminService) authorize(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (s *adminService) currentOperatorEmail(r *http.Request) string {
+	userID, err := s.auth.sessionUserID(r)
+	if err != nil {
+		return "platform-admin"
+	}
+	var email string
+	if err := s.auth.db.QueryRowContext(r.Context(), `SELECT email FROM users WHERE id = ?`, userID).Scan(&email); err != nil {
+		return "platform-admin"
+	}
+	return email
 }
 
 type platformOverview struct {
@@ -695,6 +715,7 @@ func (s *adminService) deletePod(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not delete pod: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "delete", "Pod", ns, name, fmt.Sprintf("Pod evicted and deleted (force=%v)", force))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "pod": name})
 }
 
@@ -759,6 +780,7 @@ func (s *adminService) restartDeployment(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "Could not restart deployment: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "restart", "Deployment", ns, name, "Rollout restart triggered")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restarted", "deployment": name})
 }
 
@@ -789,6 +811,7 @@ func (s *adminService) scaleDeployment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not scale deployment: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "scale", "Deployment", ns, name, fmt.Sprintf("Scaled replicas to %d", input.Replicas))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "scaled", "deployment": name, "replicas": input.Replicas})
 }
 
@@ -819,6 +842,7 @@ func (s *adminService) patchEnvDeployment(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "Could not update environment variables: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "patch-env", "Deployment", ns, name, fmt.Sprintf("Updated %d environment variables", len(input.Env)))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated", "deployment": name})
 }
 
@@ -841,6 +865,7 @@ func (s *adminService) deleteDeployment(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "Could not delete deployment: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "delete", "Deployment", ns, name, "Deployment deleted")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "deployment": name})
 }
 
@@ -1193,6 +1218,7 @@ func (s *adminService) createNamespace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not create namespace: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "create", "Namespace", "", created.Name, "Namespace created")
 	writeJSON(w, http.StatusCreated, map[string]string{"name": created.Name, "status": string(created.Status.Phase)})
 }
 
@@ -1218,6 +1244,7 @@ func (s *adminService) deleteNamespace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not delete namespace: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "delete", "Namespace", "", name, "Namespace deleted")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleting", "namespace": name})
 }
 
@@ -1393,6 +1420,7 @@ func (s *adminService) hardenDeployment(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "Could not harden deployment: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "harden", "Deployment", ns, name, "Hardened securityContext (non-root, drop ALL caps, RuntimeDefault seccomp)")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "hardened", "message": fmt.Sprintf("Deployment %s/%s successfully hardened with non-root, dropped capabilities, and runtime seccomp profile.", ns, name)})
 }
 
@@ -1439,6 +1467,7 @@ func (s *adminService) applyRightSizing(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "Could not apply right-sizing patch: "+err.Error())
 		return
 	}
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "rightsize", "Deployment", ns, name, fmt.Sprintf("Applied right-sizing: CPU %s/%s, Mem %s/%s", input.CPURequest, input.CPULimit, input.MemRequest, input.MemLimit))
 	writeJSON(w, http.StatusOK, map[string]any{"status": "applied", "message": fmt.Sprintf("Deployment %s/%s resources successfully updated.", ns, name)})
 }
 
@@ -1473,5 +1502,115 @@ func (s *adminService) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
+
+func (s *adminService) getAuditTrail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	actionType := r.URL.Query().Get("action_type")
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	logs, err := fetchPlatformAuditLogs(r.Context(), s.auth.db, ns, actionType, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch platform audit trail: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, logs)
+}
+
+func (s *adminService) getIncidentSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	pod := r.URL.Query().Get("pod")
+	snapshot, err := fetchIncidentSnapshot(r.Context(), provisioner.client, ns, pod)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not capture incident snapshot: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *adminService) getPodPostMortem(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	report, err := generatePostMortemReport(r.Context(), provisioner.client, s.auth.db, ns, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not generate post-mortem report: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getUpgradeRadar(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := runClusterUpgradeRadar(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not run cluster upgrade radar: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getNetworkTopology(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := fetchNetworkTrafficTopology(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not map network traffic topology: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) getTenantNetworkMatrix(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := calculateTenantNetworkMatrix(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not calculate tenant network isolation matrix: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
 
 

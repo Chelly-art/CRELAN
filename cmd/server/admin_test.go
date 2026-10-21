@@ -10,9 +10,11 @@ import (
 	assets "crelan"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -576,5 +578,285 @@ func TestAICopilotQueries(t *testing.T) {
 		t.Errorf("expected security intent, got %s", secResp.Intent)
 	}
 }
+
+func TestPlatformAuditTrailRecording(t *testing.T) {
+	auth, err := newAuthService()
+	if err != nil {
+		t.Fatalf("failed to init auth service: %v", err)
+	}
+	defer auth.db.Close()
+	db := auth.db
+
+	ctx := context.Background()
+	// Record two audit logs
+	err = recordPlatformAudit(db, "admin@pipeops.app", "restart", "Deployment", "prod", "web-api", "Rollout restart triggered")
+	if err != nil {
+		t.Fatalf("recordPlatformAudit failed: %v", err)
+	}
+	err = recordPlatformAudit(db, "sre@pipeops.app", "scale", "Deployment", "staging", "worker", "Scaled to 5")
+	if err != nil {
+		t.Fatalf("recordPlatformAudit failed: %v", err)
+	}
+
+	// Fetch all
+	logs, err := fetchPlatformAuditLogs(ctx, db, "", "", 50)
+	if err != nil {
+		t.Fatalf("fetchPlatformAuditLogs failed: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 logs, got %d", len(logs))
+	}
+
+	// Filter by namespace
+	prodLogs, err := fetchPlatformAuditLogs(ctx, db, "prod", "", 50)
+	if err != nil {
+		t.Fatalf("fetchPlatformAuditLogs for prod failed: %v", err)
+	}
+	if len(prodLogs) != 1 || prodLogs[0].Name != "web-api" {
+		t.Errorf("unexpected prod logs: %+v", prodLogs)
+	}
+}
+
+func TestIncidentWarRoomAndPostMortemGenerator(t *testing.T) {
+	auth, err := newAuthService()
+	if err != nil {
+		t.Fatalf("failed to init auth service: %v", err)
+	}
+	defer auth.db.Close()
+	db := auth.db
+
+	crashedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "orders-api-crash",
+			Namespace: "production",
+			Labels: map[string]string{
+				capsuleTenantLabel: "e-commerce",
+			},
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name: "app",
+					State: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 137,
+							Reason:   "OOMKilled",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(crashedPod)
+	ctx := context.Background()
+
+	// 1. Incident Snapshot
+	snapshot, err := fetchIncidentSnapshot(ctx, client, "production", "orders-api-crash")
+	if err != nil {
+		t.Fatalf("fetchIncidentSnapshot failed: %v", err)
+	}
+	if snapshot.PodName != "orders-api-crash" || snapshot.ExitCode != 137 || snapshot.Reason != "OOMKilled" {
+		t.Errorf("unexpected snapshot: %+v", snapshot)
+	}
+	if !strings.HasPrefix(snapshot.IncidentID, "INC-ORDERS-API-CRASH") {
+		t.Errorf("unexpected incident ID: %s", snapshot.IncidentID)
+	}
+
+	// 2. Post-Mortem Report & Markdown Generation
+	_ = recordPlatformAudit(db, "incident-commander@pipeops.app", "restart", "Pod", "production", "orders-api-crash", "Emergency pod reboot attempted")
+
+	postMortem, err := generatePostMortemReport(ctx, client, db, "production", "orders-api-crash")
+	if err != nil {
+		t.Fatalf("generatePostMortemReport failed: %v", err)
+	}
+	if postMortem.Severity != "CRITICAL" {
+		t.Errorf("expected CRITICAL severity, got %s", postMortem.Severity)
+	}
+	if !strings.Contains(postMortem.BlastRadius, "e-commerce") {
+		t.Errorf("expected tenant in blast radius, got %s", postMortem.BlastRadius)
+	}
+	if !strings.Contains(postMortem.MarkdownContent, "# Incident Post-Mortem") {
+		t.Errorf("markdown does not contain header: %s", postMortem.MarkdownContent)
+	}
+	if !strings.Contains(postMortem.MarkdownContent, "Emergency pod reboot attempted") {
+		t.Errorf("markdown timeline missing operator audit action")
+	}
+}
+
+func TestClusterUpgradeRadar(t *testing.T) {
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "legacy-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"kubernetes.io/ingress.class": "nginx",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{{Host: "app.example.com"}},
+		},
+	}
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "legacy-dep",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"seccomp.security.alpha.kubernetes.io/pod": "runtime/default",
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(ing, dep)
+	ctx := context.Background()
+
+	radar, err := runClusterUpgradeRadar(ctx, client)
+	if err != nil {
+		t.Fatalf("runClusterUpgradeRadar failed: %v", err)
+	}
+	if radar.DeprecatedCount != 2 {
+		t.Fatalf("expected 2 deprecated findings, got %d", radar.DeprecatedCount)
+	}
+	if radar.UpgradeReadinessScore >= 100 {
+		t.Errorf("expected readiness score deduction, got %d", radar.UpgradeReadinessScore)
+	}
+}
+
+func TestNetworkTrafficTopologyAndOrphanDetection(t *testing.T) {
+	matchingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-pod-1",
+			Namespace: "prod",
+			Labels:    map[string]string{"app": "api"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			PodIP: "10.244.1.15",
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	healthySvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-svc",
+			Namespace: "prod",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{"app": "api"},
+			Ports: []corev1.ServicePort{
+				{Port: 80, TargetPort: intstr.FromInt(8080)},
+			},
+		},
+	}
+	orphanSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "stale-svc",
+			Namespace: "prod",
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{"app": "nonexistent-app"},
+		},
+	}
+	pathType := networkingv1.PathTypePrefix
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "prod-ingress",
+			Namespace: "prod",
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "api.crelan.io",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "api-svc",
+											Port: networkingv1.ServiceBackendPort{Number: 80},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(matchingPod, healthySvc, orphanSvc, ing)
+	ctx := context.Background()
+
+	topo, err := fetchNetworkTrafficTopology(ctx, client)
+	if err != nil {
+		t.Fatalf("fetchNetworkTrafficTopology failed: %v", err)
+	}
+	if topo.TotalIngresses != 1 || topo.TotalServices != 2 {
+		t.Errorf("unexpected counts: ingresses=%d, services=%d", topo.TotalIngresses, topo.TotalServices)
+	}
+	if topo.OrphanServices != 1 {
+		t.Errorf("expected 1 orphan service, got %d", topo.OrphanServices)
+	}
+	if len(topo.OrphanAlerts) != 1 || topo.OrphanAlerts[0].ServiceName != "stale-svc" {
+		t.Errorf("expected orphan alert for stale-svc: %+v", topo.OrphanAlerts)
+	}
+	if len(topo.Routes) != 1 || topo.Routes[0].ServiceName != "api-svc" || len(topo.Routes[0].TargetPods) != 1 {
+		t.Errorf("expected 1 route mapped to api-pod-1: %+v", topo.Routes)
+	}
+}
+
+func TestTenantNetworkIsolationMatrix(t *testing.T) {
+	ns1 := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "tenant-a",
+			Labels: map[string]string{capsuleTenantLabel: "fintech"},
+		},
+	}
+	ns2 := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "tenant-b",
+			Labels: map[string]string{capsuleTenantLabel: "healthcare"},
+		},
+	}
+
+	// Default deny policy for tenant-a
+	npA := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default-deny-all",
+			Namespace: "tenant-a",
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(ns1, ns2, npA)
+	ctx := context.Background()
+
+	matrix, err := calculateTenantNetworkMatrix(ctx, client)
+	if err != nil {
+		t.Fatalf("calculateTenantNetworkMatrix failed: %v", err)
+	}
+	if matrix.TotalTenants != 2 {
+		t.Fatalf("expected 2 tenants, got %d", matrix.TotalTenants)
+	}
+	if matrix.FullyIsolatedTenants != 1 || matrix.UnisolatedTenants != 1 {
+		t.Errorf("expected 1 fully isolated and 1 unisolated, got %d and %d", matrix.FullyIsolatedTenants, matrix.UnisolatedTenants)
+	}
+	if matrix.IsolationScore != 50 {
+		t.Errorf("expected 50%% isolation score, got %d", matrix.IsolationScore)
+	}
+}
+
 
 

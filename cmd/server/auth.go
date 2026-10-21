@@ -236,7 +236,29 @@ CREATE TABLE IF NOT EXISTS platform_cluster_config (
 	encrypted_kubeconfig BLOB NOT NULL,
 	updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS platform_audit_logs (
+	id INTEGER PRIMARY KEY,
+	operator_email TEXT NOT NULL,
+	action_type TEXT NOT NULL,
+	resource_kind TEXT NOT NULL,
+	namespace TEXT NOT NULL,
+	name TEXT NOT NULL,
+	details TEXT,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS platform_audit_logs_idx ON platform_audit_logs(id DESC);
 `
+
+func recordPlatformAudit(db *sql.DB, operatorEmail, actionType, resourceKind, namespace, name, details string) error {
+	if db == nil {
+		return nil
+	}
+	_, err := db.Exec(`
+		INSERT INTO platform_audit_logs (operator_email, action_type, resource_kind, namespace, name, details, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, operatorEmail, actionType, resourceKind, namespace, name, details, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
 
 func ensureDeploymentColumns(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(deployments)`)

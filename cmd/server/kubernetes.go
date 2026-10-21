@@ -1492,9 +1492,10 @@ func buildResourceName(application string) (string, error) {
 	}
 	name := strings.Trim(strings.ToLower(application), "-")
 	if len(name) > 48 {
-		name = name[:48]
+		name = strings.Trim(name[:48], "-")
 	}
-	return name + "-build-" + strings.ToLower(strings.ReplaceAll(suffix, "_", "a")), nil
+	cleanSuffix := strings.Trim(strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(suffix, "_", "a"), "-", "b")), "-")
+	return name + "-build-" + cleanSuffix, nil
 }
 
 func gitCloneArgs(request DeploymentRequest) []string {

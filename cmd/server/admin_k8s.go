@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -453,6 +454,150 @@ type rightSizeApplyRequest struct {
 	CPULimit   string `json:"cpu_limit"`
 	MemRequest string `json:"mem_request"`
 	MemLimit   string `json:"mem_limit"`
+}
+
+// -------------------------------------------------------------
+// Platform Action Audit & Incident War Room Models
+// -------------------------------------------------------------
+
+type platformAuditLogEntry struct {
+	ID            int64  `json:"id"`
+	OperatorEmail string `json:"operator_email"`
+	ActionType    string `json:"action_type"`
+	ResourceKind  string `json:"resource_kind"`
+	Namespace     string `json:"namespace"`
+	Name          string `json:"name"`
+	Details       string `json:"details"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type incidentSnapshot struct {
+	IncidentID    string             `json:"incident_id"`
+	PodName       string             `json:"pod_name"`
+	Namespace     string             `json:"namespace"`
+	Phase         string             `json:"phase"`
+	ExitCode      int32              `json:"exit_code"`
+	Reason        string             `json:"reason"`
+	CapturedAt    string             `json:"captured_at"`
+	Diagnosis     aiDiagnosticReport `json:"diagnosis"`
+	RecentLogs    string             `json:"recent_logs"`
+	WarningEvents []eventSummary     `json:"warning_events"`
+}
+
+// -------------------------------------------------------------
+// AI Automated Post-Mortem Models
+// -------------------------------------------------------------
+
+type incidentTimelineEvent struct {
+	Timestamp string `json:"timestamp"`
+	Event     string `json:"event"`
+	Source    string `json:"source"`
+}
+
+type aiPostMortemReport struct {
+	IncidentID            string                  `json:"incident_id"`
+	Title                 string                  `json:"title"`
+	Severity              string                  `json:"severity"`
+	GeneratedAt           string                  `json:"generated_at"`
+	PodName               string                  `json:"pod_name"`
+	Namespace             string                  `json:"namespace"`
+	ExecutiveSummary      string                  `json:"executive_summary"`
+	Timeline              []incidentTimelineEvent `json:"timeline"`
+	RootCauseTechnical    string                  `json:"root_cause_technical"`
+	StackTrace            string                  `json:"stack_trace,omitempty"`
+	ExitCode              int32                   `json:"exit_code"`
+	BlastRadius           string                  `json:"blast_radius"`
+	CorrectiveActionTaken string                  `json:"corrective_action_taken"`
+	PreventativeRunbook   []string                `json:"preventative_runbook"`
+	MarkdownContent       string                  `json:"markdown_content"`
+}
+
+// -------------------------------------------------------------
+// Cluster Upgrade Radar & API Deprecation Models
+// -------------------------------------------------------------
+
+type deprecatedAPIItem struct {
+	Kind              string `json:"kind"`
+	Name              string `json:"name"`
+	Namespace         string `json:"namespace"`
+	CurrentAPIVersion string `json:"current_api_version"`
+	DeprecatedIn      string `json:"deprecated_in"`
+	RemovedIn         string `json:"removed_in"`
+	ReplacementGVK    string `json:"replacement_gvk"`
+	Severity          string `json:"severity"`
+	MigrationSteps    string `json:"migration_steps"`
+}
+
+type clusterUpgradeRadarReport struct {
+	CurrentServerVersion  string              `json:"current_server_version"`
+	TargetVersion         string              `json:"target_version"`
+	UpgradeReadinessScore int                 `json:"upgrade_readiness_score"`
+	DeprecatedCount       int                 `json:"deprecated_count"`
+	CriticalBlockersCount int                 `json:"critical_blockers_count"`
+	Findings              []deprecatedAPIItem `json:"findings"`
+}
+
+// -------------------------------------------------------------
+// Visual Network Traffic Topology Models
+// -------------------------------------------------------------
+
+type networkTopologyReport struct {
+	TotalIngresses int                   `json:"total_ingresses"`
+	TotalServices  int                   `json:"total_services"`
+	TotalEndpoints int                   `json:"total_endpoints"`
+	OrphanServices int                   `json:"orphan_services_count"`
+	Routes         []ingressRouteMapping `json:"routes"`
+	OrphanAlerts   []orphanServiceAlert  `json:"orphan_alerts"`
+}
+
+type ingressRouteMapping struct {
+	IngressName string               `json:"ingress_name"`
+	Namespace   string               `json:"namespace"`
+	Host        string               `json:"host"`
+	Path        string               `json:"path"`
+	PathType    string               `json:"path_type"`
+	TLS         bool                 `json:"tls"`
+	ServiceName string               `json:"service_name"`
+	ServicePort int32                `json:"service_port"`
+	ServiceType string               `json:"service_type"`
+	TargetPods  []podEndpointMapping `json:"target_pods"`
+}
+
+type podEndpointMapping struct {
+	PodName string `json:"pod_name"`
+	PodIP   string `json:"pod_ip"`
+	Port    int32  `json:"port"`
+	Ready   bool   `json:"ready"`
+}
+
+type orphanServiceAlert struct {
+	ServiceName string `json:"service_name"`
+	Namespace   string `json:"namespace"`
+	Reason      string `json:"reason"`
+	Remediation string `json:"remediation"`
+}
+
+// -------------------------------------------------------------
+// Tenant Network Isolation Matrix Models
+// -------------------------------------------------------------
+
+type tenantIsolationMatrix struct {
+	TotalTenants         int                   `json:"total_tenants"`
+	FullyIsolatedTenants int                   `json:"fully_isolated_tenants"`
+	PartiallyIsolated    int                   `json:"partially_isolated"`
+	UnisolatedTenants    int                   `json:"unisolated_tenants"`
+	IsolationScore       int                   `json:"isolation_score"`
+	Tenants              []tenantBoundaryCheck `json:"tenants"`
+}
+
+type tenantBoundaryCheck struct {
+	Namespace              string   `json:"namespace"`
+	TenantName             string   `json:"tenant_name"`
+	HasDefaultDenyIngress  bool     `json:"has_default_deny_ingress"`
+	HasDefaultDenyEgress   bool     `json:"has_default_deny_egress"`
+	AllowedCrossNamespaces []string `json:"allowed_cross_namespaces"`
+	IsolationStatus        string   `json:"isolation_status"`
+	PolicyCount            int      `json:"policy_count"`
 }
 
 type resourceEfficiencyReport struct {
@@ -3367,3 +3512,599 @@ func runAICopilotQuery(ctx context.Context, client kubernetes.Interface, db *sql
 	}
 	return resp, nil
 }
+
+// -------------------------------------------------------------
+// Advanced Feature 6: Platform Action Audit Trail
+// -------------------------------------------------------------
+
+func fetchPlatformAuditLogs(ctx context.Context, db *sql.DB, namespace, actionType string, limit int) ([]platformAuditLogEntry, error) {
+	if db == nil {
+		return []platformAuditLogEntry{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `SELECT id, operator_email, action_type, resource_kind, namespace, name, details, created_at FROM platform_audit_logs WHERE 1=1`
+	var args []any
+	if namespace != "" {
+		query += ` AND namespace = ?`
+		args = append(args, namespace)
+	}
+	if actionType != "" {
+		query += ` AND action_type = ?`
+		args = append(args, actionType)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []platformAuditLogEntry
+	for rows.Next() {
+		var entry platformAuditLogEntry
+		var details sql.NullString
+		if err := rows.Scan(&entry.ID, &entry.OperatorEmail, &entry.ActionType, &entry.ResourceKind, &entry.Namespace, &entry.Name, &details, &entry.CreatedAt); err != nil {
+			return nil, err
+		}
+		entry.Details = details.String
+		logs = append(logs, entry)
+	}
+	if logs == nil {
+		logs = []platformAuditLogEntry{}
+	}
+	return logs, nil
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 7: Incident War Room & Snapshot
+// -------------------------------------------------------------
+
+func fetchIncidentSnapshot(ctx context.Context, client kubernetes.Interface, namespace, podName string) (incidentSnapshot, error) {
+	if client == nil {
+		return incidentSnapshot{}, errKubernetesNotConfigured
+	}
+	if podName == "" {
+		pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+		if err == nil {
+			for _, p := range pods.Items {
+				if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodSucceeded {
+					podName = p.Name
+					if namespace == "" {
+						namespace = p.Namespace
+					}
+					break
+				}
+				for _, cs := range p.Status.ContainerStatuses {
+					if cs.State.Waiting != nil && (cs.State.Waiting.Reason == "CrashLoopBackOff" || cs.State.Waiting.Reason == "ImagePullBackOff" || cs.State.Waiting.Reason == "ErrImagePull") {
+						podName = p.Name
+						if namespace == "" {
+							namespace = p.Namespace
+						}
+						break
+					}
+				}
+				if podName != "" {
+					break
+				}
+			}
+			if podName == "" && len(pods.Items) > 0 {
+				podName = pods.Items[0].Name
+				if namespace == "" {
+					namespace = pods.Items[0].Namespace
+				}
+			}
+		}
+	}
+	if podName == "" {
+		return incidentSnapshot{}, fmt.Errorf("no target pod found for incident snapshot")
+	}
+
+	diagnosis, err := runAIDiagnosis(ctx, client, namespace, podName)
+	if err != nil {
+		return incidentSnapshot{}, err
+	}
+
+	pod, _ := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	phase := "Unknown"
+	reason := diagnosis.LastTerminationReason
+	if pod != nil {
+		phase = string(pod.Status.Phase)
+	}
+
+	snapshot := incidentSnapshot{
+		IncidentID:    fmt.Sprintf("INC-%s-%d", strings.ToUpper(podName), time.Now().Unix()),
+		PodName:       podName,
+		Namespace:     namespace,
+		Phase:         phase,
+		ExitCode:      diagnosis.ExitCode,
+		Reason:        reason,
+		CapturedAt:    time.Now().UTC().Format(time.RFC3339),
+		Diagnosis:     diagnosis,
+		RecentLogs:    diagnosis.RelevantLogs,
+		WarningEvents: diagnosis.WarningEvents,
+	}
+	return snapshot, nil
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 8: AI Post-Mortem & Runbook Generator
+// -------------------------------------------------------------
+
+func generatePostMortemReport(ctx context.Context, client kubernetes.Interface, db *sql.DB, namespace, podName string) (aiPostMortemReport, error) {
+	if client == nil {
+		return aiPostMortemReport{}, errKubernetesNotConfigured
+	}
+	diagnosis, err := runAIDiagnosis(ctx, client, namespace, podName)
+	if err != nil {
+		return aiPostMortemReport{}, err
+	}
+
+	pod, err := client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return aiPostMortemReport{}, err
+	}
+
+	var timeline []incidentTimelineEvent
+	timeline = append(timeline, incidentTimelineEvent{
+		Timestamp: pod.CreationTimestamp.UTC().Format(time.RFC3339),
+		Source:    "Kubernetes Kubelet",
+		Event:     fmt.Sprintf("Pod %s scheduled and initialized in namespace %s", podName, namespace),
+	})
+
+	for _, w := range diagnosis.WarningEvents {
+		timeline = append(timeline, incidentTimelineEvent{
+			Timestamp: w.LastTimestamp,
+			Source:    fmt.Sprintf("K8s Event (%s)", w.Reason),
+			Event:     w.Message,
+		})
+	}
+
+	if diagnosis.ExitCode != 0 || diagnosis.LastTerminationReason != "" {
+		timeline = append(timeline, incidentTimelineEvent{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Source:    "Container Runtime",
+			Event:     fmt.Sprintf("Container terminated with exit code %d (Reason: %s)", diagnosis.ExitCode, diagnosis.LastTerminationReason),
+		})
+	}
+
+	// Fetch related operator audit actions
+	if db != nil {
+		audits, _ := fetchPlatformAuditLogs(ctx, db, namespace, "", 20)
+		for _, a := range audits {
+			timeline = append(timeline, incidentTimelineEvent{
+				Timestamp: a.CreatedAt,
+				Source:    fmt.Sprintf("Operator (%s)", a.OperatorEmail),
+				Event:     fmt.Sprintf("[%s] %s %s/%s: %s", a.ActionType, a.ResourceKind, a.Namespace, a.Name, a.Details),
+			})
+		}
+	}
+
+	sort.Slice(timeline, func(i, j int) bool {
+		return timeline[i].Timestamp < timeline[j].Timestamp
+	})
+
+	tenant := pod.Labels[capsuleTenantLabel]
+	if tenant == "" {
+		tenant = "Default Tenant"
+	}
+	blastRadius := fmt.Sprintf("Workload %s/%s isolated in namespace %s. Tenant boundary: %s. Other tenant workloads unaffected.", namespace, podName, namespace, tenant)
+
+	runbook := diagnosis.RecommendedSteps
+	if len(runbook) == 0 {
+		runbook = []string{
+			"Verify pod environment variables and dependent service credentials.",
+			"Check node resource allocatable headroom.",
+			"Review recent application deployments or configuration changes.",
+		}
+	}
+
+	report := aiPostMortemReport{
+		IncidentID:            fmt.Sprintf("POSTMORTEM-%s-%d", strings.ToUpper(podName), time.Now().Unix()),
+		Title:                 fmt.Sprintf("Workload Failure: %s in namespace %s", podName, namespace),
+		Severity:              strings.ToUpper(diagnosis.Severity),
+		GeneratedAt:           time.Now().UTC().Format(time.RFC3339),
+		PodName:               podName,
+		Namespace:             namespace,
+		ExecutiveSummary:      diagnosis.Summary,
+		Timeline:              timeline,
+		RootCauseTechnical:    diagnosis.ProbableCause,
+		StackTrace:            diagnosis.StackTrace,
+		ExitCode:              diagnosis.ExitCode,
+		BlastRadius:           blastRadius,
+		CorrectiveActionTaken: "AI Diagnostics and Incident War Room active. Operator remediation runbook generated.",
+		PreventativeRunbook:   runbook,
+	}
+
+	report.MarkdownContent = generatePostMortemMarkdown(report)
+	return report, nil
+}
+
+func generatePostMortemMarkdown(report aiPostMortemReport) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# Incident Post-Mortem: %s\n\n", report.Title))
+	sb.WriteString(fmt.Sprintf("- **Incident ID**: `%s`\n", report.IncidentID))
+	sb.WriteString(fmt.Sprintf("- **Severity**: **%s**\n", report.Severity))
+	sb.WriteString(fmt.Sprintf("- **Target Workload**: `%s` in namespace `%s`\n", report.PodName, report.Namespace))
+	sb.WriteString(fmt.Sprintf("- **Generated At**: %s (UTC)\n\n", report.GeneratedAt))
+
+	sb.WriteString("## 1. Executive Summary\n\n")
+	sb.WriteString(report.ExecutiveSummary + "\n\n")
+
+	sb.WriteString("## 2. Incident Timeline\n\n")
+	sb.WriteString("| Timestamp (UTC) | Source | Event Description |\n")
+	sb.WriteString("| :--- | :--- | :--- |\n")
+	for _, t := range report.Timeline {
+		sb.WriteString(fmt.Sprintf("| `%s` | **%s** | %s |\n", t.Timestamp, t.Source, t.Event))
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("## 3. Technical Root Cause Analysis\n\n")
+	sb.WriteString(fmt.Sprintf("- **Exit Code**: `%d`\n", report.ExitCode))
+	sb.WriteString(fmt.Sprintf("- **Technical Finding**: %s\n\n", report.RootCauseTechnical))
+	if report.StackTrace != "" {
+		sb.WriteString("### Captured Stack Trace / Exception Log\n\n")
+		sb.WriteString("```text\n")
+		sb.WriteString(report.StackTrace)
+		sb.WriteString("\n```\n\n")
+	}
+
+	sb.WriteString("## 4. Blast Radius & Multi-Tenant Impact\n\n")
+	sb.WriteString(report.BlastRadius + "\n\n")
+
+	sb.WriteString("## 5. Corrective Action Taken\n\n")
+	sb.WriteString(report.CorrectiveActionTaken + "\n\n")
+
+	sb.WriteString("## 6. Preventative Runbook & Action Items\n\n")
+	for _, item := range report.PreventativeRunbook {
+		sb.WriteString(fmt.Sprintf("- [ ] %s\n", item))
+	}
+	sb.WriteString("\n---\n*Report generated automatically by Crelan Platform Operational Intelligence Engine.*\n")
+
+	return sb.String()
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 9: Cluster Upgrade Radar & API Deprecation Scanner
+// -------------------------------------------------------------
+
+func runClusterUpgradeRadar(ctx context.Context, client kubernetes.Interface) (clusterUpgradeRadarReport, error) {
+	if client == nil {
+		return clusterUpgradeRadarReport{}, errKubernetesNotConfigured
+	}
+	serverVer := "v1.28.0"
+	if disc := client.Discovery(); disc != nil {
+		if ver, err := disc.ServerVersion(); err == nil && ver != nil && ver.GitVersion != "" {
+			serverVer = ver.GitVersion
+		}
+	}
+
+	report := clusterUpgradeRadarReport{
+		CurrentServerVersion:  serverVer,
+		TargetVersion:         "v1.31.x (Enterprise Stable)",
+		UpgradeReadinessScore: 100,
+	}
+
+	var findings []deprecatedAPIItem
+
+	// 1. Scan Ingresses for deprecated annotation kubernetes.io/ingress.class
+	ingList, err := client.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	if err == nil {
+		for _, ing := range ingList.Items {
+			if cls, ok := ing.Annotations["kubernetes.io/ingress.class"]; ok {
+				findings = append(findings, deprecatedAPIItem{
+					Kind:              "Ingress",
+					Name:              ing.Name,
+					Namespace:         ing.Namespace,
+					CurrentAPIVersion: "networking.k8s.io/v1 (Annotation)",
+					DeprecatedIn:      "v1.18",
+					RemovedIn:         "v1.22+ (Ignored in v1.28+)",
+					ReplacementGVK:    "spec.ingressClassName",
+					Severity:          "medium",
+					MigrationSteps:    fmt.Sprintf("Migrate 'kubernetes.io/ingress.class' annotation to 'spec.ingressClassName: %s'.", cls),
+				})
+			}
+		}
+	}
+
+	// 2. Scan Deployments for deprecated alpha seccomp annotations
+	depList, err := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if err == nil {
+		for _, dep := range depList.Items {
+			if _, ok := dep.Annotations["seccomp.security.alpha.kubernetes.io/pod"]; ok {
+				findings = append(findings, deprecatedAPIItem{
+					Kind:              "Deployment",
+					Name:              dep.Name,
+					Namespace:         dep.Namespace,
+					CurrentAPIVersion: "alpha.seccomp annotation",
+					DeprecatedIn:      "v1.19",
+					RemovedIn:         "v1.27+",
+					ReplacementGVK:    "securityContext.seccompProfile",
+					Severity:          "high",
+					MigrationSteps:    "Replace alpha seccomp annotation with standard securityContext.seccompProfile.type = RuntimeDefault.",
+				})
+			}
+		}
+	}
+
+	critCount := 0
+	for _, f := range findings {
+		if f.Severity == "critical" {
+			critCount++
+			report.UpgradeReadinessScore -= 20
+		} else if f.Severity == "high" {
+			report.UpgradeReadinessScore -= 10
+		} else {
+			report.UpgradeReadinessScore -= 5
+		}
+	}
+	if report.UpgradeReadinessScore < 0 {
+		report.UpgradeReadinessScore = 0
+	}
+	report.DeprecatedCount = len(findings)
+	report.CriticalBlockersCount = critCount
+	report.Findings = findings
+	return report, nil
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 10: Visual Network Traffic Topology
+// -------------------------------------------------------------
+
+func fetchNetworkTrafficTopology(ctx context.Context, client kubernetes.Interface) (networkTopologyReport, error) {
+	if client == nil {
+		return networkTopologyReport{}, errKubernetesNotConfigured
+	}
+	ingresses, _ := client.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	services, _ := client.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	pods, _ := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+
+	report := networkTopologyReport{
+		Routes:       []ingressRouteMapping{},
+		OrphanAlerts: []orphanServiceAlert{},
+	}
+
+	if ingresses != nil {
+		report.TotalIngresses = len(ingresses.Items)
+	}
+	if services != nil {
+		report.TotalServices = len(services.Items)
+	}
+	if pods != nil {
+		report.TotalEndpoints = len(pods.Items)
+	}
+
+	svcMap := make(map[string]corev1.Service)
+	if services != nil {
+		for _, s := range services.Items {
+			svcMap[s.Namespace+"/"+s.Name] = s
+		}
+	}
+
+	// Check for Orphan Services (services with selectors that match 0 pods)
+	if services != nil && pods != nil {
+		for _, svc := range services.Items {
+			if svc.Namespace == "kube-system" || svc.Name == "kubernetes" {
+				continue
+			}
+			if len(svc.Spec.Selector) == 0 {
+				continue
+			}
+			matchCount := 0
+			for _, pod := range pods.Items {
+				if pod.Namespace != svc.Namespace {
+					continue
+				}
+				allMatched := true
+				for k, v := range svc.Spec.Selector {
+					if pod.Labels[k] != v {
+						allMatched = false
+						break
+					}
+				}
+				if allMatched {
+					matchCount++
+				}
+			}
+			if matchCount == 0 {
+				report.OrphanServices++
+				report.OrphanAlerts = append(report.OrphanAlerts, orphanServiceAlert{
+					ServiceName: svc.Name,
+					Namespace:   svc.Namespace,
+					Reason:      "Service selector matches 0 active pods. Inbound traffic will fail or drop.",
+					Remediation: "Verify workload deployment pod labels match selector or remove stale Service.",
+				})
+			}
+		}
+	}
+
+	// Map Ingress Routes to Services and target Pod endpoints
+	if ingresses != nil {
+		for _, ing := range ingresses.Items {
+			tlsHosts := make(map[string]bool)
+			for _, tls := range ing.Spec.TLS {
+				for _, h := range tls.Hosts {
+					tlsHosts[h] = true
+				}
+			}
+
+			for _, rule := range ing.Spec.Rules {
+				host := rule.Host
+				if host == "" {
+					host = "*"
+				}
+				hasTLS := tlsHosts[host] || len(ing.Spec.TLS) > 0
+				if rule.HTTP == nil {
+					continue
+				}
+				for _, path := range rule.HTTP.Paths {
+					svcName := ""
+					var portNum int32
+					if path.Backend.Service != nil {
+						svcName = path.Backend.Service.Name
+						portNum = path.Backend.Service.Port.Number
+					}
+					pType := "Prefix"
+					if path.PathType != nil {
+						pType = string(*path.PathType)
+					}
+
+					var targetPods []podEndpointMapping
+					svcType := "ClusterIP"
+					if svc, ok := svcMap[ing.Namespace+"/"+svcName]; ok {
+						svcType = string(svc.Spec.Type)
+						if pods != nil && len(svc.Spec.Selector) > 0 {
+							for _, pod := range pods.Items {
+								if pod.Namespace != ing.Namespace {
+									continue
+								}
+								allMatched := true
+								for k, v := range svc.Spec.Selector {
+									if pod.Labels[k] != v {
+										allMatched = false
+										break
+									}
+								}
+								if allMatched {
+									isReady := false
+									for _, cond := range pod.Status.Conditions {
+										if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+											isReady = true
+										}
+									}
+									targetPods = append(targetPods, podEndpointMapping{
+										PodName: pod.Name,
+										PodIP:   pod.Status.PodIP,
+										Port:    portNum,
+										Ready:   isReady,
+									})
+								}
+							}
+						}
+					}
+
+					report.Routes = append(report.Routes, ingressRouteMapping{
+						IngressName: ing.Name,
+						Namespace:   ing.Namespace,
+						Host:        host,
+						Path:        path.Path,
+						PathType:    pType,
+						TLS:         hasTLS,
+						ServiceName: svcName,
+						ServicePort: portNum,
+						ServiceType: svcType,
+						TargetPods:  targetPods,
+					})
+				}
+			}
+		}
+	}
+
+	return report, nil
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 11: Multi-Tenant Network Isolation Matrix
+// -------------------------------------------------------------
+
+func calculateTenantNetworkMatrix(ctx context.Context, client kubernetes.Interface) (tenantIsolationMatrix, error) {
+	if client == nil {
+		return tenantIsolationMatrix{}, errKubernetesNotConfigured
+	}
+	nsList, err := client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return tenantIsolationMatrix{}, err
+	}
+	npList, _ := client.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{})
+
+	npByNamespace := make(map[string][]networkingv1.NetworkPolicy)
+	if npList != nil {
+		for _, np := range npList.Items {
+			npByNamespace[np.Namespace] = append(npByNamespace[np.Namespace], np)
+		}
+	}
+
+	report := tenantIsolationMatrix{
+		Tenants: []tenantBoundaryCheck{},
+	}
+
+	for _, ns := range nsList.Items {
+		if ns.Name == "kube-system" || ns.Name == "kube-public" || ns.Name == "kube-node-lease" {
+			continue
+		}
+		tenantName := ns.Labels[capsuleTenantLabel]
+		if tenantName == "" {
+			if strings.HasPrefix(ns.Name, "crelan-ws-") {
+				tenantName = "workspace-" + strings.TrimPrefix(ns.Name, "crelan-ws-")
+			} else {
+				tenantName = "default-tenant"
+			}
+		}
+
+		policies := npByNamespace[ns.Name]
+		hasDefaultDenyIngress := false
+		hasDefaultDenyEgress := false
+		var allowedCross []string
+
+		for _, np := range policies {
+			isAllPods := len(np.Spec.PodSelector.MatchLabels) == 0 && len(np.Spec.PodSelector.MatchExpressions) == 0
+
+			for _, pt := range np.Spec.PolicyTypes {
+				if pt == networkingv1.PolicyTypeIngress {
+					if isAllPods && len(np.Spec.Ingress) == 0 {
+						hasDefaultDenyIngress = true
+					}
+				}
+				if pt == networkingv1.PolicyTypeEgress {
+					if isAllPods && len(np.Spec.Egress) == 0 {
+						hasDefaultDenyEgress = true
+					}
+				}
+			}
+
+			for _, ingRule := range np.Spec.Ingress {
+				for _, peer := range ingRule.From {
+					if peer.NamespaceSelector != nil {
+						for k, v := range peer.NamespaceSelector.MatchLabels {
+							allowedCross = append(allowedCross, fmt.Sprintf("%s=%s", k, v))
+						}
+					}
+				}
+			}
+		}
+
+		isolationStatus := "Unisolated (Open East-West)"
+		if hasDefaultDenyIngress && hasDefaultDenyEgress {
+			isolationStatus = "Fully Isolated (Zero-Trust)"
+			report.FullyIsolatedTenants++
+		} else if hasDefaultDenyIngress || len(policies) > 0 {
+			isolationStatus = "Partially Isolated"
+			report.PartiallyIsolated++
+		} else {
+			report.UnisolatedTenants++
+		}
+
+		report.TotalTenants++
+		report.Tenants = append(report.Tenants, tenantBoundaryCheck{
+			Namespace:              ns.Name,
+			TenantName:             tenantName,
+			HasDefaultDenyIngress:  hasDefaultDenyIngress,
+			HasDefaultDenyEgress:   hasDefaultDenyEgress,
+			AllowedCrossNamespaces: allowedCross,
+			IsolationStatus:        isolationStatus,
+			PolicyCount:            len(policies),
+		})
+	}
+
+	if report.TotalTenants > 0 {
+		report.IsolationScore = int(float64(report.FullyIsolatedTenants*100+report.PartiallyIsolated*50) / float64(report.TotalTenants))
+	} else {
+		report.IsolationScore = 100
+	}
+
+	return report, nil
+}
+
