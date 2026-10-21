@@ -277,6 +277,18 @@ CREATE TABLE IF NOT EXISTS platform_sre_chaos_runs (
 	details TEXT,
 	created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspace_access_grants (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	resource_type TEXT NOT NULL,
+	resource_id TEXT NOT NULL DEFAULT '*',
+	permission TEXT NOT NULL CHECK (permission IN ('read', 'write', 'admin')),
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	UNIQUE(workspace_id, user_id, resource_type, resource_id)
+);
+CREATE INDEX IF NOT EXISTS workspace_access_grants_lookup ON workspace_access_grants(workspace_id, user_id, resource_type);
 `
 
 type platformIncidentWebhookRecord struct {

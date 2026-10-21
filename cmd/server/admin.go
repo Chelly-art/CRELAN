@@ -16,9 +16,11 @@ import (
 	"time"
 
 	assets "crelan"
+	"encoding/base64"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // adminService provides platform-only endpoints. Platform access is configured
@@ -71,6 +73,7 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/overview", s.overview)
 	mux.HandleFunc("GET /api/v1/admin/readiness", s.readiness)
 	mux.HandleFunc("POST /api/v1/admin/clusters/connect", s.connectCluster)
+	mux.HandleFunc("GET /api/v1/admin/clusters/agent-manifest", s.getAgentManifest)
 	mux.HandleFunc("POST /api/v1/admin/control-plane-backup", s.downloadControlPlaneBackup)
 
 	// Cluster & Node Management
@@ -122,6 +125,10 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/workspaces/mapping", s.getWorkspaceMappings)
 	mux.HandleFunc("GET /api/v1/admin/security/audit", s.getSecurityAudit)
 	mux.HandleFunc("GET /api/v1/admin/security/rbac", s.getRBACBlastRadius)
+	mux.HandleFunc("GET /api/v1/admin/access/grants", s.listAccessGrants)
+	mux.HandleFunc("POST /api/v1/admin/access/grants", s.createOrUpdateAccessGrant)
+	mux.HandleFunc("DELETE /api/v1/admin/access/grants/{id}", s.deleteAccessGrant)
+	mux.HandleFunc("POST /api/v1/admin/access/check", s.checkAccessEndpoint)
 	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/harden", s.hardenDeployment)
 	mux.HandleFunc("GET /api/v1/admin/ai/rightsizing", s.getResourceRightSizing)
 	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/rightsize", s.applyRightSizing)
@@ -194,15 +201,79 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var input struct {
-		Kubeconfig string `json:"kubeconfig"`
-		Context    string `json:"context"`
+		Method             string `json:"method"`
+		Kubeconfig         string `json:"kubeconfig"`
+		Context            string `json:"context"`
+		APIServerURL       string `json:"api_server_url"`
+		BearerToken        string `json:"bearer_token"`
+		CACert             string `json:"ca_cert"`
+		InsecureSkipVerify bool   `json:"insecure_skip_verify"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
-		writeError(w, http.StatusBadRequest, "Paste a valid kubeconfig (maximum 1 MiB)")
+		writeError(w, http.StatusBadRequest, "Invalid JSON input (maximum 1 MiB)")
 		return
 	}
+
+	if input.Method == "token" || (strings.TrimSpace(input.Kubeconfig) == "" && strings.TrimSpace(input.APIServerURL) != "") {
+		serverURL := strings.TrimSpace(input.APIServerURL)
+		if serverURL == "" {
+			writeError(w, http.StatusBadRequest, "Enter Kubernetes API server URL (e.g. https://1.2.3.4:6443)")
+			return
+		}
+		if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
+			serverURL = "https://" + serverURL
+		}
+		token := strings.TrimSpace(input.BearerToken)
+		if token == "" {
+			writeError(w, http.StatusBadRequest, "Enter a ServiceAccount bearer token")
+			return
+		}
+		clusterName := "crelan-sa-cluster"
+		userName := "crelan-sa-user"
+		contextName := strings.TrimSpace(input.Context)
+		if contextName == "" {
+			contextName = "serviceaccount-cluster"
+		}
+
+		clientCfg := clientcmdapi.NewConfig()
+		cl := clientcmdapi.NewCluster()
+		cl.Server = serverURL
+		cl.InsecureSkipTLSVerify = input.InsecureSkipVerify
+		if ca := strings.TrimSpace(input.CACert); ca != "" {
+			if strings.Contains(ca, "-----BEGIN CERTIFICATE-----") {
+				cl.CertificateAuthorityData = []byte(ca)
+			} else if decoded, err := base64.StdEncoding.DecodeString(ca); err == nil && len(decoded) > 0 {
+				cl.CertificateAuthorityData = decoded
+			} else {
+				cl.CertificateAuthorityData = []byte(ca)
+			}
+		} else if !input.InsecureSkipVerify {
+			cl.InsecureSkipTLSVerify = true
+		}
+
+		authInfo := clientcmdapi.NewAuthInfo()
+		authInfo.Token = token
+
+		kCtx := clientcmdapi.NewContext()
+		kCtx.Cluster = clusterName
+		kCtx.AuthInfo = userName
+
+		clientCfg.Clusters[clusterName] = cl
+		clientCfg.AuthInfos[userName] = authInfo
+		clientCfg.Contexts[contextName] = kCtx
+		clientCfg.CurrentContext = contextName
+
+		yamlBytes, err := clientcmd.Write(*clientCfg)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Could not generate kubeconfig from ServiceAccount token: "+err.Error())
+			return
+		}
+		input.Kubeconfig = string(yamlBytes)
+		input.Context = contextName
+	}
+
 	if strings.TrimSpace(input.Kubeconfig) == "" {
-		writeError(w, http.StatusBadRequest, "Paste a kubeconfig to connect a cluster")
+		writeError(w, http.StatusBadRequest, "Provide a kubeconfig or ServiceAccount token to connect a cluster")
 		return
 	}
 	config, err := clientcmd.Load([]byte(input.Kubeconfig))
@@ -301,6 +372,116 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		"status":          "connected",
 		"persisted":       persisted,
 		"persist_warning": persistWarning,
+	})
+}
+
+func (s *adminService) getAgentManifest(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	_, workspaceID, _ := s.auth.sessionWorkspace(r)
+
+	host := r.Host
+	scheme := "https"
+	if r.TLS == nil && !strings.Contains(host, "pipeops") && (strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1")) {
+		scheme = "http"
+	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, host)
+	clusterToken := fmt.Sprintf("cr-agent-%d-%d", workspaceID, time.Now().Unix())
+
+	manifestYAML := fmt.Sprintf(`apiVersion: v1
+kind: Namespace
+metadata:
+  name: crelan-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crelan-agent
+  namespace: crelan-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crelan-agent-role
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crelan-agent-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crelan-agent-role
+subjects:
+  - kind: ServiceAccount
+    name: crelan-agent
+    namespace: crelan-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crelan-agent-config
+  namespace: crelan-system
+type: Opaque
+stringData:
+  SERVER_URL: "%s"
+  CLUSTER_TOKEN: "%s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crelan-agent
+  namespace: crelan-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crelan-agent
+  template:
+    metadata:
+      labels:
+        app: crelan-agent
+    spec:
+      serviceAccountName: crelan-agent
+      containers:
+        - name: agent
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting Crelan Outbound Agent Tunnel..."
+              while true; do
+                TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                curl -s -k -X POST "$SERVER_URL/api/v1/admin/clusters/connect" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"method\":\"token\",\"api_server_url\":\"https://kubernetes.default.svc\",\"bearer_token\":\"$TOKEN\",\"insecure_skip_verify\":true,\"context\":\"crelan-agent-cluster\"}" || true
+                sleep 60
+              done
+          envFrom:
+            - secretRef:
+                name: crelan-agent-config
+`, serverURL, clusterToken)
+
+	installCommand := fmt.Sprintf("curl -sSL '%s/api/v1/admin/clusters/agent-manifest?format=yaml' | kubectl apply -f -", serverURL)
+
+	if r.URL.Query().Get("format") == "yaml" || strings.Contains(r.Header.Get("Accept"), "yaml") {
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(manifestYAML))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_url":      serverURL,
+		"cluster_token":   clusterToken,
+		"manifest_yaml":   manifestYAML,
+		"install_command": installCommand,
 	})
 }
 
