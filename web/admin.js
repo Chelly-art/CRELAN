@@ -307,6 +307,21 @@ async function renderCurrentView() {
       case "backup":
         renderBackup(container);
         break;
+      case "image-vulnerabilities":
+        await renderImageVulnerabilities(container);
+        break;
+      case "helm-releases":
+        await renderHelmReleases(container);
+        break;
+      case "crds":
+        await renderCRDs(container);
+        break;
+      case "can-i":
+        await renderCanI(container);
+        break;
+      case "cluster-fleet":
+        await renderClusterFleet(container);
+        break;
       default:
         await renderOverview(container);
     }
@@ -2615,7 +2630,7 @@ function setupEventListeners() {
   window.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
-      openQuickCopilot();
+      openCommandPalette();
     }
   });
 
@@ -2655,6 +2670,22 @@ function setupEventListeners() {
     }
   });
   $("#debug-form")?.addEventListener("submit", handleLaunchDebugContainer);
+
+  // Lens Pro Suite Event Listeners
+  $("#open-cmd-k-btn")?.addEventListener("click", () => openCommandPalette());
+  $("#cmd-k-close-btn")?.addEventListener("click", () => closeCommandPalette());
+  $("#admin-cmd-k-modal")?.addEventListener("click", (e) => {
+    if (e.target.id === "admin-cmd-k-modal") closeCommandPalette();
+  });
+  $("#cmd-k-input")?.addEventListener("input", (e) => filterCommandPalette(e.target.value));
+  $("#cmd-k-input")?.addEventListener("keydown", handleCommandPaletteKeydown);
+
+  $("#helm-modal-close")?.addEventListener("click", () => $("#admin-helm-modal").classList.remove("open"));
+  $("#tab-btn-helm-user")?.addEventListener("click", () => switchHelmValuesTab("user"));
+  $("#tab-btn-helm-computed")?.addEventListener("click", () => switchHelmValuesTab("computed"));
+  $("#helm-modal-copy-btn")?.addEventListener("click", copyHelmValuesToClipboard);
+
+  $("#cve-modal-close")?.addEventListener("click", () => $("#admin-cve-modal").classList.remove("open"));
 
   // Sign out
   $("#admin-signout").addEventListener("click", async () => {
@@ -4550,6 +4581,1041 @@ async function renderDisasterRecoveryRadar(container) {
       </table>
     </div>
   `;
+}
+
+// =============================================================
+// Lens Pro Suite: Commercial Features for Crelan Platform
+// =============================================================
+
+// Helper: Lightweight YAML Formatter for objects
+function objectToYAML(obj, indent = 0) {
+  if (obj === null || obj === undefined) return "null\n";
+  if (typeof obj === "string") {
+    if (obj.includes("\n")) {
+      return "|\n" + obj.split("\n").map(line => "  ".repeat(indent + 1) + line).join("\n") + "\n";
+    }
+    return (obj.includes(":") || obj.includes("#") || obj.startsWith("-")) ? JSON.stringify(obj) + "\n" : obj + "\n";
+  }
+  if (typeof obj === "number" || typeof obj === "boolean") return String(obj) + "\n";
+  const pad = "  ".repeat(indent);
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return "[]\n";
+    return obj.map(item => {
+      if (typeof item === "object" && item !== null) {
+        const sub = objectToYAML(item, indent + 1);
+        return `${pad}- ${sub.trimStart()}`;
+      }
+      return `${pad}- ${objectToYAML(item, 0)}`;
+    }).join("");
+  }
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return "{}\n";
+  return keys.map(k => {
+    const val = obj[k];
+    if (typeof val === "object" && val !== null && !Array.isArray(val) && Object.keys(val).length > 0) {
+      return `${pad}${k}:\n${objectToYAML(val, indent + 1)}`;
+    } else if (Array.isArray(val)) {
+      if (val.length === 0) return `${pad}${k}: []\n`;
+      return `${pad}${k}:\n${objectToYAML(val, indent + 1)}`;
+    }
+    return `${pad}${k}: ${objectToYAML(val, 0)}`;
+  }).join("");
+}
+
+// -------------------------------------------------------------
+// 1. Container Image Vulnerability Scanner (CVE Radar)
+// -------------------------------------------------------------
+let currentCVEImages = [];
+
+async function renderImageVulnerabilities(container) {
+  container.innerHTML = `<div class="admin-empty-state">Scanning active cluster workloads for vulnerabilities…</div>`;
+  const data = await request("/api/v1/admin/security/image-vulnerabilities");
+  currentCVEImages = data.images || [];
+  const summary = data.summary || {
+    total_images: 0,
+    scanned_images: 0,
+    critical_count: 0,
+    high_count: 0,
+    medium_count: 0,
+    low_count: 0,
+    clean_images: 0,
+  };
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Container Image Vulnerability Scanner (CVE Radar)</h1>
+        <p class="admin-view-subtitle">Lens Pro-tier real-time vulnerability scanner across all pod images with severity scoring, package impact, and remediation guidance.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="admin-btn" onclick="openCommandPalette('cve')">⌘K Quick Scan</button>
+        <button class="admin-btn admin-btn-primary" onclick="renderImageVulnerabilities($('#admin-content-area'))">Re-scan Cluster Images</button>
+      </div>
+    </div>
+
+    <div class="admin-overview-grid">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Images Evaluated</span><span>Workloads</span></div>
+        <div class="admin-stat-value">${summary.scanned_images} / ${summary.total_images}</div>
+        <div class="admin-stat-subtext">${summary.clean_images} clean without known vulnerabilities</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Critical CVEs</span><span class="cve-badge-critical">CVSS 9.0+</span></div>
+        <div class="admin-stat-value" style="color: ${summary.critical_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${summary.critical_count}</div>
+        <div class="admin-stat-subtext">Immediate remote code execution / root exploits</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>High Severity CVEs</span><span class="cve-badge-high">CVSS 7.0-8.9</span></div>
+        <div class="admin-stat-value" style="color: ${summary.high_count > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${summary.high_count}</div>
+        <div class="admin-stat-subtext">Privilege escalation &amp; authentication bypass</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Medium &amp; Low CVEs</span><span class="cve-badge-medium">CVSS &lt; 7.0</span></div>
+        <div class="admin-stat-value">${summary.medium_count + summary.low_count}</div>
+        <div class="admin-stat-subtext">${summary.medium_count} medium, ${summary.low_count} low severity</div>
+      </div>
+    </div>
+
+    <div class="admin-filter-bar" style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="text" id="cve-search-input" class="admin-input" placeholder="Filter by image name or workload..." style="width: 320px;" oninput="filterCVETable()">
+        <span style="font-size: 12px; color: var(--admin-text-muted);" id="cve-table-count">${currentCVEImages.length} images evaluated</span>
+      </div>
+    </div>
+
+    <div class="admin-table-container" style="margin-top: 12px;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Container Image</th>
+            <th>Workload Context</th>
+            <th>Vulnerabilities Breakdown</th>
+            <th>Peak CVSS</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="cve-table-body">
+          ${renderCVETableRows(currentCVEImages)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function filterCVETable() {
+  const query = ($("#cve-search-input")?.value || "").toLowerCase().trim();
+  const filtered = currentCVEImages.filter(img => {
+    if (img.image.toLowerCase().includes(query)) return true;
+    return (img.workloads || []).some(w => `${w.kind}/${w.name} ${w.namespace}`.toLowerCase().includes(query));
+  });
+  const tbody = $("#cve-table-body");
+  if (tbody) tbody.innerHTML = renderCVETableRows(filtered);
+  const countSpan = $("#cve-table-count");
+  if (countSpan) countSpan.textContent = `${filtered.length} of ${currentCVEImages.length} images`;
+}
+
+function renderCVETableRows(images) {
+  if (!images || images.length === 0) {
+    return `<tr><td colspan="5" class="admin-empty-state">No matching container images running in cluster workloads.</td></tr>`;
+  }
+  return images.map((img, idx) => {
+    const workloadsHtml = (img.workloads || []).slice(0, 3).map(w =>
+      `<span class="admin-badge" style="font-size: 11px; margin-right: 4px; margin-bottom: 2px;">${escapeHTML(w.kind)}/${escapeHTML(w.name)} <span style="opacity: 0.6;">(${escapeHTML(w.namespace)})</span></span>`
+    ).join("") + ((img.workloads || []).length > 3 ? `<span style="font-size: 11px; color: var(--admin-text-muted);">+${img.workloads.length - 3} more</span>` : "");
+
+    let highestScore = 0;
+    (img.vulnerabilities || []).forEach(v => {
+      if (v.cvss_score > highestScore) highestScore = v.cvss_score;
+    });
+
+    const isClean = (img.total_cves || 0) === 0;
+
+    return `
+      <tr>
+        <td class="admin-table-name">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 15px;">${isClean ? "🛡️" : "⚠️"}</span>
+            <div>
+              <strong style="font-family: monospace; font-size: 13px;">${escapeHTML(img.image)}</strong>
+            </div>
+          </div>
+        </td>
+        <td>${workloadsHtml || `<span style="color: var(--admin-text-muted); font-size: 12px;">Active Pod</span>`}</td>
+        <td>
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            ${img.critical_count > 0 ? `<span class="cve-badge-critical">${img.critical_count} CRITICAL</span>` : ""}
+            ${img.high_count > 0 ? `<span class="cve-badge-high">${img.high_count} HIGH</span>` : ""}
+            ${img.medium_count > 0 ? `<span class="cve-badge-medium">${img.medium_count} MED</span>` : ""}
+            ${img.low_count > 0 ? `<span class="cve-badge-low">${img.low_count} LOW</span>` : ""}
+            ${isClean ? `<span class="cve-badge-clean">CLEAN (0 CVEs)</span>` : ""}
+          </div>
+        </td>
+        <td>
+          ${highestScore > 0 ? `<span class="admin-badge ${highestScore >= 9.0 ? "admin-badge-danger" : highestScore >= 7.0 ? "admin-badge-warning" : "admin-badge-info"}">${highestScore.toFixed(1)}</span>` : `<span style="color: var(--admin-text-muted); font-size: 12px;">None</span>`}
+        </td>
+        <td style="text-align: right;">
+          ${!isClean ? `<button class="admin-btn admin-btn-sm admin-btn-primary" onclick="openCVEModalByIndex(${idx})">Inspect CVEs (${img.total_cves})</button>` : `<span style="color: var(--admin-green); font-size: 12px; font-weight: 500;">✓ Clean Image</span>`}
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function openCVEModalByIndex(idx) {
+  const item = currentCVEImages[idx];
+  if (!item) return;
+  const modal = $("#admin-cve-modal");
+  $("#cve-modal-title").textContent = item.image;
+  const badge = $("#cve-modal-badge");
+  if (item.critical_count > 0) {
+    badge.className = "admin-badge admin-badge-danger";
+    badge.textContent = `${item.critical_count} CRITICAL`;
+  } else if (item.high_count > 0) {
+    badge.className = "admin-badge admin-badge-warning";
+    badge.textContent = `${item.high_count} HIGH`;
+  } else {
+    badge.className = "admin-badge admin-badge-info";
+    badge.textContent = `${item.total_cves} CVEs`;
+  }
+
+  const listHtml = (item.vulnerabilities || []).map(v => `
+    <div style="border: 1px solid var(--admin-border); border-radius: var(--admin-radius-sm); padding: 14px; margin-bottom: 12px; background: var(--admin-bg-secondary);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div>
+          <span class="cve-badge-${(v.severity || "low").toLowerCase()}" style="margin-right: 8px;">${escapeHTML(v.severity)}</span>
+          <strong style="font-size: 14px; font-family: monospace;">${escapeHTML(v.cve_id)}</strong>
+          ${v.cvss_score ? `<span style="margin-left: 8px; font-size: 12px; color: var(--admin-text-muted);">CVSS: <strong>${v.cvss_score}</strong></span>` : ""}
+        </div>
+        <div style="font-size: 12px; font-family: monospace; color: var(--admin-text-muted);">
+          pkg: <strong>${escapeHTML(v.package_name)}</strong> (${escapeHTML(v.installed_version)})
+        </div>
+      </div>
+      <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">${escapeHTML(v.title)}</div>
+      <p style="font-size: 12px; color: var(--admin-text); line-height: 1.5; margin: 0 0 10px;">${escapeHTML(v.description)}</p>
+      <div style="background: rgba(50, 108, 229, 0.08); border-left: 3px solid var(--admin-accent); padding: 8px 12px; font-size: 12px; border-radius: 0 var(--admin-radius-sm) var(--admin-radius-sm) 0;">
+        <strong>Remediation:</strong> ${escapeHTML(v.remediation)} ${v.fixed_version ? `(Fixed in version <code style="font-size: 11px;">${escapeHTML(v.fixed_version)}</code>)` : ""}
+      </div>
+    </div>
+  `).join("");
+
+  $("#cve-modal-body").innerHTML = listHtml;
+  modal.classList.add("open");
+}
+
+// -------------------------------------------------------------
+// 2. Helm Release Lifecycle Manager
+// -------------------------------------------------------------
+let currentHelmReleases = [];
+let currentHelmValues = null;
+let activeHelmTab = "user";
+
+async function renderHelmReleases(container) {
+  container.innerHTML = `<div class="admin-empty-state">Discovering in-cluster Helm releases…</div>`;
+  const ns = state.selectedNamespace;
+  const url = ns ? `/api/v1/admin/helm/releases?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/helm/releases`;
+  currentHelmReleases = await request(url);
+
+  const deployedCount = currentHelmReleases.filter(r => (r.status || "").toLowerCase() === "deployed").length;
+  const failedCount = currentHelmReleases.filter(r => (r.status || "").toLowerCase().includes("fail")).length;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Helm Releases &amp; Lifecycle Manager</h1>
+        <p class="admin-view-subtitle">Lens Pro-tier discovery of Helm v3 releases, values inspection (values.yaml), rollback, and uninstallation.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="admin-btn" onclick="openCommandPalette('helm')">⌘K Search Helm</button>
+        <button class="admin-btn admin-btn-primary" onclick="renderHelmReleases($('#admin-content-area'))">Refresh Releases</button>
+      </div>
+    </div>
+
+    <div class="admin-overview-grid">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Total Releases</span><span>Helm v3</span></div>
+        <div class="admin-stat-value">${currentHelmReleases.length}</div>
+        <div class="admin-stat-subtext">${ns ? `In namespace ${ns}` : "Across all cluster namespaces"}</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Deployed (Healthy)</span><span style="color: var(--admin-green);">Active</span></div>
+        <div class="admin-stat-value" style="color: var(--admin-green);">${deployedCount}</div>
+        <div class="admin-stat-subtext">Successfully applied charts</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Failed / Attention</span><span style="color: var(--admin-red);">Pending</span></div>
+        <div class="admin-stat-value" style="color: ${failedCount > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${failedCount}</div>
+        <div class="admin-stat-subtext">${failedCount === 0 ? "No broken Helm releases" : "Requires rollback or investigation"}</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Active Scope</span><span>Filter</span></div>
+        <div class="admin-stat-value" style="font-size: 18px; text-transform: uppercase;">${escapeHTML(ns || "All Namespaces")}</div>
+        <div class="admin-stat-subtext">Change via topbar dropdown</div>
+      </div>
+    </div>
+
+    <div class="admin-filter-bar" style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="text" id="helm-search-input" class="admin-input" placeholder="Filter by release name, chart, or status..." style="width: 320px;" oninput="filterHelmTable()">
+        <span style="font-size: 12px; color: var(--admin-text-muted);" id="helm-table-count">${currentHelmReleases.length} releases discovered</span>
+      </div>
+    </div>
+
+    <div class="admin-table-container" style="margin-top: 12px;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Release Name</th>
+            <th>Namespace</th>
+            <th>Revision</th>
+            <th>Chart</th>
+            <th>App Version</th>
+            <th>Status</th>
+            <th>Last Updated</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="helm-table-body">
+          ${renderHelmTableRows(currentHelmReleases)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function filterHelmTable() {
+  const query = ($("#helm-search-input")?.value || "").toLowerCase().trim();
+  const filtered = currentHelmReleases.filter(r =>
+    r.name.toLowerCase().includes(query) ||
+    r.namespace.toLowerCase().includes(query) ||
+    (r.chart || "").toLowerCase().includes(query) ||
+    (r.status || "").toLowerCase().includes(query)
+  );
+  const tbody = $("#helm-table-body");
+  if (tbody) tbody.innerHTML = renderHelmTableRows(filtered);
+  const countSpan = $("#helm-table-count");
+  if (countSpan) countSpan.textContent = `${filtered.length} of ${currentHelmReleases.length} releases`;
+}
+
+function renderHelmTableRows(releases) {
+  if (!releases || releases.length === 0) {
+    return `<tr><td colspan="8" class="admin-empty-state">No Helm v3 releases discovered in the target namespace.</td></tr>`;
+  }
+  return releases.map(r => {
+    const isDeployed = (r.status || "").toLowerCase() === "deployed";
+    return `
+      <tr>
+        <td class="admin-table-name">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 15px;">⎈</span>
+            <strong>${escapeHTML(r.name)}</strong>
+          </div>
+        </td>
+        <td class="admin-table-ns">${escapeHTML(r.namespace)}</td>
+        <td><span class="admin-badge" style="background: rgba(50,108,229,0.1); color: var(--admin-accent); font-weight: 600;">rev ${r.revision}</span></td>
+        <td style="font-family: monospace; font-size: 12px;">${escapeHTML(r.chart || "—")}</td>
+        <td style="font-family: monospace; font-size: 12px;">${escapeHTML(r.app_version || "—")}</td>
+        <td>
+          <span class="admin-badge ${isDeployed ? "admin-badge-ready" : "admin-badge-danger"}">${escapeHTML(r.status)}</span>
+        </td>
+        <td style="font-size: 12px; color: var(--admin-text-muted);">${r.updated ? escapeHTML(new Date(r.updated).toLocaleString()) : "—"}</td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 6px;">
+            <button class="admin-btn admin-btn-sm" onclick="openHelmValuesModal('${escapeHTML(r.namespace)}', '${escapeHTML(r.name)}')">Values</button>
+            <button class="admin-btn admin-btn-sm" onclick="rollbackHelmReleasePrompt('${escapeHTML(r.namespace)}', '${escapeHTML(r.name)}', ${r.revision})">Rollback</button>
+            <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="uninstallHelmReleasePrompt('${escapeHTML(r.namespace)}', '${escapeHTML(r.name)}')">Uninstall</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function openHelmValuesModal(namespace, name) {
+  const modal = $("#admin-helm-modal");
+  $("#helm-modal-title").textContent = `${name} (${namespace})`;
+  $("#helm-modal-meta").textContent = "Loading values from secret…";
+  $("#helm-values-code").textContent = "Fetching values.yaml…";
+  modal.classList.add("open");
+
+  try {
+    const data = await request(`/api/v1/admin/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/values`);
+    currentHelmValues = data;
+    $("#helm-modal-meta").textContent = `Chart: ${data.chart} · Revision ${data.revision}`;
+    switchHelmValuesTab("user");
+  } catch (err) {
+    $("#helm-values-code").textContent = `Failed to load Helm values: ${err.message}`;
+  }
+}
+
+function switchHelmValuesTab(tab) {
+  activeHelmTab = tab;
+  $("#tab-btn-helm-user")?.classList.toggle("active", tab === "user");
+  $("#tab-btn-helm-computed")?.classList.toggle("active", tab === "computed");
+
+  if (!currentHelmValues) return;
+  const codeEl = $("#helm-values-code");
+  if (tab === "user") {
+    codeEl.textContent = currentHelmValues.raw_yaml || objectToYAML(currentHelmValues.user_values || {});
+  } else {
+    codeEl.textContent = objectToYAML(currentHelmValues.chart_values || {});
+  }
+}
+
+function copyHelmValuesToClipboard() {
+  const text = $("#helm-values-code")?.textContent || "";
+  navigator.clipboard.writeText(text).then(() => {
+    alert("Helm values copied to clipboard!");
+  }).catch(() => {
+    alert("Could not copy values to clipboard.");
+  });
+}
+
+async function rollbackHelmReleasePrompt(namespace, name, currentRev) {
+  const targetRevStr = prompt(`Rollback Helm release '${name}' in namespace '${namespace}'\nCurrent revision: ${currentRev}\nEnter target revision number to roll back to:`, currentRev > 1 ? currentRev - 1 : 1);
+  if (!targetRevStr) return;
+  const targetRev = parseInt(targetRevStr.trim(), 10);
+  if (isNaN(targetRev) || targetRev <= 0) {
+    alert("Please enter a valid positive integer revision.");
+    return;
+  }
+  try {
+    await request(`/api/v1/admin/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/rollback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: targetRev }),
+    });
+    alert(`Successfully rolled back release '${name}' to revision ${targetRev}!`);
+    await renderHelmReleases($("#admin-content-area"));
+  } catch (err) {
+    alert(`Rollback failed: ${err.message}`);
+  }
+}
+
+async function uninstallHelmReleasePrompt(namespace, name) {
+  if (!confirm(`Are you sure you want to completely uninstall Helm release '${name}' in namespace '${namespace}'? This will delete all managed resources.`)) {
+    return;
+  }
+  try {
+    await request(`/api/v1/admin/helm/releases/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    alert(`Successfully uninstalled release '${name}'.`);
+    await renderHelmReleases($("#admin-content-area"));
+  } catch (err) {
+    alert(`Uninstall failed: ${err.message}`);
+  }
+}
+
+// -------------------------------------------------------------
+// 3. Custom Resource Definitions (CRDs) & Operator Browser
+// -------------------------------------------------------------
+let currentCRDList = [];
+let activeCRDInstances = null;
+
+async function renderCRDs(container) {
+  container.innerHTML = `<div class="admin-empty-state">Querying Custom Resource Definitions (apiextensions.k8s.io/v1)…</div>`;
+  currentCRDList = await request("/api/v1/admin/crds");
+  activeCRDInstances = null;
+
+  const totalCRDs = currentCRDList.length;
+  const groups = new Set(currentCRDList.map(c => c.group)).size;
+  const namespacedCount = currentCRDList.filter(c => c.scope === "Namespaced").length;
+  const clusterCount = currentCRDList.filter(c => c.scope === "Cluster").length;
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Custom Resource Definitions (CRDs) &amp; Operator Browser</h1>
+        <p class="admin-view-subtitle">Lens Pro-tier CRD exploration, schema discovery, and real-time instance browsing for all installed Kubernetes operators.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="admin-btn" onclick="openCommandPalette('crd')">⌘K Search CRDs</button>
+        <button class="admin-btn admin-btn-primary" onclick="renderCRDs($('#admin-content-area'))">Refresh CRDs</button>
+      </div>
+    </div>
+
+    <div class="admin-overview-grid">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Installed CRDs</span><span>Definitions</span></div>
+        <div class="admin-stat-value">${totalCRDs}</div>
+        <div class="admin-stat-subtext">Active custom resource schemas</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>API Groups</span><span>Vendors/Operators</span></div>
+        <div class="admin-stat-value">${groups}</div>
+        <div class="admin-stat-subtext">Unique API groups registered</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Namespaced CRDs</span><span>Multi-Tenant</span></div>
+        <div class="admin-stat-value" style="color: var(--admin-accent);">${namespacedCount}</div>
+        <div class="admin-stat-subtext">Scoped to individual namespaces</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Cluster Scoped</span><span>Global</span></div>
+        <div class="admin-stat-value">${clusterCount}</div>
+        <div class="admin-stat-subtext">Cluster-wide custom resources</div>
+      </div>
+    </div>
+
+    <div id="crd-instance-container"></div>
+
+    <div class="admin-filter-bar" style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="text" id="crd-search-input" class="admin-input" placeholder="Filter by kind, group, or resource name..." style="width: 320px;" oninput="filterCRDTable()">
+        <span style="font-size: 12px; color: var(--admin-text-muted);" id="crd-table-count">${currentCRDList.length} CRDs registered</span>
+      </div>
+    </div>
+
+    <div class="admin-table-container" style="margin-top: 12px;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Custom Resource / Kind</th>
+            <th>API Group</th>
+            <th>Version</th>
+            <th>Scope</th>
+            <th>Condition</th>
+            <th>Instances</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="crd-table-body">
+          ${renderCRDTableRows(currentCRDList)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function filterCRDTable() {
+  const query = ($("#crd-search-input")?.value || "").toLowerCase().trim();
+  const filtered = currentCRDList.filter(c =>
+    c.name.toLowerCase().includes(query) ||
+    c.kind.toLowerCase().includes(query) ||
+    c.group.toLowerCase().includes(query)
+  );
+  const tbody = $("#crd-table-body");
+  if (tbody) tbody.innerHTML = renderCRDTableRows(filtered);
+  const countSpan = $("#crd-table-count");
+  if (countSpan) countSpan.textContent = `${filtered.length} of ${currentCRDList.length} CRDs`;
+}
+
+function renderCRDTableRows(crds) {
+  if (!crds || crds.length === 0) {
+    return `<tr><td colspan="7" class="admin-empty-state">No matching Custom Resource Definitions found.</td></tr>`;
+  }
+  return crds.map(c => `
+    <tr>
+      <td class="admin-table-name">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 15px;">🧩</span>
+          <div>
+            <strong>${escapeHTML(c.kind)}</strong>
+            <div style="font-size: 11px; font-family: monospace; color: var(--admin-text-muted);">${escapeHTML(c.plural)}</div>
+          </div>
+        </div>
+      </td>
+      <td style="font-family: monospace; font-size: 12px; color: var(--admin-accent);">${escapeHTML(c.group)}</td>
+      <td><span class="admin-badge" style="font-size: 11px;">${escapeHTML(c.version)}</span></td>
+      <td>
+        <span class="admin-badge ${c.scope === "Namespaced" ? "admin-badge-info" : "admin-badge-warning"}">${escapeHTML(c.scope)}</span>
+      </td>
+      <td>
+        <span class="admin-badge ${c.established ? "admin-badge-ready" : "admin-badge-danger"}">${c.established ? "Established" : "Not Ready"}</span>
+      </td>
+      <td style="font-weight: 600;">${c.instances_count !== undefined ? c.instances_count : "—"}</td>
+      <td style="text-align: right;">
+        <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="browseCRDInstances('${escapeHTML(c.group)}', '${escapeHTML(c.version)}', '${escapeHTML(c.plural)}', '${escapeHTML(c.kind)}')">Browse Instances</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function browseCRDInstances(group, version, plural, kind) {
+  const container = $("#crd-instance-container");
+  if (!container) return;
+  container.innerHTML = `
+    <div style="margin-top: 24px; padding: 16px; border: 1px solid var(--admin-accent); border-radius: var(--admin-radius-sm); background: rgba(50,108,229,0.03);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0; font-size: 15px;">Live Custom Resources: <span style="color: var(--admin-accent);">${escapeHTML(kind)}</span> <code style="font-size: 12px; opacity: 0.8;">(${escapeHTML(group)}/${escapeHTML(version)})</code></h3>
+        <button class="admin-btn admin-btn-sm" onclick="$('#crd-instance-container').innerHTML=''">Close Panel</button>
+      </div>
+      <div class="admin-empty-state">Loading instances…</div>
+    </div>
+  `;
+  container.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  try {
+    const ns = state.selectedNamespace;
+    const url = ns ? `/api/v1/admin/crds/${encodeURIComponent(group)}/${encodeURIComponent(version)}/${encodeURIComponent(plural)}?namespace=${encodeURIComponent(ns)}` : `/api/v1/admin/crds/${encodeURIComponent(group)}/${encodeURIComponent(version)}/${encodeURIComponent(plural)}`;
+    const data = await request(url);
+    activeCRDInstances = data.items || [];
+
+    if (activeCRDInstances.length === 0) {
+      container.innerHTML = `
+        <div style="margin-top: 24px; padding: 16px; border: 1px solid var(--admin-border); border-radius: var(--admin-radius-sm); background: var(--admin-bg-secondary);">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0; font-size: 15px;">No active instances found for <strong>${escapeHTML(kind)}</strong></h3>
+            <button class="admin-btn admin-btn-sm" onclick="$('#crd-instance-container').innerHTML=''">Close</button>
+          </div>
+          <p style="margin: 8px 0 0; font-size: 12px; color: var(--admin-text-muted);">No custom resources exist in ${ns ? `namespace '${ns}'` : "the cluster"}.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="margin-top: 24px; padding: 16px; border: 1px solid var(--admin-border); border-radius: var(--admin-radius-sm); background: var(--admin-bg);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 15px;">Instances of <strong>${escapeHTML(kind)}</strong> <span style="font-size: 12px; color: var(--admin-text-muted);">(${activeCRDInstances.length} objects)</span></h3>
+          <button class="admin-btn admin-btn-sm" onclick="$('#crd-instance-container').innerHTML=''">Close</button>
+        </div>
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Resource Name</th>
+                <th>Namespace</th>
+                <th>Created</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${activeCRDInstances.map((item, idx) => `
+                <tr>
+                  <td class="admin-table-name"><strong>${escapeHTML(item.metadata?.name || "unnamed")}</strong></td>
+                  <td class="admin-table-ns">${escapeHTML(item.metadata?.namespace || "Cluster-scoped")}</td>
+                  <td style="font-size: 12px; color: var(--admin-text-muted);">${item.metadata?.creationTimestamp ? new Date(item.metadata.creationTimestamp).toLocaleString() : "—"}</td>
+                  <td style="text-align: right;">
+                    <button class="admin-btn admin-btn-sm" onclick="inspectCRDInstanceYAML(${idx})">View YAML</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `
+      <div style="margin-top: 24px; padding: 16px; border: 1px solid var(--admin-red); border-radius: var(--admin-radius-sm); background: var(--admin-bg-secondary);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="margin: 0; font-size: 15px; color: var(--admin-red);">Failed to query ${escapeHTML(kind)} instances</h3>
+          <button class="admin-btn admin-btn-sm" onclick="$('#crd-instance-container').innerHTML=''">Close</button>
+        </div>
+        <p style="margin: 8px 0 0; font-size: 12px; color: var(--admin-text);">${escapeHTML(err.message)}</p>
+      </div>
+    `;
+  }
+}
+
+function inspectCRDInstanceYAML(idx) {
+  const item = activeCRDInstances ? activeCRDInstances[idx] : null;
+  if (!item) return;
+  const modal = $("#admin-helm-modal");
+  $("#helm-modal-title").textContent = `${item.kind || "CustomResource"}: ${item.metadata?.name || "object"}`;
+  $("#helm-modal-meta").textContent = item.metadata?.namespace ? `Namespace: ${item.metadata.namespace}` : "Cluster-scoped";
+  $("#tab-btn-helm-user").textContent = "YAML Definition";
+  $("#tab-btn-helm-computed").textContent = "JSON Definition";
+  $("#tab-btn-helm-user").classList.add("active");
+  $("#tab-btn-helm-computed").classList.remove("active");
+  $("#helm-values-code").textContent = objectToYAML(item);
+
+  currentHelmValues = {
+    raw_yaml: objectToYAML(item),
+    chart_values: item,
+  };
+  modal.classList.add("open");
+}
+
+// -------------------------------------------------------------
+// 4. Interactive RBAC Permission Inspector (can-i)
+// -------------------------------------------------------------
+async function renderCanI(container) {
+  const defaultNs = state.selectedNamespace || "default";
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Interactive RBAC Permission Inspector (can-i)</h1>
+        <p class="admin-view-subtitle">Lens Pro-tier visual &quot;Who Can Do What&quot; inspector. Evaluate Kubernetes RBAC authorizations across users, groups, and service accounts.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="admin-btn" onclick="openCommandPalette('can-i')">⌘K Quick Can-I</button>
+        <button class="admin-btn admin-btn-primary" onclick="setRoute('rbac')">RBAC Blast Radius</button>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 20px; margin-top: 10px;">
+      <div class="admin-card" style="padding: 20px;">
+        <h2 style="font-size: 15px; margin-top: 0; margin-bottom: 16px;">Test Authorization Policy</h2>
+        <form id="can-i-form" onsubmit="handleCanISubmit(event)">
+          <div class="admin-form-group" style="margin-bottom: 14px;">
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Subject / Identity</label>
+            <input type="text" id="can-i-subject" class="admin-input" placeholder="e.g. system:serviceaccount:default:deploy-bot or leave blank for current admin user" style="width: 100%;">
+            <div style="font-size: 11px; color: var(--admin-text-muted); margin-top: 4px;">Leave blank to evaluate permissions of your active cluster administrator session.</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div class="admin-form-group">
+              <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">API Verb</label>
+              <select id="can-i-verb" class="admin-select" style="width: 100%;">
+                <option value="get">get</option>
+                <option value="list">list</option>
+                <option value="watch">watch</option>
+                <option value="create" selected>create</option>
+                <option value="update">update</option>
+                <option value="patch">patch</option>
+                <option value="delete">delete</option>
+                <option value="deletecollection">deletecollection</option>
+                <option value="*">* (All Verbs)</option>
+              </select>
+            </div>
+            <div class="admin-form-group">
+              <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Resource Kind</label>
+              <input type="text" id="can-i-resource" class="admin-input" value="deployments" placeholder="e.g. pods, secrets, deployments, *" style="width: 100%;">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px;">
+            <div class="admin-form-group">
+              <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">API Group</label>
+              <input type="text" id="can-i-group" class="admin-input" value="apps" placeholder="e.g. apps, batch, or blank for core" style="width: 100%;">
+            </div>
+            <div class="admin-form-group">
+              <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Namespace</label>
+              <input type="text" id="can-i-namespace" class="admin-input" value="${escapeHTML(defaultNs)}" placeholder="e.g. default, production, or blank" style="width: 100%;">
+            </div>
+          </div>
+
+          <button type="submit" class="admin-btn admin-btn-primary" style="width: 100%; padding: 10px; font-weight: 600;" id="can-i-submit-btn">
+            Evaluate RBAC Access (can-i)
+          </button>
+        </form>
+
+        <div id="can-i-result-area" style="margin-top: 20px;"></div>
+      </div>
+
+      <div class="admin-card" style="padding: 20px;">
+        <h3 style="font-size: 14px; margin-top: 0; margin-bottom: 12px;">Quick RBAC Presets</h3>
+        <p style="font-size: 12px; color: var(--admin-text-muted); line-height: 1.5; margin-bottom: 14px;">Click any security probe below to immediately run an RBAC policy evaluation:</p>
+        
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('', 'create', 'deployments', 'apps', 'default')">
+            👑 Can Current User create Deployments?
+          </button>
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:default:default', 'get', 'secrets', '', 'default')">
+            🔒 Can default SA read Secrets in default?
+          </button>
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:anonymous', 'list', 'pods', '', 'default')">
+            🕵️ Can Anonymous user list Pods?
+          </button>
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:pipeops:builder', 'create', 'pods', '', 'pipeops')">
+            🏗️ Can PipeOps Builder create Pods?
+          </button>
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('developer', 'delete', 'namespaces', '', '')">
+            🛑 Can Developer delete Namespaces?
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function applyCanIPreset(subject, verb, resource, group, namespace) {
+  $("#can-i-subject").value = subject;
+  $("#can-i-verb").value = verb;
+  $("#can-i-resource").value = resource;
+  $("#can-i-group").value = group;
+  $("#can-i-namespace").value = namespace;
+  handleCanISubmit(new Event("submit"));
+}
+
+async function handleCanISubmit(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const subject = ($("#can-i-subject")?.value || "").trim();
+  const verb = ($("#can-i-verb")?.value || "get").trim();
+  const resource = ($("#can-i-resource")?.value || "pods").trim();
+  const group = ($("#can-i-group")?.value || "").trim();
+  const namespace = ($("#can-i-namespace")?.value || "").trim();
+
+  const resultArea = $("#can-i-result-area");
+  resultArea.innerHTML = `<div class="admin-empty-state">Evaluating RBAC permissions against cluster API...</div>`;
+
+  try {
+    const resp = await request("/api/v1/admin/security/can-i", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject, verb, resource, group, namespace }),
+    });
+
+    const isAllowed = resp.allowed === true;
+    resultArea.innerHTML = `
+      <div style="border-radius: var(--admin-radius-sm); border: 2px solid ${isAllowed ? "var(--admin-green)" : "var(--admin-red)"}; background: ${isAllowed ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)"}; padding: 18px; margin-top: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px;">${isAllowed ? "✅" : "🚫"}</span>
+            <strong style="font-size: 18px; color: ${isAllowed ? "var(--admin-green)" : "var(--admin-red)"}; letter-spacing: 0.5px;">${isAllowed ? "ALLOWED" : "DENIED"}</strong>
+          </div>
+          <span class="admin-badge" style="font-size: 11px;">${escapeHTML(resp.evaluation_mode || "RBAC Engine")}</span>
+        </div>
+        <p style="font-size: 13px; line-height: 1.5; color: var(--admin-text); margin: 6px 0 10px;">
+          ${escapeHTML(resp.reason || (isAllowed ? "Authorization granted by cluster RBAC policy rules." : "No RoleBinding or ClusterRoleBinding grants this operation."))}
+        </p>
+        <div style="font-size: 11px; font-family: monospace; color: var(--admin-text-muted); background: var(--admin-bg); padding: 8px; border-radius: var(--admin-radius-sm); border: 1px solid var(--admin-border);">
+          Verb: <strong>${escapeHTML(verb)}</strong> · Resource: <strong>${escapeHTML(resource)}</strong> · Group: <strong>${escapeHTML(group || "core")}</strong> · Namespace: <strong>${escapeHTML(namespace || "(cluster-wide)")}</strong>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    resultArea.innerHTML = `
+      <div style="border-radius: var(--admin-radius-sm); border: 1px solid var(--admin-red); background: var(--admin-bg-secondary); padding: 14px; margin-top: 12px; color: var(--admin-red);">
+        <strong>Check Failed:</strong> ${escapeHTML(err.message)}
+      </div>
+    `;
+  }
+}
+
+// -------------------------------------------------------------
+// 5. Multi-Cluster Fleet Dashboard
+// -------------------------------------------------------------
+async function renderClusterFleet(container) {
+  container.innerHTML = `<div class="admin-empty-state">Loading cluster fleet status…</div>`;
+  const fleet = await request("/api/v1/admin/clusters/fleet");
+
+  const totalClusters = fleet.length;
+  const currentCluster = fleet.find(c => c.is_current);
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Multi-Cluster Fleet Dashboard</h1>
+        <p class="admin-view-subtitle">Lens Pro-tier centralized multi-cluster fleet management with instant context switching and live health telemetry.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect New Cluster</a>
+      </div>
+    </div>
+
+    <div class="admin-overview-grid">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Managed Clusters</span><span>Fleet Size</span></div>
+        <div class="admin-stat-value">${totalClusters}</div>
+        <div class="admin-stat-subtext">Configured cluster environments</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Active Context</span><span style="color: var(--admin-green);">Connected</span></div>
+        <div class="admin-stat-value" style="font-size: 20px; font-family: monospace;">${escapeHTML(currentCluster ? currentCluster.name : "None")}</div>
+        <div class="admin-stat-subtext">${currentCluster ? currentCluster.server_version : "Disconnected"}</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Active Nodes</span><span>Capacity</span></div>
+        <div class="admin-stat-value">${currentCluster ? currentCluster.nodes_count : 0}</div>
+        <div class="admin-stat-subtext">Nodes in active context</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Fleet Health</span><span>Status</span></div>
+        <div class="admin-stat-value" style="color: var(--admin-green);">100%</div>
+        <div class="admin-stat-subtext">All reachable contexts healthy</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 15px; margin: 28px 0 14px;">Available Cluster Contexts</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;">
+      ${fleet.map(c => `
+        <div class="admin-card" style="padding: 20px; border: ${c.is_current ? "2px solid var(--admin-accent)" : "1px solid var(--admin-border)"}; position: relative;">
+          ${c.is_current ? `<span class="admin-badge admin-badge-ready" style="position: absolute; top: 16px; right: 16px;">ACTIVE CONTEXT</span>` : ""}
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="font-size: 22px;">☸️</span>
+            <div>
+              <h3 style="margin: 0; font-size: 16px;">${escapeHTML(c.name)}</h3>
+              <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
+            </div>
+          </div>
+
+          <div style="font-size: 12px; color: var(--admin-text-muted); margin-bottom: 14px; font-family: monospace; word-break: break-all;">
+            ${escapeHTML(c.server || "In-Cluster Endpoint")}
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; background: var(--admin-bg-secondary); border-radius: var(--admin-radius-sm); margin-bottom: 16px; font-size: 12px;">
+            <div>
+              <span style="color: var(--admin-text-muted);">Version:</span>
+              <strong>${escapeHTML(c.server_version || "—")}</strong>
+            </div>
+            <div>
+              <span style="color: var(--admin-text-muted);">Nodes:</span>
+              <strong>${c.nodes_count !== undefined ? c.nodes_count : "—"}</strong>
+            </div>
+          </div>
+
+          <div>
+            ${c.is_current ? `
+              <button class="admin-btn admin-btn-sm" style="width: 100%; opacity: 0.7;" disabled>Currently Active</button>
+            ` : `
+              <button class="admin-btn admin-btn-primary admin-btn-sm" style="width: 100%;" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch Context to ${escapeHTML(c.name)}</button>
+            `}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function switchClusterContext(contextName) {
+  try {
+    await request("/api/v1/admin/clusters/switch-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: contextName }),
+    });
+    alert(`Switched active context to '${contextName}'.`);
+    await loadClusterHeader();
+    await renderClusterFleet($("#admin-content-area"));
+  } catch (err) {
+    alert(`Failed to switch context: ${err.message}`);
+  }
+}
+
+// -------------------------------------------------------------
+// 6. Quick Launcher Command Palette (Cmd+K / Ctrl+K)
+// -------------------------------------------------------------
+const COMMAND_PALETTE_ITEMS = [
+  { title: "Container Image CVE Radar", category: "Lens Pro Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
+  { title: "Helm Releases Manager", category: "Lens Pro Suite", hash: "helm-releases", icon: "⎈", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
+  { title: "Custom Resource Definitions (CRDs)", category: "Lens Pro Suite", hash: "crds", icon: "🧩", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
+  { title: "Interactive RBAC Tester (can-i)", category: "Lens Pro Suite", hash: "can-i", icon: "🔑", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
+  { title: "Multi-Cluster Fleet Dashboard", category: "Lens Pro Suite", hash: "cluster-fleet", icon: "🌐", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
+  { title: "Cluster Overview", category: "Cluster", hash: "overview", icon: "📊", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
+  { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", icon: "🖥️", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
+  { title: "Pods & Containers", category: "Workloads", hash: "pods", icon: "📦", desc: "Explore running pods, container logs, exec terminal, and restarts" },
+  { title: "Deployments", category: "Workloads", hash: "deployments", icon: "🚀", desc: "Manage deployments, rollout restarts, and replica scaling" },
+  { title: "StatefulSets", category: "Workloads", hash: "statefulsets", icon: "💾", desc: "Stateful workloads, volume claim templates, and status" },
+  { title: "DaemonSets", category: "Workloads", hash: "daemonsets", icon: "⚙️", desc: "Per-node daemon workloads and scheduled pods" },
+  { title: "Jobs & CronJobs", category: "Workloads", hash: "jobs", icon: "⏱️", desc: "Batch jobs and scheduled cron schedules" },
+  { title: "Services & Endpoints", category: "Networking", hash: "services", icon: "🔌", desc: "ClusterIP, NodePort, and LoadBalancer routing" },
+  { title: "Ingress Controllers", category: "Networking", hash: "ingresses", icon: "🌍", desc: "HTTP/HTTPS routing rules, hosts, and TLS certificates" },
+  { title: "Network Policies", category: "Networking", hash: "networkpolicies", icon: "🧱", desc: "Ingress/egress isolation rules and pod selectors" },
+  { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", icon: "🔐", desc: "Cluster configuration maps and encoded secrets" },
+  { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", icon: "💽", desc: "Storage claims, sizes, and bound PersistentVolumes" },
+  { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", icon: "🏷️", desc: "Dynamic provisioners and volume expansion rules" },
+  { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", icon: "📁", desc: "Namespace isolation, quotas, and customer tenant bindings" },
+  { title: "Cluster Warning Events", category: "Cluster", hash: "events", icon: "⚠️", desc: "Real-time cluster warning event stream and reasons" },
+  { title: "AI Diagnostic Copilot", category: "Intelligence", hash: "copilot", icon: "🤖", desc: "Cluster troubleshooting and natural language remediation engine" },
+  { title: "Incident War Room", category: "Intelligence", hash: "war-room", icon: "🚨", desc: "Live incident triage, root-cause diagnosis, and post-mortem runbooks" },
+  { title: "Right-Sizing & Cost Optimization", category: "Intelligence", hash: "rightsizing", icon: "💡", desc: "Over-provisioned CPU/Memory detection and cost savings" },
+  { title: "Disaster Recovery Radar", category: "Intelligence", hash: "backup-radar", icon: "🔄", desc: "Unprotected PVC discovery, RPO tracking, and backup verification" },
+  { title: "GitOps Drift Detector", category: "Intelligence", hash: "gitops-drift", icon: "🐙", desc: "Detect out-of-sync cluster resources and manual kubectl overrides" },
+  { title: "Network Topology Visualizer", category: "Intelligence", hash: "topology", icon: "🕸️", desc: "Interactive cross-namespace service traffic and ingress graph" },
+  { title: "Capsule Tenant Isolation Matrix", category: "Security", hash: "isolation-matrix", icon: "🛡️", desc: "Multi-tenant namespace boundaries and cross-tenant leak checks" },
+  { title: "TLS Certificate Expiry Radar", category: "Security", hash: "certificates", icon: "📜", desc: "Expiring TLS certificates and cert-manager issuers" },
+  { title: "Connect Kubernetes Cluster", category: "Cluster", hash: "cluster-connect", icon: "🔗", desc: "Upload kubeconfig to connect a new Kubernetes cluster" },
+];
+
+let selectedCommandPaletteIndex = 0;
+let currentPaletteResults = [];
+
+function openCommandPalette(initialQuery = "") {
+  const modal = $("#admin-cmd-k-modal");
+  if (!modal) return;
+  modal.classList.add("open");
+  const input = $("#cmd-k-input");
+  input.value = initialQuery;
+  input.focus();
+  filterCommandPalette(initialQuery);
+}
+
+function closeCommandPalette() {
+  const modal = $("#admin-cmd-k-modal");
+  if (modal) modal.classList.remove("open");
+}
+
+function filterCommandPalette(q = "") {
+  const query = q.toLowerCase().trim();
+  if (!query) {
+    currentPaletteResults = COMMAND_PALETTE_ITEMS.slice(0, 10);
+  } else {
+    currentPaletteResults = COMMAND_PALETTE_ITEMS.filter(item =>
+      item.title.toLowerCase().includes(query) ||
+      item.category.toLowerCase().includes(query) ||
+      item.desc.toLowerCase().includes(query) ||
+      item.hash.toLowerCase().includes(query)
+    );
+  }
+
+  selectedCommandPaletteIndex = 0;
+  renderCommandPaletteResults();
+}
+
+function renderCommandPaletteResults() {
+  const container = $("#cmd-k-results");
+  if (!container) return;
+
+  if (currentPaletteResults.length === 0) {
+    container.innerHTML = `
+      <div style="padding: 24px; text-align: center; color: var(--admin-text-muted); font-size: 13px;">
+        No actions or resources matched your query. Press Enter to search with AI Copilot.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = currentPaletteResults.map((item, idx) => `
+    <div class="admin-cmd-k-item ${idx === selectedCommandPaletteIndex ? "selected" : ""}" data-index="${idx}" onclick="executePaletteItem(${idx})">
+      <span class="admin-cmd-k-item-icon">${item.icon}</span>
+      <div class="admin-cmd-k-item-details">
+        <div class="admin-cmd-k-item-title">${escapeHTML(item.title)}</div>
+        <div class="admin-cmd-k-item-desc">${escapeHTML(item.desc)}</div>
+      </div>
+      <span class="admin-cmd-k-item-category">${escapeHTML(item.category)}</span>
+    </div>
+  `).join("");
+}
+
+function executePaletteItem(idx) {
+  const item = currentPaletteResults[idx];
+  closeCommandPalette();
+  if (!item) return;
+  setRoute(item.hash);
+}
+
+function handleCommandPaletteKeydown(e) {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (currentPaletteResults.length > 0) {
+      selectedCommandPaletteIndex = (selectedCommandPaletteIndex + 1) % currentPaletteResults.length;
+      renderCommandPaletteResults();
+      scrollPaletteSelectionIntoView();
+    }
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (currentPaletteResults.length > 0) {
+      selectedCommandPaletteIndex = (selectedCommandPaletteIndex - 1 + currentPaletteResults.length) % currentPaletteResults.length;
+      renderCommandPaletteResults();
+      scrollPaletteSelectionIntoView();
+    }
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    if (currentPaletteResults.length > 0) {
+      executePaletteItem(selectedCommandPaletteIndex);
+    } else {
+      // Fallback: send to AI Copilot
+      const val = $("#cmd-k-input")?.value || "";
+      closeCommandPalette();
+      if (val) {
+        setRoute("copilot");
+      }
+    }
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeCommandPalette();
+  }
+}
+
+function scrollPaletteSelectionIntoView() {
+  const selectedEl = document.querySelector(".admin-cmd-k-item.selected");
+  if (selectedEl) {
+    selectedEl.scrollIntoView({ block: "nearest" });
+  }
 }
 
 async function initializeAdmin() {

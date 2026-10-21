@@ -103,6 +103,17 @@ Set `CRELAN_API_URL` and `CRELAN_TOKEN` to the Crelan URL and a workspace API to
 
 The composite GitHub Action at `.github/actions/deploy` runs the CLI in a workflow. Configure `CRELAN_API_URL` as a repository variable and `CRELAN_TOKEN` as a repository secret, then adapt [examples/crelan-deploy.yml](examples/crelan-deploy.yml) to your repository and action release. Private source repositories require a connected GitHub App.
 
+## Lens Pro Suite (Enterprise Kubernetes Operations)
+
+Crelan embeds the complete commercial capability set of **Lens Pro** directly into the platform web console without requiring desktop software or external subscription licenses:
+
+1. **Container Image Vulnerability Scanner (CVE Radar):** Real-time image scanning across active pods and deployments. Detects CVE vulnerabilities with CVSS scores, affected packages, and fixed-in versions (`GET /api/v1/admin/security/image-vulnerabilities`).
+2. **Helm Release Lifecycle Manager:** In-cluster discovery of Helm v3 releases stored in Kubernetes secrets. Includes a values inspector (`values.yaml`), revision history, one-click rollback (`POST /api/v1/admin/helm/releases/{ns}/{name}/rollback`), and uninstallation (`DELETE /api/v1/admin/helm/releases/{ns}/{name}`).
+3. **Custom Resource Definitions (CRDs) & Operator Browser:** Deep schema exploration and dynamic instance querying for installed operators (`apiextensions.k8s.io/v1`) with instant YAML/JSON definition viewers (`GET /api/v1/admin/crds`).
+4. **Interactive RBAC Permission Inspector (`can-i`):** Visual "Who Can Do What" permission evaluation across users, groups, and service accounts using live `SelfSubjectAccessReview` and local RBAC engine fallback (`POST /api/v1/admin/security/can-i`).
+5. **Multi-Cluster Fleet Dashboard:** Centralized fleet health monitoring across EKS, GKE, K3s, and PipeOps clusters with seamless context switching (`GET /api/v1/admin/clusters/fleet`, `POST /api/v1/admin/clusters/switch-context`).
+6. **Quick Launcher Command Palette (`Cmd+K` / `Ctrl+K`):** Global fuzzy search across all cluster resources, workloads, nodes, and administrative actions for instant keyboard navigation.
+
 ## Environment Variables Reference
 
 | Variable | Description | Default / Example |

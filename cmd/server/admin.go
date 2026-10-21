@@ -158,6 +158,17 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/gitops/drift", s.getGitOpsDrift)
 	mux.HandleFunc("POST /api/v1/admin/gitops/reconcile", s.reconcileGitOpsDrift)
 	mux.HandleFunc("GET /api/v1/admin/dr/radar", s.getDisasterRecoveryRadar)
+
+	// Lens Pro Parity (CVE Image Scanner, Helm Releases, CRD Explorer, RBAC can-i, Cluster Fleet)
+	mux.HandleFunc("GET /api/v1/admin/security/image-vulnerabilities", s.getImageVulnerabilities)
+	mux.HandleFunc("GET /api/v1/admin/helm/releases", s.getHelmReleases)
+	mux.HandleFunc("GET /api/v1/admin/helm/releases/{namespace}/{name}/values", s.getHelmReleaseValues)
+	mux.HandleFunc("POST /api/v1/admin/helm/releases/{namespace}/{name}/rollback", s.rollbackHelmRelease)
+	mux.HandleFunc("DELETE /api/v1/admin/helm/releases/{namespace}/{name}", s.uninstallHelmRelease)
+	mux.HandleFunc("GET /api/v1/admin/crds", s.getCRDs)
+	mux.HandleFunc("GET /api/v1/admin/crds/{group}/{version}/{resource}", s.getCustomResourceInstances)
+	mux.HandleFunc("POST /api/v1/admin/security/can-i", s.checkCanI)
+	mux.HandleFunc("GET /api/v1/admin/clusters/fleet", s.getClusterFleet)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
