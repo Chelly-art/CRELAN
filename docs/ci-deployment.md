@@ -55,7 +55,7 @@ pipeline builds and pushes the checked-out source by default. Set
 Crelan from a public GitHub repo` parameter to select the source-build example
 instead. The two source parameters configure that repository and branch.
 
-The image deployed to Crelan must be readable by the cluster. For a private
+The image deployed to Crelan must be accessible by Crelan. For a private
 registry, create a registry credential in the Crelan workspace and pass its
 name as `CRELAN_IMAGE_PULL_SECRET` in either example. Public images do not need
 a pull secret.

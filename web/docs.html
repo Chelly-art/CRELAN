@@ -61,7 +61,7 @@
 
       <section class="docs-section" id="quickstart">
         <h2>Quickstart</h2>
-        <ol><li>Sign in to your Crelan workspace and make sure an administrator has configured a Kubernetes cluster.</li><li>Create a workspace API token with deployment write access. Add deployment read access if your pipeline waits for rollout status.</li><li>Set <code>CRELAN_API_URL</code> and <code>CRELAN_TOKEN</code> in your runner's protected secret store.</li><li>Deploy an image your cluster can pull, or choose a GitHub repo for Crelan-managed builds.</li></ol>
+        <ol><li>Sign in to your Crelan workspace.</li><li>Create a workspace API token with deployment write access (and read access if your pipeline waits for rollout status).</li><li>Set <code>CRELAN_API_URL</code> and <code>CRELAN_TOKEN</code> in your runner's protected secret store or local shell.</li><li>Deploy an existing container image or provide a GitHub repository for automated builds.</li></ol>
         <pre><code>export CRELAN_API_URL="https://crelan.example.com"
 export CRELAN_TOKEN="&lt;workspace-token&gt;"
 
@@ -76,9 +76,10 @@ crelan deploy --name storefront \
 
       <section class="docs-section" id="tokens">
         <h2>Workspace tokens for CI</h2>
-        <p>Workspace tokens are scoped, revocable credentials. The token secret is returned only when created; Crelan stores a hash and shows only its prefix afterward. Token creation and revocation use your signed-in browser session. A token management form is not available in the dashboard yet, so use the signed-in browser console request below to create one.</p>
-        <h3>Create a deployment token</h3>
-        <ol><li>Sign in to Crelan in the browser that has access to the target workspace.</li><li>Open the browser developer console while on your Crelan site.</li><li>Run the request below, changing the name and expiry as needed. The example expires in 90 days.</li><li>Copy the returned <code>token</code> value immediately into your CI secret store. The full value cannot be retrieved later.</li></ol>
+        <p>Workspace tokens are scoped, revocable credentials for authenticating CI/CD pipelines, CLI commands, and automated deployments. The token secret is returned once upon creation; Crelan stores a secure hash and displays only its prefix afterward.</p>
+        <h3>Generate a workspace token</h3>
+        <p>You can generate a workspace token using your authenticated browser session with the JavaScript request below, or via the Crelan API:</p>
+        <ol><li>Sign in to your Crelan workspace in the browser.</li><li>Open your browser developer console while on your Crelan site.</li><li>Run the request below, changing the token name and expiry as needed (example sets a 90-day expiry).</li><li>Copy the returned <code>token</code> value immediately into your CI secret store. The full token value cannot be retrieved later.</li></ol>
         <pre><code>const response = await fetch("/api/v1/tokens", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -108,9 +109,9 @@ console.log(result.token);</code></pre>
 
       <section class="docs-section" id="image-deploy">
         <h2>Build in CI and deploy an image</h2>
-        <p>This is the portable option for GitLab, Jenkins, or any runner that can build and push an image. The image must be available to the Kubernetes cluster. For a private registry, first save a registry credential in the Crelan workspace.</p>
+        <p>This is the portable option for GitLab, Jenkins, GitHub Actions, or any runner that can build and push an image. Images can be public or hosted on private registries by saving a registry credential in your Crelan workspace.</p>
         <h3>Pipeline steps</h3>
-        <ol><li>Check out the application source.</li><li>Build an image and tag it with an immutable commit SHA or release version.</li><li>Push it to a registry your cluster can reach.</li><li>Run <code>crelan deploy --image</code> and wait for the rollout.</li></ol>
+        <ol><li>Check out the application source code.</li><li>Build an image and tag it with an immutable commit SHA or release tag.</li><li>Push it to a container registry accessible to Crelan.</li><li>Run <code>crelan deploy --image</code> and wait for the rollout.</li></ol>
         <pre><code>docker build --pull -t "$IMAGE_TAG" .
 docker push "$IMAGE_TAG"
 crelan deploy --name "$CRELAN_APP_NAME" \
@@ -128,7 +129,7 @@ crelan deploy --name "$CRELAN_APP_NAME" \
 
       <section class="docs-section" id="source-deploy">
         <h2>Let Crelan build from source</h2>
-        <p>Send Crelan an HTTPS GitHub repository URL and branch. Crelan clones the source and builds a Dockerfile with rootless BuildKit. If there is no Dockerfile, Crelan can use the platform's configured Buildpacks builder.</p>
+        <p>Send Crelan an HTTPS GitHub repository URL and branch. Crelan automatically clones the repository and builds your application using the repository's Dockerfile (or automatically detects your application stack using Cloud Native Buildpacks if no Dockerfile is present).</p>
         <pre><code>crelan deploy --name storefront \
   --repo https://github.com/acme/storefront \
   --branch main --dockerfile Dockerfile \
@@ -204,7 +205,7 @@ pulumi up</code></pre>
           <tr><td><code>crelan status ID</code></td><td>Read current deployment status.</td><td><code>deployments:read</code></td></tr>
           <tr><td><code>crelan history ID</code></td><td>Read prior deployment runs.</td><td><code>deployments:read</code></td></tr>
           <tr><td><code>crelan logs ID</code></td><td>Read app logs.</td><td><code>logs:read</code></td></tr>
-          <tr><td><code>crelan resources ID</code></td><td>Read app pod/config metadata.</td><td><code>resources:read</code></td></tr>
+          <tr><td><code>crelan resources ID</code></td><td>Read application runtime and configuration metadata.</td><td><code>resources:read</code></td></tr>
           <tr><td><code>crelan delete ID</code></td><td>Delete an application.</td><td><code>deployments:write</code></td></tr>
           <tr><td><code>crelan version</code></td><td>Print the CLI version.</td><td>None</td></tr>
         </tbody></table></div>
@@ -221,7 +222,7 @@ pulumi up</code></pre>
           <tr><td><code>GET /api/v1/deployments</code></td><td>List workspace deployments.</td><td><code>deployments:read</code></td></tr>
           <tr><td><code>GET /api/v1/deployments/{id}</code></td><td>Read deployment details and status.</td><td><code>deployments:read</code></td></tr>
           <tr><td><code>GET /api/v1/deployments/{id}/history</code></td><td>Read deployment run history.</td><td><code>deployments:read</code></td></tr>
-          <tr><td><code>GET /api/v1/deployments/{id}/resources</code></td><td>Read app resource metadata.</td><td><code>resources:read</code></td></tr>
+          <tr><td><code>GET /api/v1/deployments/{id}/resources</code></td><td>Read application runtime and configuration metadata.</td><td><code>resources:read</code></td></tr>
           <tr><td><code>GET /api/v1/deployments/{id}/logs</code></td><td>Read app logs; optional <code>?tail=200</code> (max 1000).</td><td><code>logs:read</code></td></tr>
           <tr><td><code>POST /api/v1/deployments/{id}/cancel</code></td><td>Cancel an active run.</td><td><code>deployments:write</code></td></tr>
           <tr><td><code>POST /api/v1/deployments/{id}/rollback</code></td><td>Queue rollback with JSON <code>{"run_id": 12}</code>.</td><td><code>deployments:write</code></td></tr>
@@ -242,21 +243,21 @@ pulumi up</code></pre>
           <tr><td><code>GET /api/v1/tokens</code>, <code>POST /api/v1/tokens</code>, <code>DELETE /api/v1/tokens/{id}</code></td><td>Workspace session only; create, list, and revoke tokens.</td></tr>
           <tr><td><code>GET /api/v1/registry-credentials</code>, <code>POST /api/v1/registry-credentials</code>, <code>DELETE /api/v1/registry-credentials/{name}</code></td><td>Workspace session and write role; registry credential metadata and management.</td></tr>
           <tr><td><code>/api/v1/databases</code>, <code>/api/v1/database-engines</code></td><td>Managed database engine and database operations; workspace session.</td></tr>
-          <tr><td><code>GET /api/v1/cluster/contexts</code>, <code>GET /api/v1/cluster/resources</code></td><td>Workspace cluster context and resource views.</td></tr>
+          <tr><td><code>GET /api/v1/cluster/contexts</code>, <code>GET /api/v1/cluster/resources</code></td><td>Workspace deployment target and resource views.</td></tr>
           <tr><td><code>GET /api/v1/health</code></td><td>Unauthenticated service health check.</td></tr>
         </tbody></table></div>
-        <p>Token management uses your signed-in browser session, not a workspace bearer token. Platform and workspace administration endpoints are not granted by customer API tokens.</p>
+        <p>Token management requires an active workspace session. Administrative endpoints are reserved for workspace owners and platform administrators and cannot be accessed using workspace API tokens.</p>
       </section>
 
       <section class="docs-section" id="troubleshooting">
         <h2>Troubleshooting</h2>
         <h3>401 or 403 from the API</h3><p>Confirm that the token is active, belongs to the intended workspace, and includes the required scope. Use the Crelan base URL without a trailing <code>/api/v1</code>.</p>
-        <h3>ImagePullBackOff</h3><p>Check the image name and tag, confirm the image is pushed before deployment, and select the saved registry credential for private images. Make sure cluster nodes can reach the registry.</p>
-        <h3>Deployment stays queued or building</h3><p>Check workspace concurrency limits, cluster capacity, and the Crelan deployment history/logs. Source builds need a supported GitHub URL and a configured builder and registry.</p>
-        <h3>No public application URL</h3><p>The cluster needs an ingress controller and platform-configured application domain. Contact your platform administrator if the app is running but has no URL.</p>
-        <h3>Revoke a leaked or retired token</h3><p>Use the signed-in token management endpoint to revoke it, then issue a replacement with the minimum required scopes and update your CI secret.</p>
+        <h3>ImagePullBackOff</h3><p>Verify that the image name and tag exist in your container registry. For private repositories, ensure you have added a matching registry credential in your workspace and selected it for the deployment.</p>
+        <h3>Deployment stays queued or building</h3><p>Check your workspace concurrency and resource limits, and inspect the deployment history and logs in the dashboard or CLI. For source builds, ensure the GitHub repository URL and branch are accessible and contain a valid Dockerfile or supported project structure.</p>
+        <h3>No public application URL</h3><p>Ensure your application has an exposed port configured (defaults to 8080). If the application is running but does not display a public domain, check your application settings or reach out to support.</p>
+        <h3>Revoke a leaked or retired token</h3><p>Revoke the token using your signed-in workspace session or the API (<code>DELETE /api/v1/tokens/{id}</code>), then generate a replacement with the minimum required scopes and update your CI secret.</p>
       </section>
-      <footer class="docs-footer">Crelan documentation · Need help? Contact your workspace administrator or visit the <a href="/">Crelan home page</a>.</footer>
+      <footer class="docs-footer">Crelan documentation · Need help? Contact Crelan support or visit the <a href="/">Crelan home page</a>.</footer>
     </main>
   </div>
 </div>

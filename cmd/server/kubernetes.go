@@ -59,6 +59,7 @@ var (
 type kubernetesProvisioner struct {
 	client        kubernetes.Interface
 	dynamicClient dynamic.Interface
+	restConfig    *rest.Config
 	httpClient    *http.Client
 	config        kubernetesProvisionerConfig
 }
@@ -153,6 +154,7 @@ func newKubernetesProvisionerWithRESTConfig(config *rest.Config) (*kubernetesPro
 	return &kubernetesProvisioner{
 		client:        client,
 		dynamicClient: dynamicClient,
+		restConfig:    config,
 		httpClient:    &http.Client{Timeout: 15 * time.Second},
 		config:        provisionerConfig,
 	}, nil

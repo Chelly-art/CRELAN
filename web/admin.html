@@ -3,47 +3,364 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5f7fa">
-    <title>Crelan — Platform admin</title>
+    <meta name="theme-color" content="#14171c">
+    <title>Crelan Lens — Kubernetes Cluster Manager</title>
     <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/admin-lens.css">
     <script src="/assets/admin.js" defer></script>
   </head>
-  <body>
-    <div class="shell">
-      <aside class="sidebar">
-        <a class="brand" href="/dashboard" aria-label="Crelan workspace"><span class="brand-mark">C</span><span>crelan<span class="brand-period">.</span></span></a>
-        <div class="workspace-label">PLATFORM</div>
-        <nav aria-label="Platform navigation"><a class="nav-link active" href="/assets/admin.html"><span class="nav-icon">⚙</span> Overview</a><a class="nav-link" href="/dashboard"><span class="nav-icon">▦</span> Customer workspace</a></nav>
-        <div class="sidebar-bottom"><div class="user-card"><span class="user-avatar" id="admin-avatar">A</span><span class="user-details"><strong id="admin-name">Loading account…</strong><small id="admin-email"></small></span><button class="signout-button" id="admin-signout" type="button">Sign out</button></div></div>
+  <body class="lens-body">
+    <div class="lens-app">
+      <!-- 1. Left Cluster Rail -->
+      <aside class="lens-rail" aria-label="Cluster Rail">
+        <a class="lens-rail-brand" href="/dashboard" title="Crelan Platform">C</a>
+        <div class="lens-cluster-badge active" id="rail-cluster-badge" title="Connected Kubernetes Cluster">
+          ☸
+          <span class="status-dot" id="rail-status-dot"></span>
+        </div>
+        <div class="lens-rail-bottom">
+          <a class="lens-rail-icon-btn" href="/dashboard" title="Switch to Customer Workspaces">▦</a>
+          <button class="lens-rail-icon-btn" id="rail-refresh-btn" type="button" title="Refresh Cluster State">⟳</button>
+        </div>
       </aside>
-      <main class="main">
-        <header class="topbar"><div class="breadcrumbs"><span>Platform</span><span class="crumb-divider">/</span><strong>Admin overview</strong></div><span class="top-avatar" id="admin-top-avatar">A</span></header>
-        <section class="content">
-          <div class="welcome"><div><div class="eyebrow">PLATFORM OPERATIONS</div><h1>Admin overview</h1><p>Platform-wide customer and cluster operations. Access is restricted to platform administrators.</p></div><div class="welcome-actions"><button class="inline-action" id="admin-backup" type="button">Download control-plane backup</button><button class="primary-button" id="admin-refresh" type="button">Refresh overview</button></div></div>
-          <section class="panel admin-overview-panel" aria-labelledby="admin-overview-heading">
-            <div class="panel-heading"><div><h2 id="admin-overview-heading">Live platform overview</h2><p>Values below come directly from the protected admin API.</p></div></div>
-            <p class="admin-state" id="admin-state" role="status">Checking platform access…</p>
-            <pre class="admin-overview-data" id="admin-overview-data" hidden></pre>
-          </section>
-          <section class="panel admin-overview-panel" aria-labelledby="cluster-connect-heading">
-            <div class="panel-heading"><div><h2 id="cluster-connect-heading">Customer deployment cluster</h2><p>Connect the Kubernetes cluster that customer workspaces will deploy to.</p></div></div>
-            <form id="cluster-connect-form">
-              <label class="form-label" for="cluster-kubeconfig">Kubeconfig</label>
-              <textarea class="text-input" id="cluster-kubeconfig" rows="9" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Paste kubeconfig YAML" required></textarea>
-              <label class="form-label" for="cluster-context">Context <span>(optional; defaults to current-context)</span></label>
-              <input class="text-input" id="cluster-context" autocomplete="off" placeholder="Context name from the kubeconfig">
-              <p class="cluster-connect-help">Use a self-contained kubeconfig with certificate data embedded. The API server must be reachable from Crelan. Contexts that rely on local cloud CLI login plugins may not work in the hosted service. Before connecting, configure a durable DATABASE_PATH and CRELAN_KUBECONFIG_ENCRYPTION_KEY in PipeOps. Generate a key with <code>openssl rand -base64 32</code>; keep it as a PipeOps secret and separate from database backups.</p>
-              <p class="admin-state" id="cluster-connect-state" role="status">No new connection attempt.</p>
-              <button class="primary-button" id="cluster-connect-submit" type="submit">Validate and connect</button>
-            </form>
-          </section>
-          <section class="panel admin-overview-panel" aria-labelledby="readiness-heading">
-            <div class="panel-heading"><div><h2 id="readiness-heading">Cluster readiness</h2><p>Checks for the cluster components needed by the current provisioning setup.</p></div></div>
-            <p class="admin-state" id="readiness-state">Loading readiness checks…</p>
-            <div class="resource-table-wrap" id="readiness-checks"></div>
-          </section>
-          <footer>Crelan <span>·</span> Platform administration <span class="footer-right" id="admin-api-status">Checking access</span></footer>
+
+      <!-- 2. Secondary Sidebar Tree -->
+      <nav class="lens-sidebar" aria-label="Cluster Navigation">
+        <div class="lens-sidebar-header">
+          <span class="lens-cluster-name" id="sidebar-cluster-name">in-cluster</span>
+          <span class="lens-cluster-tag" id="sidebar-cluster-tag">Connected</span>
+        </div>
+
+        <div class="lens-nav-tree">
+          <!-- CLUSTER -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Cluster</div>
+            <a class="lens-tree-item active" href="#overview" data-view="overview">
+              <span>Overview</span>
+            </a>
+            <a class="lens-tree-item" href="#nodes" data-view="nodes">
+              <span>Nodes</span>
+              <span class="lens-item-badge" id="badge-nodes">0</span>
+            </a>
+          </div>
+
+          <!-- WORKLOADS -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Workloads</div>
+            <a class="lens-tree-item" href="#pods" data-view="pods">
+              <span>Pods</span>
+              <span class="lens-item-badge" id="badge-pods">0</span>
+            </a>
+            <a class="lens-tree-item" href="#deployments" data-view="deployments">
+              <span>Deployments</span>
+              <span class="lens-item-badge" id="badge-deployments">0</span>
+            </a>
+            <a class="lens-tree-item" href="#statefulsets" data-view="statefulsets">
+              <span>StatefulSets</span>
+            </a>
+            <a class="lens-tree-item" href="#daemonsets" data-view="daemonsets">
+              <span>DaemonSets</span>
+            </a>
+            <a class="lens-tree-item" href="#jobs" data-view="jobs">
+              <span>Jobs</span>
+            </a>
+            <a class="lens-tree-item" href="#cronjobs" data-view="cronjobs">
+              <span>CronJobs</span>
+            </a>
+          </div>
+
+          <!-- NETWORK -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Network</div>
+            <a class="lens-tree-item" href="#services" data-view="services">
+              <span>Services</span>
+            </a>
+            <a class="lens-tree-item" href="#ingresses" data-view="ingresses">
+              <span>Ingresses</span>
+            </a>
+            <a class="lens-tree-item" href="#networkpolicies" data-view="networkpolicies">
+              <span>Network Policies</span>
+            </a>
+          </div>
+
+          <!-- CONFIGURATION -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Configuration</div>
+            <a class="lens-tree-item" href="#configmaps" data-view="configmaps">
+              <span>ConfigMaps</span>
+            </a>
+            <a class="lens-tree-item" href="#secrets" data-view="secrets">
+              <span>Secrets</span>
+            </a>
+          </div>
+
+          <!-- STORAGE -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Storage</div>
+            <a class="lens-tree-item" href="#pvcs" data-view="pvcs">
+              <span>Persistent Volume Claims</span>
+            </a>
+            <a class="lens-tree-item" href="#pvs" data-view="pvs">
+              <span>Persistent Volumes</span>
+            </a>
+            <a class="lens-tree-item" href="#storageclasses" data-view="storageclasses">
+              <span>Storage Classes</span>
+            </a>
+          </div>
+
+          <!-- NAMESPACES & EVENTS -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Cluster Scopes</div>
+            <a class="lens-tree-item" href="#namespaces" data-view="namespaces">
+              <span>Namespaces</span>
+              <span class="lens-item-badge" id="badge-namespaces">0</span>
+            </a>
+            <a class="lens-tree-item" href="#events" data-view="events">
+              <span>Cluster Events</span>
+              <span class="lens-item-badge" id="badge-events">0</span>
+            </a>
+          </div>
+
+          <!-- SUPER-LENS (ADVANCED PAAS) -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header" style="color: #a78bfa;">Super-Lens (Advanced)</div>
+            <a class="lens-tree-item" href="#security" data-view="security">
+              <span>🛡️ Security & Isolation</span>
+              <span class="lens-item-badge" id="badge-security" style="color: #a78bfa;">Audit</span>
+            </a>
+            <a class="lens-tree-item" href="#databases" data-view="databases">
+              <span>🗄️ Database Topology</span>
+            </a>
+            <a class="lens-tree-item" href="#storage-leaks" data-view="storage-leaks">
+              <span>💾 Storage Leak Detector</span>
+              <span class="lens-item-badge lens-badge-warning" id="badge-leaks" hidden>0</span>
+            </a>
+            <a class="lens-tree-item" href="#efficiency" data-view="efficiency">
+              <span>📊 Resource Efficiency</span>
+            </a>
+          </div>
+
+          <!-- PLATFORM OPERATIONS -->
+          <div class="lens-tree-group">
+            <div class="lens-tree-header">Platform Ops</div>
+            <a class="lens-tree-item" href="#cluster-connect" data-view="cluster-connect">
+              <span>Connect Cluster</span>
+            </a>
+            <a class="lens-tree-item" href="#readiness" data-view="readiness">
+              <span>Cluster Readiness</span>
+            </a>
+            <a class="lens-tree-item" href="#backup" data-view="backup">
+              <span>Control-Plane Backup</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 3. Main Work Area -->
+      <main class="lens-main">
+        <!-- Top Bar -->
+        <header class="lens-topbar">
+          <div class="lens-topbar-left">
+            <div class="lens-context-chip">
+              <span class="lens-dot" id="topbar-dot"></span>
+              <strong id="topbar-context-name">in-cluster</strong>
+              <span class="lens-k8s-version" id="topbar-k8s-version">v1.34</span>
+            </div>
+
+            <div class="lens-ns-select-wrap">
+              <label for="lens-namespace-select">Namespace:</label>
+              <select class="lens-ns-select" id="lens-namespace-select">
+                <option value="">All Namespaces</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="lens-search-box">
+            <input class="lens-search-input" id="lens-search-input" type="search" placeholder="Filter resources... (press /)" autocomplete="off">
+            <span class="lens-search-key">/</span>
+          </div>
+
+          <div class="lens-topbar-right">
+            <!-- Perspective Toggle -->
+            <div class="lens-perspective-toggle">
+              <button class="lens-toggle-option active" id="perspective-k8s" type="button" title="Raw Kubernetes View">K8s View</button>
+              <button class="lens-toggle-option" id="perspective-ws" type="button" title="Group by Customer Workspace">Workspace View</button>
+            </div>
+
+            <!-- Auto-Refresh -->
+            <select class="lens-auto-refresh-select" id="lens-auto-refresh-select" aria-label="Auto-refresh frequency">
+              <option value="0">Refresh: Manual</option>
+              <option value="5000">Every 5s</option>
+              <option value="10000" selected>Every 10s</option>
+              <option value="30000">Every 30s</option>
+            </select>
+
+            <button class="lens-refresh-btn" id="lens-refresh-btn" type="button" title="Refresh current view">
+              <span id="lens-refresh-icon">⟳</span> Refresh
+            </button>
+
+            <!-- User Badge -->
+            <div class="lens-user-badge">
+              <span class="lens-user-avatar" id="admin-avatar">A</span>
+              <button class="lens-signout-btn" id="admin-signout" type="button" title="Sign out">Sign out</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Dynamic Main Content Area -->
+        <section class="lens-content" id="lens-content-area">
+          <div class="lens-empty-state">Loading cluster resources…</div>
         </section>
+
+        <!-- 4. Slide-Over Resource Inspector Drawer -->
+        <div class="lens-drawer-overlay" id="lens-drawer-overlay"></div>
+        <aside class="lens-drawer" id="lens-inspector-drawer" aria-labelledby="drawer-title">
+          <div class="lens-drawer-header">
+            <div class="lens-drawer-title-group">
+              <span class="lens-kind-badge" id="drawer-kind">Pod</span>
+              <h2 class="lens-drawer-title" id="drawer-title">resource-name</h2>
+            </div>
+            <button class="lens-drawer-close" id="drawer-close-btn" type="button" aria-label="Close drawer">✕</button>
+          </div>
+
+          <div class="lens-drawer-toolbar" id="drawer-toolbar">
+            <!-- Dynamic action buttons (Logs, Exec, Restart, Scale, Delete) -->
+          </div>
+
+          <div class="lens-drawer-tabs">
+            <button class="lens-drawer-tab active" id="tab-btn-overview" type="button" data-tab="overview">Overview</button>
+            <button class="lens-drawer-tab" id="tab-btn-events" type="button" data-tab="events">Events</button>
+            <button class="lens-drawer-tab" id="tab-btn-yaml" type="button" data-tab="yaml">Raw YAML/JSON</button>
+          </div>
+
+          <div class="lens-drawer-body" id="drawer-body">
+            <!-- Dynamic tab content -->
+          </div>
+        </aside>
+
+        <!-- 5. In-Browser Interactive Pod Terminal Drawer -->
+        <div class="lens-terminal-drawer" id="lens-terminal-drawer">
+          <div class="lens-terminal-header">
+            <div class="lens-terminal-title">
+              <span>🖥️ In-Browser Pod Exec:</span>
+              <strong id="terminal-pod-name">pod-name</strong>
+              <span class="lens-k8s-version" id="terminal-container-name">container</span>
+            </div>
+            <div class="lens-terminal-controls">
+              <button class="lens-btn lens-btn-sm" id="terminal-clear-btn" type="button">Clear</button>
+              <button class="lens-drawer-close" id="terminal-close-btn" type="button">✕</button>
+            </div>
+          </div>
+          <div class="lens-quick-cmds">
+            <span style="color: var(--lens-text-dim); font-size: 11px;">Quick Commands:</span>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="ps aux">ps aux</button>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="env">env</button>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="df -h">df -h</button>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="cat /etc/resolv.conf">resolv.conf</button>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="uptime">uptime</button>
+            <button class="lens-quick-cmd-btn" type="button" data-cmd="curl -I http://localhost:8080">curl :8080</button>
+          </div>
+          <div class="lens-terminal-body" id="terminal-body">
+            <div class="lens-terminal-output" id="terminal-output">Ready. Type a command or click a quick action above.</div>
+            <form class="lens-terminal-input-row" id="terminal-form">
+              <span class="lens-terminal-prompt" id="terminal-prompt">[sh]$</span>
+              <input class="lens-terminal-input" id="terminal-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type command and press Enter (e.g. ls -la, ps, env)...">
+            </form>
+          </div>
+        </div>
+
+        <!-- 6. Pod Logs Terminal Drawer -->
+        <div class="lens-terminal-drawer" id="lens-logs-drawer" style="height: 440px;">
+          <div class="lens-terminal-header">
+            <div class="lens-terminal-title">
+              <span>📜 Container Logs:</span>
+              <strong id="logs-pod-name">pod-name</strong>
+            </div>
+            <div class="lens-terminal-controls">
+              <select class="lens-auto-refresh-select" id="logs-container-select"></select>
+              <select class="lens-auto-refresh-select" id="logs-tail-select">
+                <option value="100">100 lines</option>
+                <option value="250" selected>250 lines</option>
+                <option value="500">500 lines</option>
+                <option value="1000">1000 lines</option>
+              </select>
+              <label class="lens-toggle-option" style="cursor: pointer;">
+                <input type="checkbox" id="logs-previous-check"> Previous
+              </label>
+              <label class="lens-toggle-option" style="cursor: pointer;">
+                <input type="checkbox" id="logs-autoscroll-check" checked> Auto-scroll
+              </label>
+              <button class="lens-btn lens-btn-sm" id="logs-download-btn" type="button">Download</button>
+              <button class="lens-drawer-close" id="logs-close-btn" type="button">✕</button>
+            </div>
+          </div>
+          <div class="lens-quick-cmds">
+            <input class="lens-search-input" id="logs-filter-input" placeholder="Filter in logs..." style="width: 250px; padding: 2px 8px;">
+          </div>
+          <div class="lens-terminal-body" id="logs-body">
+            <pre class="lens-terminal-output" id="logs-output" style="margin: 0;"></pre>
+          </div>
+        </div>
+
+        <!-- 7. AI Diagnostic Copilot Modal -->
+        <div class="lens-modal-overlay" id="lens-ai-modal">
+          <div class="lens-modal">
+            <div class="lens-modal-header">
+              <h2><span>🤖</span> Lens AI Diagnostic Copilot</h2>
+              <button class="lens-drawer-close" id="ai-modal-close" type="button">✕</button>
+            </div>
+            <div class="lens-modal-body" id="ai-modal-body">
+              <div class="lens-empty-state">Running root-cause diagnosis…</div>
+            </div>
+            <div class="lens-modal-footer">
+              <button class="lens-btn" id="ai-modal-dismiss" type="button">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. Scale Deployment Dialog Modal -->
+        <div class="lens-modal-overlay" id="lens-scale-modal">
+          <div class="lens-modal" style="width: 420px;">
+            <div class="lens-modal-header">
+              <h2>Scale Deployment</h2>
+              <button class="lens-drawer-close" id="scale-modal-close" type="button">✕</button>
+            </div>
+            <form id="scale-modal-form">
+              <div class="lens-modal-body">
+                <p>Set the desired number of replicas for <strong id="scale-dep-name">app</strong>:</p>
+                <div style="display: flex; align-items: center; gap: 12px; margin: 16px 0;">
+                  <input type="range" id="scale-range" min="0" max="15" value="1" style="flex: 1;">
+                  <input class="text-input" id="scale-input" type="number" min="0" max="100" value="1" style="width: 70px; text-align: center;">
+                </div>
+              </div>
+              <div class="lens-modal-footer">
+                <button class="lens-btn" id="scale-modal-cancel" type="button">Cancel</button>
+                <button class="lens-btn lens-btn-primary" type="submit">Apply Replicas</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 9. Create Namespace Modal -->
+        <div class="lens-modal-overlay" id="lens-create-ns-modal">
+          <div class="lens-modal" style="width: 420px;">
+            <div class="lens-modal-header">
+              <h2>Create Namespace</h2>
+              <button class="lens-drawer-close" id="create-ns-close" type="button">✕</button>
+            </div>
+            <form id="create-ns-form">
+              <div class="lens-modal-body">
+                <label class="form-label" for="new-ns-name">Namespace Name</label>
+                <input class="text-input" id="new-ns-name" placeholder="my-namespace" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required style="width: 100%;">
+                <p style="color: var(--lens-text-muted); font-size: 11px; margin-top: 8px;">Must contain only lowercase alphanumeric characters or hyphens.</p>
+              </div>
+              <div class="lens-modal-footer">
+                <button class="lens-btn" id="create-ns-cancel" type="button">Cancel</button>
+                <button class="lens-btn lens-btn-primary" type="submit">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </main>
     </div>
   </body>

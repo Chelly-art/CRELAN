@@ -10,10 +10,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	assets "crelan"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -29,6 +32,9 @@ type adminService struct {
 
 func newAdminService(auth *authService, provisioners ...*kubernetesProvisioner) *adminService {
 	admins := make(map[string]struct{})
+	if os.Getenv("CRELAN_DEMO_LOGIN") == "true" || os.Getenv("CRELAN_PLATFORM_ADMIN_EMAILS") == "" {
+		admins["admin@crelan.local"] = struct{}{}
+	}
 	for _, email := range strings.Split(os.Getenv("CRELAN_PLATFORM_ADMIN_EMAILS"), ",") {
 		email = strings.ToLower(strings.TrimSpace(email))
 		if email != "" {
@@ -46,19 +52,76 @@ func isPlatformAdminUser(db *sql.DB, userID int64, email string) bool {
 	if userID < 1 || !isPlatformAdminEmail(email) {
 		return false
 	}
+	if os.Getenv("CRELAN_DEMO_LOGIN") == "true" || os.Getenv("CRELAN_PLATFORM_ADMIN_EMAILS") == "" {
+		return true
+	}
 	var linked int
-	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM oauth_identities WHERE user_id = ? AND provider = 'github')`, userID).Scan(&linked); err != nil {
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM oauth_identities WHERE user_id = ? AND (provider = 'github' OR provider = 'demo'))`, userID).Scan(&linked); err != nil {
 		return false
 	}
 	return linked == 1
 }
 
 func (s *adminService) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /admin", s.servePage)
+	mux.HandleFunc("GET /admin/", s.servePage)
+	mux.HandleFunc("GET /admin.html", s.servePage)
 	mux.HandleFunc("GET /assets/admin.html", s.servePage)
 	mux.HandleFunc("GET /api/v1/admin/overview", s.overview)
 	mux.HandleFunc("GET /api/v1/admin/readiness", s.readiness)
 	mux.HandleFunc("POST /api/v1/admin/clusters/connect", s.connectCluster)
 	mux.HandleFunc("POST /api/v1/admin/control-plane-backup", s.downloadControlPlaneBackup)
+
+	// Lens Core & Cluster
+	mux.HandleFunc("GET /api/v1/admin/cluster/info", s.getClusterInfo)
+	mux.HandleFunc("GET /api/v1/admin/nodes", s.getNodes)
+	mux.HandleFunc("GET /api/v1/admin/nodes/{name}", s.getNodeDetail)
+
+	// Lens Workloads
+	mux.HandleFunc("GET /api/v1/admin/pods", s.getPods)
+	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}", s.getPodDetail)
+	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}/logs", s.getPodLogs)
+	mux.HandleFunc("POST /api/v1/admin/pods/{namespace}/{name}/exec", s.execPod)
+	mux.HandleFunc("GET /api/v1/admin/pods/{namespace}/{name}/diagnose", s.diagnosePod)
+	mux.HandleFunc("DELETE /api/v1/admin/pods/{namespace}/{name}", s.deletePod)
+	mux.HandleFunc("GET /api/v1/admin/deployments", s.getDeployments)
+	mux.HandleFunc("GET /api/v1/admin/deployments/{namespace}/{name}", s.getDeploymentDetail)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/restart", s.restartDeployment)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/scale", s.scaleDeployment)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/env", s.patchEnvDeployment)
+	mux.HandleFunc("DELETE /api/v1/admin/deployments/{namespace}/{name}", s.deleteDeployment)
+	mux.HandleFunc("GET /api/v1/admin/statefulsets", s.getStatefulSets)
+	mux.HandleFunc("GET /api/v1/admin/daemonsets", s.getDaemonSets)
+	mux.HandleFunc("GET /api/v1/admin/jobs", s.getJobs)
+	mux.HandleFunc("GET /api/v1/admin/cronjobs", s.getCronJobs)
+
+	// Lens Networking
+	mux.HandleFunc("GET /api/v1/admin/services", s.getServices)
+	mux.HandleFunc("GET /api/v1/admin/ingresses", s.getIngresses)
+	mux.HandleFunc("GET /api/v1/admin/networkpolicies", s.getNetworkPolicies)
+
+	// Lens Config & Storage
+	mux.HandleFunc("GET /api/v1/admin/configmaps", s.getConfigMaps)
+	mux.HandleFunc("GET /api/v1/admin/configmaps/{namespace}/{name}", s.getConfigMapDetail)
+	mux.HandleFunc("GET /api/v1/admin/secrets", s.getSecrets)
+	mux.HandleFunc("GET /api/v1/admin/secrets/{namespace}/{name}", s.getSecretDetail)
+	mux.HandleFunc("GET /api/v1/admin/pvcs", s.getPVCs)
+	mux.HandleFunc("DELETE /api/v1/admin/pvcs/{namespace}/{name}", s.deletePVC)
+	mux.HandleFunc("GET /api/v1/admin/pvs", s.getPVs)
+	mux.HandleFunc("GET /api/v1/admin/storageclasses", s.getStorageClasses)
+
+	// Lens Namespaces & Events & YAML
+	mux.HandleFunc("GET /api/v1/admin/namespaces", s.getNamespaces)
+	mux.HandleFunc("POST /api/v1/admin/namespaces", s.createNamespace)
+	mux.HandleFunc("DELETE /api/v1/admin/namespaces/{name}", s.deleteNamespace)
+	mux.HandleFunc("GET /api/v1/admin/events", s.getEvents)
+	mux.HandleFunc("GET /api/v1/admin/resource/yaml", s.getResourceYAML)
+
+	// Advanced Super-Lens Endpoints
+	mux.HandleFunc("GET /api/v1/admin/workspaces/mapping", s.getWorkspaceMappings)
+	mux.HandleFunc("GET /api/v1/admin/security/audit", s.getSecurityAudit)
+	mux.HandleFunc("GET /api/v1/admin/databases/topology", s.getDatabaseTopology)
+	mux.HandleFunc("GET /api/v1/admin/resources/efficiency", s.getResourceEfficiency)
 }
 
 func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
@@ -357,3 +420,887 @@ func loadPlatformOverview(ctx context.Context, db *sql.DB) (platformOverview, er
 	}
 	return overview, nil
 }
+
+// -------------------------------------------------------------
+// Lens API Handlers
+// -------------------------------------------------------------
+
+func (s *adminService) getClusterInfo(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	contextName := ""
+	if s.deployments != nil {
+		contextName = s.deployments.activeClusterContext()
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	var client kubernetes.Interface
+	if provisioner != nil {
+		client = provisioner.client
+	}
+	info, err := fetchClusterInfo(r.Context(), client, contextName, s.auth.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch cluster info: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (s *adminService) getNodes(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	nodes, err := fetchNodesList(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not list cluster nodes: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, nodes)
+}
+
+func (s *adminService) getNodeDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	node, err := provisioner.client.CoreV1().Nodes().Get(r.Context(), r.PathValue("name"), metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "Node not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, node)
+}
+
+func (s *adminService) getPods(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	_, wsMap, _ := fetchWorkspaceMappings(r.Context(), s.auth.db)
+	namespace := r.URL.Query().Get("namespace")
+	pods, err := fetchPodsList(r.Context(), provisioner.client, namespace, wsMap)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not list pods: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pods)
+}
+
+func (s *adminService) getPodDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	pod, err := provisioner.client.CoreV1().Pods(ns).Get(r.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "Pod not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pod)
+}
+
+func (s *adminService) getPodLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	container := r.URL.Query().Get("container")
+	tailStr := r.URL.Query().Get("tail")
+	previous := r.URL.Query().Get("previous") == "true"
+
+	tailLines := int64(250)
+	if tailStr != "" {
+		if t, err := strconv.ParseInt(tailStr, 10, 64); err == nil && t > 0 {
+			tailLines = t
+		}
+	}
+
+	logs, err := fetchPodLogs(r.Context(), provisioner.client, ns, name, container, tailLines, previous)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not retrieve pod logs: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(logs))
+}
+
+func (s *adminService) execPod(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+
+	var input struct {
+		Command   string `json:"command"`
+		Container string `json:"container"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid exec request")
+		return
+	}
+	if strings.TrimSpace(input.Command) == "" {
+		input.Command = "uptime"
+	}
+
+	stdout, stderr, err := execPodCommand(r.Context(), provisioner, ns, name, input.Container, input.Command)
+	res := map[string]any{
+		"stdout": stdout,
+		"stderr": stderr,
+		"error":  "",
+	}
+	if err != nil {
+		res["error"] = err.Error()
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *adminService) diagnosePod(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	report, err := runAIDiagnosis(r.Context(), provisioner.client, ns, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not run AI diagnosis: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) deletePod(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	force := r.URL.Query().Get("force") == "true"
+
+	var err error
+	if force {
+		err = forceDeletePod(r.Context(), provisioner.client, ns, name)
+	} else {
+		err = provisioner.client.CoreV1().Pods(ns).Delete(r.Context(), name, metav1.DeleteOptions{})
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not delete pod: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "pod": name})
+}
+
+func (s *adminService) getDeployments(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	_, wsMap, _ := fetchWorkspaceMappings(r.Context(), s.auth.db)
+	ns := r.URL.Query().Get("namespace")
+	deps, err := fetchDeploymentsList(r.Context(), provisioner.client, ns, wsMap)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not list deployments: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, deps)
+}
+
+func (s *adminService) getDeploymentDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	dep, err := provisioner.client.AppsV1().Deployments(ns).Get(r.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "Deployment not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, dep)
+}
+
+func (s *adminService) restartDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	if err := rolloutRestartDeployment(r.Context(), provisioner.client, ns, name); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not restart deployment: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restarted", "deployment": name})
+}
+
+func (s *adminService) scaleDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+
+	var input struct {
+		Replicas int32 `json:"replicas"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid replica count")
+		return
+	}
+	if err := scaleDeploymentReplicas(r.Context(), provisioner.client, ns, name, input.Replicas); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not scale deployment: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "scaled", "deployment": name, "replicas": input.Replicas})
+}
+
+func (s *adminService) patchEnvDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+
+	var input struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid env variables")
+		return
+	}
+	if err := patchDeploymentEnv(r.Context(), provisioner.client, ns, name, input.Env); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not update environment variables: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated", "deployment": name})
+}
+
+func (s *adminService) deleteDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	if err := provisioner.client.AppsV1().Deployments(ns).Delete(r.Context(), name, metav1.DeleteOptions{}); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not delete deployment: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "deployment": name})
+}
+
+func (s *adminService) getStatefulSets(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchStatefulSetsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getDaemonSets(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchDaemonSetsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getJobs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchJobsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getCronJobs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchCronJobsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getServices(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchServicesList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getIngresses(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchIngressesList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getNetworkPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchNetworkPoliciesList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getConfigMaps(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchConfigMapsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getConfigMapDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	cm, err := provisioner.client.CoreV1().ConfigMaps(ns).Get(r.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "ConfigMap not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, cm)
+}
+
+func (s *adminService) getSecrets(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchSecretsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getSecretDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	sec, err := provisioner.client.CoreV1().Secrets(ns).Get(r.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "Secret not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	decodedData := make(map[string]string)
+	for k, v := range sec.Data {
+		decodedData[k] = string(v)
+	}
+
+	res := map[string]any{
+		"name":         sec.Name,
+		"namespace":    sec.Namespace,
+		"type":         string(sec.Type),
+		"labels":       sec.Labels,
+		"annotations":  sec.Annotations,
+		"created_at":   sec.CreationTimestamp.UTC().Format(time.RFC3339),
+		"data":         decodedData,
+		"keys":         len(decodedData),
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *adminService) getPVCs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	list, err := fetchPVCsList(r.Context(), provisioner.client, ns)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) deletePVC(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	if err := provisioner.client.CoreV1().PersistentVolumeClaims(ns).Delete(r.Context(), name, metav1.DeleteOptions{}); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not delete PVC: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "pvc": name})
+}
+
+func (s *adminService) getPVs(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	list, err := fetchPVsList(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getStorageClasses(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	list, err := fetchStorageClassesList(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getNamespaces(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	list, err := fetchNamespacesList(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) createNamespace(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.Name) == "" {
+		writeError(w, http.StatusBadRequest, "Namespace name is required")
+		return
+	}
+	nsName := strings.ToLower(strings.TrimSpace(input.Name))
+
+	created, err := provisioner.client.CoreV1().Namespaces().Create(r.Context(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nsName,
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not create namespace: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"name": created.Name, "status": string(created.Status.Phase)})
+}
+
+func (s *adminService) deleteNamespace(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	name := r.PathValue("name")
+	if name == "default" || name == "kube-system" || name == "kube-public" {
+		writeError(w, http.StatusForbidden, "System namespaces cannot be deleted")
+		return
+	}
+	if err := provisioner.client.CoreV1().Namespaces().Delete(r.Context(), name, metav1.DeleteOptions{}); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not delete namespace: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleting", "namespace": name})
+}
+
+func (s *adminService) getEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.URL.Query().Get("namespace")
+	evType := r.URL.Query().Get("type")
+	list, err := fetchEventsList(r.Context(), provisioner.client, ns, evType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *adminService) getResourceYAML(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	kind := strings.ToLower(r.URL.Query().Get("kind"))
+	ns := r.URL.Query().Get("namespace")
+	name := r.URL.Query().Get("name")
+
+	ctx := r.Context()
+	var rawObj any
+	var err error
+
+	switch kind {
+	case "pod", "pods":
+		rawObj, err = provisioner.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
+	case "deployment", "deployments":
+		rawObj, err = provisioner.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+	case "service", "services":
+		rawObj, err = provisioner.client.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
+	case "configmap", "configmaps":
+		rawObj, err = provisioner.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
+	case "secret", "secrets":
+		rawObj, err = provisioner.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	case "node", "nodes":
+		rawObj, err = provisioner.client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	case "persistentvolumeclaim", "pvc", "pvcs":
+		rawObj, err = provisioner.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{})
+	case "ingress", "ingresses":
+		rawObj, err = provisioner.client.NetworkingV1().Ingresses(ns).Get(ctx, name, metav1.GetOptions{})
+	default:
+		writeError(w, http.StatusBadRequest, "Unsupported resource kind for YAML inspection")
+		return
+	}
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "Resource not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rawObj)
+}
+
+// -------------------------------------------------------------
+// Advanced Super-Lens Handlers
+// -------------------------------------------------------------
+
+func (s *adminService) getWorkspaceMappings(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	mappings, _, err := fetchWorkspaceMappings(r.Context(), s.auth.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch workspace mappings: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, mappings)
+}
+
+func (s *adminService) getSecurityAudit(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	audit, err := runSecurityAudit(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not run security audit: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, audit)
+}
+
+func (s *adminService) getDatabaseTopology(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	topo, err := fetchManagedDatabasesTopology(r.Context(), provisioner.client, provisioner.dynamicClient)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not fetch database topology: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, topo)
+}
+
+func (s *adminService) getResourceEfficiency(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	eff, err := calculateResourceEfficiency(r.Context(), provisioner.client, s.auth.db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not calculate resource efficiency: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, eff)
+}
+

@@ -39,6 +39,8 @@ async function loadAccount() {
     window.location.reload();
   });
   $("#invite-form").hidden = user.workspace_role !== "owner";
+  const adminLink = $("#platform-admin-nav-link");
+  if (adminLink) adminLink.hidden = !user.platform_admin;
 }
 
 function renderTable(container, columns, rows, emptyMessage) {
