@@ -6,11 +6,15 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sschema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -292,17 +296,22 @@ type eventSummary struct {
 // -------------------------------------------------------------
 
 type aiDiagnosticReport struct {
-	PodName       string         `json:"pod_name"`
-	Namespace     string         `json:"namespace"`
-	Phase         string         `json:"phase"`
-	Severity      string         `json:"severity"`
-	Summary       string         `json:"summary"`
-	ProbableCause string         `json:"probable_cause"`
-	Confidence    string         `json:"confidence"`
-	Evidence      []string       `json:"evidence"`
-	Remediation   []aiAction     `json:"remediation"`
-	RelevantLogs  string         `json:"relevant_logs,omitempty"`
-	WarningEvents []eventSummary `json:"warning_events,omitempty"`
+	PodName               string         `json:"pod_name"`
+	Namespace             string         `json:"namespace"`
+	Phase                 string         `json:"phase"`
+	Severity              string         `json:"severity"`
+	Summary               string         `json:"summary"`
+	ProbableCause         string         `json:"probable_cause"`
+	Confidence            string         `json:"confidence"`
+	Evidence              []string       `json:"evidence"`
+	Remediation           []aiAction     `json:"remediation"`
+	RelevantLogs          string         `json:"relevant_logs,omitempty"`
+	StackTrace            string         `json:"stack_trace,omitempty"`
+	LogAnomaly            string         `json:"log_anomaly,omitempty"`
+	ExitCode              int32          `json:"exit_code,omitempty"`
+	LastTerminationReason string         `json:"last_termination_reason,omitempty"`
+	RecommendedSteps      []string       `json:"recommended_steps,omitempty"`
+	WarningEvents         []eventSummary `json:"warning_events,omitempty"`
 }
 
 type aiAction struct {
@@ -318,18 +327,26 @@ type securityAuditReport struct {
 	PassedChecks     int                  `json:"passed_checks"`
 	FailedChecks     int                  `json:"failed_checks"`
 	Score            int                  `json:"score"`
+	CriticalCount    int                  `json:"critical_count"`
+	HighCount        int                  `json:"high_count"`
+	SecretLeaksCount int                  `json:"secret_leaks_count"`
+	RootCount        int                  `json:"root_count"`
+	PrivilegedCount  int                  `json:"privileged_count"`
 	Issues           []securityIssue      `json:"issues"`
 	TenantIsolation  tenantIsolationAudit `json:"tenant_isolation"`
 }
 
 type securityIssue struct {
-	Severity    string `json:"severity"`
-	Rule        string `json:"rule"`
-	PodName     string `json:"pod_name"`
-	Namespace   string `json:"namespace"`
-	Container   string `json:"container,omitempty"`
-	Description string `json:"description"`
-	Remediation string `json:"remediation"`
+	Severity      string `json:"severity"`
+	Rule          string `json:"rule"`
+	PodName       string `json:"pod_name"`
+	Namespace     string `json:"namespace"`
+	Container     string `json:"container,omitempty"`
+	Description   string `json:"description"`
+	Remediation   string `json:"remediation"`
+	WorkloadKind  string `json:"workload_kind,omitempty"`
+	WorkloadName  string `json:"workload_name,omitempty"`
+	CanAutoHarden bool   `json:"can_auto_harden"`
 }
 
 type tenantIsolationAudit struct {
@@ -337,6 +354,105 @@ type tenantIsolationAudit struct {
 	EnforcedSpaces       int      `json:"enforced_namespaces"`
 	MissingNetworkPolicy []string `json:"missing_network_policy"`
 	Status               string   `json:"status"`
+}
+
+// RBAC Blast Radius Models
+type rbacBlastRadiusReport struct {
+	ClusterAdminCount        int                  `json:"cluster_admin_count"`
+	PrivilegeEscalationCount int                  `json:"privilege_escalation_count"`
+	WildcardPermissionsCount int                  `json:"wildcard_permissions_count"`
+	CrossTenantBindingsCount int                  `json:"cross_tenant_bindings_count"`
+	TotalBindingsScanned     int                  `json:"total_bindings_scanned"`
+	RiskScore                int                  `json:"risk_score"`
+	HighRiskBindings         []rbacBindingFinding `json:"high_risk_bindings"`
+	ServiceAccountRisks      []serviceAccountRisk `json:"service_account_risks"`
+}
+
+type rbacBindingFinding struct {
+	Kind        string   `json:"kind"`
+	Name        string   `json:"name"`
+	Namespace   string   `json:"namespace,omitempty"`
+	RoleRef     string   `json:"role_ref"`
+	RoleKind    string   `json:"role_kind"`
+	Subjects    []string `json:"subjects"`
+	RiskLevel   string   `json:"risk_level"`
+	RiskReasons []string `json:"risk_reasons"`
+	Remediation string   `json:"remediation"`
+}
+
+type serviceAccountRisk struct {
+	ServiceAccount string   `json:"service_account"`
+	Namespace      string   `json:"namespace"`
+	IsTenant       bool     `json:"is_tenant"`
+	RolesBound     []string `json:"roles_bound"`
+	RiskSummary    string   `json:"risk_summary"`
+}
+
+// AI Copilot Models
+type aiCopilotRequest struct {
+	Query string `json:"query"`
+}
+
+type aiCopilotMatch struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Link      string `json:"link,omitempty"`
+}
+
+type aiCopilotAction struct {
+	ActionID    string `json:"action_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Route       string `json:"route,omitempty"`
+	Command     string `json:"command,omitempty"`
+}
+
+type aiCopilotResponse struct {
+	Query            string            `json:"query"`
+	Intent           string            `json:"intent"`
+	Summary          string            `json:"summary"`
+	Matches          []aiCopilotMatch  `json:"matches"`
+	SuggestedActions []aiCopilotAction `json:"suggested_actions"`
+}
+
+// AI Right-Sizing & Cost Advisor Models
+type rightSizingReport struct {
+	TotalDeployments             int                         `json:"total_deployments"`
+	OverprovisionedCount         int                         `json:"overprovisioned_count"`
+	UnderprovisionedCount        int                         `json:"underprovisioned_count"`
+	MissingLimitsCount           int                         `json:"missing_limits_count"`
+	EstimatedClusterWastePercent float64                     `json:"estimated_cluster_waste_percent"`
+	EstimatedMonthlySavingsUSD   float64                     `json:"estimated_monthly_savings_usd"`
+	Recommendations              []rightSizingRecommendation `json:"recommendations"`
+}
+
+type rightSizingRecommendation struct {
+	DeploymentName        string  `json:"deployment_name"`
+	Namespace             string  `json:"namespace"`
+	ContainerName         string  `json:"container_name"`
+	CurrentCPURequest     string  `json:"current_cpu_request"`
+	CurrentCPULimit       string  `json:"current_cpu_limit"`
+	CurrentMemRequest     string  `json:"current_mem_request"`
+	CurrentMemLimit       string  `json:"current_mem_limit"`
+	RecommendedCPURequest string  `json:"recommended_cpu_request"`
+	RecommendedCPULimit   string  `json:"recommended_cpu_limit"`
+	RecommendedMemRequest string  `json:"recommended_mem_request"`
+	RecommendedMemLimit   string  `json:"recommended_mem_limit"`
+	MonthlySavingsUSD     float64 `json:"monthly_savings_usd"`
+	RiskLevel             string  `json:"risk_level"`
+	Reason                string  `json:"reason"`
+	CanAutoApply          bool    `json:"can_auto_apply"`
+}
+
+type rightSizeApplyRequest struct {
+	CPURequest string `json:"cpu_request"`
+	CPULimit   string `json:"cpu_limit"`
+	MemRequest string `json:"mem_request"`
+	MemLimit   string `json:"mem_limit"`
 }
 
 type resourceEfficiencyReport struct {
@@ -1360,6 +1476,83 @@ func execPodCommand(ctx context.Context, provisioner *kubernetesProvisioner, nam
 // Advanced Feature 1: AI Diagnostician Copilot
 // -------------------------------------------------------------
 
+func extractStackTrace(logs string) (trace string, anomaly string) {
+	if strings.TrimSpace(logs) == "" {
+		return "", ""
+	}
+	lines := strings.Split(logs, "\n")
+
+	// Check for Go panic
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, "panic:") {
+			anomaly = trimmed
+			end := i + 20
+			if end > len(lines) {
+				end = len(lines)
+			}
+			return strings.Join(lines[i:end], "\n"), anomaly
+		}
+	}
+
+	// Check for Python Traceback
+	for i, l := range lines {
+		if strings.Contains(l, "Traceback (most recent call last):") {
+			end := i + 20
+			if end > len(lines) {
+				end = len(lines)
+			}
+			trace = strings.Join(lines[i:end], "\n")
+			for j := end - 1; j >= i; j-- {
+				t := strings.TrimSpace(lines[j])
+				if t != "" && !strings.HasPrefix(t, "File ") {
+					anomaly = t
+					break
+				}
+			}
+			if anomaly == "" {
+				anomaly = "Python Unhandled Exception"
+			}
+			return trace, anomaly
+		}
+	}
+
+	// Check for Java Exception
+	for i, l := range lines {
+		if strings.Contains(l, "Exception in thread") || (strings.Contains(l, "Exception:") && strings.Contains(l, "\tat ")) {
+			anomaly = strings.TrimSpace(l)
+			end := i + 20
+			if end > len(lines) {
+				end = len(lines)
+			}
+			return strings.Join(lines[i:end], "\n"), anomaly
+		}
+	}
+
+	// Check for Node/JS Unhandled Error
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, "Error:") || strings.HasPrefix(trimmed, "TypeError:") || strings.HasPrefix(trimmed, "ReferenceError:") {
+			anomaly = trimmed
+			end := i + 15
+			if end > len(lines) {
+				end = len(lines)
+			}
+			return strings.Join(lines[i:end], "\n"), anomaly
+		}
+	}
+
+	// Check for fatal database / network errors
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.Contains(trimmed, "FATAL:") || strings.Contains(trimmed, "connection refused") || strings.Contains(trimmed, "password authentication failed") || strings.Contains(trimmed, "dial tcp") {
+			return trimmed, trimmed
+		}
+	}
+
+	return "", ""
+}
+
 func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace, podName string) (aiDiagnosticReport, error) {
 	if client == nil {
 		return aiDiagnosticReport{}, errKubernetesNotConfigured
@@ -1396,11 +1589,25 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 	}
 	report.WarningEvents = warnEvents
 
-	recentLogs, _ := fetchPodLogs(ctx, client, namespace, podName, "", 50, false)
+	recentLogs, _ := fetchPodLogs(ctx, client, namespace, podName, "", 100, false)
+	if strings.TrimSpace(recentLogs) == "" {
+		prevLogs, _ := fetchPodLogs(ctx, client, namespace, podName, "", 100, true)
+		if strings.TrimSpace(prevLogs) != "" {
+			recentLogs = prevLogs
+		}
+	}
 	report.RelevantLogs = recentLogs
+
+	// Deep Stack Trace Extraction
+	trace, anomaly := extractStackTrace(recentLogs)
+	if trace != "" {
+		report.StackTrace = trace
+		report.LogAnomaly = anomaly
+	}
 
 	var evidences []string
 	var actions []aiAction
+	var recSteps []string
 
 	hasCrash := false
 	hasOOM := false
@@ -1408,6 +1615,14 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 	hasConfigErr := false
 
 	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.LastTerminationState.Terminated != nil {
+			report.ExitCode = cs.LastTerminationState.Terminated.ExitCode
+			report.LastTerminationReason = cs.LastTerminationState.Terminated.Reason
+		} else if cs.State.Terminated != nil {
+			report.ExitCode = cs.State.Terminated.ExitCode
+			report.LastTerminationReason = cs.State.Terminated.Reason
+		}
+
 		if cs.State.Waiting != nil {
 			reason := cs.State.Waiting.Reason
 			msg := cs.State.Waiting.Message
@@ -1433,28 +1648,41 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 	for _, w := range warnEvents {
 		evidences = append(evidences, fmt.Sprintf("Cluster Event: [%s] %s", w.Reason, w.Message))
 	}
+	if anomaly != "" {
+		evidences = append(evidences, fmt.Sprintf("Extracted Error: %s", anomaly))
+	}
 
 	if hasOOM {
 		report.Severity = "critical"
 		report.Summary = "Pod terminated due to Out Of Memory (OOMKilled - Exit Code 137)"
-		report.ProbableCause = "The container process exceeded the allocated memory request/limit, causing the Linux kernel OOM-killer to terminate the container."
+		report.ProbableCause = "The container process exceeded its memory limit. The Linux kernel OOM-killer intervened and sent SIGKILL (137)."
+		recSteps = []string{
+			"Inspect application memory consumption patterns or memory leaks.",
+			"Raise resources.limits.memory in the deployment template (e.g. increase to 512Mi or 1Gi).",
+			"Check AI Cost & Right-Sizing recommendations for optimal workload limits.",
+		}
 		actions = append(actions, aiAction{
 			ActionID:    "increase_memory",
 			Title:       "Increase Container Memory Limit",
-			Description: "Raise memory limits in the deployment specification (e.g. increase from current limit to 512Mi or 1Gi).",
+			Description: "Raise memory limits in the deployment specification to avoid OOM evictions.",
 			AutoFixable: false,
 		})
 		actions = append(actions, aiAction{
 			ActionID:    "restart_pod",
 			Title:       "Restart Pod",
-			Description: "Evict the pod to restart it immediately while you investigate application memory leak.",
+			Description: "Evict the pod to restart it immediately while you investigate application memory leaks.",
 			Command:     fmt.Sprintf("kubectl delete pod %s -n %s", podName, namespace),
 			AutoFixable: true,
 		})
 	} else if hasImageErr {
 		report.Severity = "critical"
 		report.Summary = "Container image could not be pulled from registry (ImagePullBackOff / ErrImagePull)"
-		report.ProbableCause = "The container image does not exist, the image tag is invalid, or the cluster lacks image pull secrets for a private registry."
+		report.ProbableCause = "The container image tag does not exist, network registry access timed out, or imagePullSecrets are missing/invalid for private registry."
+		recSteps = []string{
+			"Verify that the container image repository and tag exist on Docker Hub / ECR / GHCR.",
+			"Ensure the namespace contains a valid kubernetes.io/dockerconfigjson Secret.",
+			"Confirm cluster nodes have outbound internet/registry route connectivity.",
+		}
 		actions = append(actions, aiAction{
 			ActionID:    "check_registry_secret",
 			Title:       "Verify Registry Credentials",
@@ -1465,6 +1693,10 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 		report.Severity = "critical"
 		report.Summary = "Container configuration error (CreateContainerConfigError)"
 		report.ProbableCause = "A referenced ConfigMap or Secret specified in env or volumes is missing in namespace " + namespace + "."
+		recSteps = []string{
+			"List ConfigMaps and Secrets in namespace " + namespace + " to verify referenced names match exactly.",
+			"Check deployment env[].valueFrom.configMapKeyRef and secretKeyRef names and keys.",
+		}
 		actions = append(actions, aiAction{
 			ActionID:    "check_missing_secrets",
 			Title:       "Inspect ConfigMaps and Secrets",
@@ -1474,7 +1706,16 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 	} else if hasCrash {
 		report.Severity = "critical"
 		report.Summary = "Application runtime failure causing CrashLoopBackOff"
-		report.ProbableCause = "The application crashed on startup or during health check. Common reasons include missing database connection string, invalid port binding, or uncaught exception."
+		if anomaly != "" {
+			report.ProbableCause = fmt.Sprintf("Application crashed with unhandled error: %s. An uncaught exception or fatal startup error terminated the main process.", anomaly)
+		} else {
+			report.ProbableCause = "The application process exited with non-zero status immediately after launch. Common reasons include missing DB credentials, invalid port binding, or failed database migrations."
+		}
+		recSteps = []string{
+			"Review the extracted stack trace and log anomaly above for exact source line and error class.",
+			"Verify database connection strings, credentials, and network connectivity.",
+			"Ensure health check liveness/readiness probe initialDelaySeconds allows adequate warmup time.",
+		}
 		actions = append(actions, aiAction{
 			ActionID:    "check_logs",
 			Title:       "Inspect Application Stack Trace",
@@ -1491,6 +1732,10 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 		report.Severity = "warning"
 		report.Summary = "Pod is in Pending state waiting for scheduling or storage"
 		report.ProbableCause = "The Kubernetes scheduler could not place this pod. Common reasons: Insufficient CPU/memory on cluster nodes, unbound PersistentVolumeClaims (PVC), or node selector/affinity constraints."
+		recSteps = []string{
+			"Check node CPU and memory allocatable capacity in Nodes view.",
+			"Verify if any required PersistentVolumeClaims (PVC) are in Pending or Lost state.",
+		}
 		actions = append(actions, aiAction{
 			ActionID:    "check_node_resources",
 			Title:       "Check Node Resources & Storage",
@@ -1501,10 +1746,12 @@ func runAIDiagnosis(ctx context.Context, client kubernetes.Interface, namespace,
 		report.Severity = "healthy"
 		report.Summary = "Pod is Running smoothly with all containers Ready"
 		report.ProbableCause = "No active errors or crash events detected."
+		recSteps = []string{"Workload is operational. Continue periodic monitoring."}
 	}
 
 	report.Evidence = evidences
 	report.Remediation = actions
+	report.RecommendedSteps = recSteps
 	return report, nil
 }
 
@@ -1568,8 +1815,15 @@ func fetchWorkspaceMappings(ctx context.Context, db *sql.DB) ([]workspaceMapping
 }
 
 // -------------------------------------------------------------
-// Advanced Feature 5: Security & Isolation Auditor
+// Advanced Feature 5: Security & Isolation Auditor (CIS Benchmark + Secret Leak Guard)
 // -------------------------------------------------------------
+
+var (
+	reAWSKey      = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+	reGitHubToken = regexp.MustCompile(`\bghp_[a-zA-Z0-9]{36}\b`)
+	reOpenAIToken = regexp.MustCompile(`\bsk-[a-zA-Z0-9]{20,}\b`)
+	rePrivateKey  = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)
+)
 
 func runSecurityAudit(ctx context.Context, client kubernetes.Interface) (securityAuditReport, error) {
 	if client == nil {
@@ -1583,13 +1837,119 @@ func runSecurityAudit(ctx context.Context, client kubernetes.Interface) (securit
 	var issues []securityIssue
 	passed := 0
 	failed := 0
+	criticalCount := 0
+	highCount := 0
+	secretLeaksCount := 0
+	rootCount := 0
+	privilegedCount := 0
 
 	for _, p := range podList.Items {
 		if p.Status.Phase == corev1.PodSucceeded {
 			continue
 		}
 
+		// Identify owning deployment for 1-click hardening
+		depName := ""
+		depKind := ""
+		canHarden := false
+		for _, ref := range p.OwnerReferences {
+			if ref.Kind == "ReplicaSet" {
+				parts := strings.Split(ref.Name, "-")
+				if len(parts) > 1 {
+					depName = strings.Join(parts[:len(parts)-1], "-")
+					depKind = "Deployment"
+					canHarden = true
+				}
+			} else if ref.Kind == "Deployment" {
+				depName = ref.Name
+				depKind = "Deployment"
+				canHarden = true
+			}
+		}
+		if depName == "" && p.Labels["app"] != "" {
+			depName = p.Labels["app"]
+			depKind = "Deployment"
+			canHarden = true
+		}
+
+		// CIS Rule 1: Host Network / PID / IPC
+		if p.Spec.HostNetwork || p.Spec.HostPID || p.Spec.HostIPC {
+			failed++
+			criticalCount++
+			issues = append(issues, securityIssue{
+				Severity:    "critical",
+				Rule:        "HostNamespaceSharing",
+				PodName:     p.Name,
+				Namespace:   p.Namespace,
+				Description: fmt.Sprintf("Pod shares host namespaces (hostNetwork=%v, hostPID=%v, hostIPC=%v).", p.Spec.HostNetwork, p.Spec.HostPID, p.Spec.HostIPC),
+				Remediation: "Disable hostNetwork, hostPID, and hostIPC to preserve node kernel isolation.",
+			})
+		} else {
+			passed++
+		}
+
+		// CIS Rule 2: HostPath volume mounts
+		for _, v := range p.Spec.Volumes {
+			if v.HostPath != nil {
+				failed++
+				highCount++
+				issues = append(issues, securityIssue{
+					Severity:    "high",
+					Rule:        "HostPathVolumeMount",
+					PodName:     p.Name,
+					Namespace:   p.Namespace,
+					Description: fmt.Sprintf("Volume %q mounts host filesystem path %q directly into container.", v.Name, v.HostPath.Path),
+					Remediation: "Use PersistentVolumeClaims (PVC) instead of HostPath mounts to avoid host filesystem compromise.",
+				})
+			}
+		}
+
 		for _, c := range p.Spec.Containers {
+			// Secret Leak Guard in container env
+			for _, e := range c.Env {
+				if e.Value != "" && e.ValueFrom == nil {
+					val := e.Value
+					isSecret := false
+					leakType := "token"
+
+					if reAWSKey.MatchString(val) {
+						isSecret = true
+						leakType = "AWS Access Key"
+					} else if reGitHubToken.MatchString(val) {
+						isSecret = true
+						leakType = "GitHub Personal Access Token"
+					} else if reOpenAIToken.MatchString(val) {
+						isSecret = true
+						leakType = "API Secret Key"
+					} else if rePrivateKey.MatchString(val) {
+						isSecret = true
+						leakType = "Private Key"
+					} else {
+						uName := strings.ToUpper(e.Name)
+						if (strings.Contains(uName, "PASSWORD") || strings.Contains(uName, "SECRET") || strings.Contains(uName, "AUTH_TOKEN")) && len(val) >= 4 {
+							isSecret = true
+							leakType = "Plaintext Password/Secret"
+						}
+					}
+
+					if isSecret {
+						failed++
+						criticalCount++
+						secretLeaksCount++
+						issues = append(issues, securityIssue{
+							Severity:    "critical",
+							Rule:        "SecretLeakGuard",
+							PodName:     p.Name,
+							Namespace:   p.Namespace,
+							Container:   c.Name,
+							Description: fmt.Sprintf("Container env var %q contains plaintext %s.", e.Name, leakType),
+							Remediation: "Store credentials in a Kubernetes Secret and inject via secretKeyRef.",
+						})
+					}
+				}
+			}
+
+			// CIS Rule 3: Run as Non-Root
 			runsAsRoot := true
 			if c.SecurityContext != nil {
 				if c.SecurityContext.RunAsNonRoot != nil && *c.SecurityContext.RunAsNonRoot {
@@ -1608,34 +1968,98 @@ func runSecurityAudit(ctx context.Context, client kubernetes.Interface) (securit
 
 			if runsAsRoot {
 				failed++
+				highCount++
+				rootCount++
 				issues = append(issues, securityIssue{
-					Severity:    "high",
-					Rule:        "ContainerRunsAsRoot",
-					PodName:     p.Name,
-					Namespace:   p.Namespace,
-					Container:   c.Name,
-					Description: fmt.Sprintf("Container %q is running with root permissions (UID 0).", c.Name),
-					Remediation: "Set `securityContext.runAsNonRoot: true` or specify `runAsUser: 1000`.",
+					Severity:      "high",
+					Rule:          "ContainerRunsAsRoot",
+					PodName:       p.Name,
+					Namespace:     p.Namespace,
+					Container:     c.Name,
+					WorkloadKind:  depKind,
+					WorkloadName:  depName,
+					CanAutoHarden: canHarden,
+					Description:   fmt.Sprintf("Container %q runs with root privileges (UID 0), violating CIS Benchmark 5.2.6.", c.Name),
+					Remediation:   "Set securityContext.runAsNonRoot: true or specify runAsUser: 10001.",
 				})
 			} else {
 				passed++
 			}
 
+			// CIS Rule 4: Privileged container
 			if c.SecurityContext != nil && c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged {
 				failed++
+				criticalCount++
+				privilegedCount++
 				issues = append(issues, securityIssue{
-					Severity:    "critical",
-					Rule:        "PrivilegedContainer",
-					PodName:     p.Name,
-					Namespace:   p.Namespace,
-					Container:   c.Name,
-					Description: fmt.Sprintf("Container %q is configured with `privileged: true`, bypassing Linux isolation.", c.Name),
-					Remediation: "Remove `privileged: true` and request minimal Linux capabilities.",
+					Severity:      "critical",
+					Rule:          "PrivilegedContainer",
+					PodName:       p.Name,
+					Namespace:     p.Namespace,
+					Container:     c.Name,
+					WorkloadKind:  depKind,
+					WorkloadName:  depName,
+					CanAutoHarden: canHarden,
+					Description:   fmt.Sprintf("Container %q is configured with `privileged: true`, bypassing Linux namespace isolation.", c.Name),
+					Remediation:   "Remove `privileged: true` and request minimal Linux capabilities.",
 				})
 			} else {
 				passed++
 			}
 
+			// CIS Rule 5: Allow Privilege Escalation
+			allowsEscalation := true
+			if c.SecurityContext != nil && c.SecurityContext.AllowPrivilegeEscalation != nil && !*c.SecurityContext.AllowPrivilegeEscalation {
+				allowsEscalation = false
+			}
+			if allowsEscalation {
+				failed++
+				highCount++
+				issues = append(issues, securityIssue{
+					Severity:      "high",
+					Rule:          "AllowPrivilegeEscalation",
+					PodName:       p.Name,
+					Namespace:     p.Namespace,
+					Container:     c.Name,
+					WorkloadKind:  depKind,
+					WorkloadName:  depName,
+					CanAutoHarden: canHarden,
+					Description:   fmt.Sprintf("Container %q permits privilege escalation, allowing sub-processes to gain higher permissions.", c.Name),
+					Remediation:   "Set `securityContext.allowPrivilegeEscalation: false`.",
+				})
+			} else {
+				passed++
+			}
+
+			// CIS Rule 6: Dropping default Linux capabilities
+			dropsAll := false
+			if c.SecurityContext != nil && c.SecurityContext.Capabilities != nil {
+				for _, cap := range c.SecurityContext.Capabilities.Drop {
+					if cap == "ALL" {
+						dropsAll = true
+						break
+					}
+				}
+			}
+			if !dropsAll {
+				failed++
+				issues = append(issues, securityIssue{
+					Severity:      "medium",
+					Rule:          "CapabilitiesNotDropped",
+					PodName:       p.Name,
+					Namespace:     p.Namespace,
+					Container:     c.Name,
+					WorkloadKind:  depKind,
+					WorkloadName:  depName,
+					CanAutoHarden: canHarden,
+					Description:   fmt.Sprintf("Container %q does not drop ALL default Linux capabilities.", c.Name),
+					Remediation:   "Set `capabilities.drop: [\"ALL\"]` in securityContext.",
+				})
+			} else {
+				passed++
+			}
+
+			// CIS Rule 7: Resource Limits
 			hasLimits := c.Resources.Limits != nil && (c.Resources.Limits.Memory() != nil || c.Resources.Limits.Cpu() != nil)
 			if !hasLimits {
 				failed++
@@ -1654,6 +2078,28 @@ func runSecurityAudit(ctx context.Context, client kubernetes.Interface) (securit
 		}
 	}
 
+	// Secret Leak Guard in ConfigMaps
+	cmList, _ := client.CoreV1().ConfigMaps("").List(ctx, metav1.ListOptions{})
+	if cmList != nil {
+		for _, cm := range cmList.Items {
+			for k, v := range cm.Data {
+				if reAWSKey.MatchString(v) || reGitHubToken.MatchString(v) || reOpenAIToken.MatchString(v) || rePrivateKey.MatchString(v) {
+					failed++
+					criticalCount++
+					secretLeaksCount++
+					issues = append(issues, securityIssue{
+						Severity:    "critical",
+						Rule:        "SecretExposedInConfigMap",
+						Namespace:   cm.Namespace,
+						Description: fmt.Sprintf("ConfigMap %q in key %q contains an exposed token or private key.", cm.Name, k),
+						Remediation: "Migrate plaintext secrets from ConfigMap to a Kubernetes Secret with RBAC protection.",
+					})
+				}
+			}
+		}
+	}
+
+	// Tenant Network Isolation
 	nsList, _ := client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: capsuleTenantLabel})
 	npList, _ := client.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{})
 
@@ -1689,11 +2135,33 @@ func runSecurityAudit(ctx context.Context, client kubernetes.Interface) (securit
 		score = int((float64(passed) / float64(totalChecks)) * 100)
 	}
 
+	// Sort issues critical -> high -> medium -> low
+	sort.Slice(issues, func(i, j int) bool {
+		sevOrder := func(s string) int {
+			switch s {
+			case "critical":
+				return 4
+			case "high":
+				return 3
+			case "medium":
+				return 2
+			default:
+				return 1
+			}
+		}
+		return sevOrder(issues[i].Severity) > sevOrder(issues[j].Severity)
+	})
+
 	return securityAuditReport{
 		TotalPodsScanned: len(podList.Items),
 		PassedChecks:     passed,
 		FailedChecks:     failed,
 		Score:            score,
+		CriticalCount:    criticalCount,
+		HighCount:        highCount,
+		SecretLeaksCount: secretLeaksCount,
+		RootCount:        rootCount,
+		PrivilegedCount:  privilegedCount,
 		Issues:           issues,
 		TenantIsolation: tenantIsolationAudit{
 			TotalTenantSpaces:    tenantCount,
@@ -2060,4 +2528,842 @@ func patchDeploymentEnv(ctx context.Context, client kubernetes.Interface, namesp
 	dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
 	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
 	return err
+}
+
+func uniqueStrings(slice []string) []string {
+	keys := make(map[string]bool)
+	var list []string
+	for _, entry := range slice {
+		if !keys[entry] {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 7: 1-Click Workload Hardening
+// -------------------------------------------------------------
+
+func hardenDeployment(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+	if client == nil {
+		return errKubernetesNotConfigured
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	nonRoot := true
+	noPrivEscalation := false
+	uid := int64(10001)
+
+	// Update pod template spec security context
+	if dep.Spec.Template.Spec.SecurityContext == nil {
+		dep.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
+	}
+	dep.Spec.Template.Spec.SecurityContext.RunAsNonRoot = &nonRoot
+	if dep.Spec.Template.Spec.SecurityContext.RunAsUser == nil || *dep.Spec.Template.Spec.SecurityContext.RunAsUser == 0 {
+		dep.Spec.Template.Spec.SecurityContext.RunAsUser = &uid
+	}
+	if dep.Spec.Template.Spec.SecurityContext.SeccompProfile == nil {
+		dep.Spec.Template.Spec.SecurityContext.SeccompProfile = &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		}
+	}
+
+	// Update each container's security context
+	for i := range dep.Spec.Template.Spec.Containers {
+		c := &dep.Spec.Template.Spec.Containers[i]
+		if c.SecurityContext == nil {
+			c.SecurityContext = &corev1.SecurityContext{}
+		}
+		c.SecurityContext.RunAsNonRoot = &nonRoot
+		if c.SecurityContext.RunAsUser == nil || *c.SecurityContext.RunAsUser == 0 {
+			c.SecurityContext.RunAsUser = &uid
+		}
+		c.SecurityContext.AllowPrivilegeEscalation = &noPrivEscalation
+		f := false
+		c.SecurityContext.Privileged = &f
+		c.SecurityContext.Capabilities = &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		}
+		if c.SecurityContext.SeccompProfile == nil {
+			c.SecurityContext.SeccompProfile = &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			}
+		}
+	}
+
+	if dep.Spec.Template.Annotations == nil {
+		dep.Spec.Template.Annotations = make(map[string]string)
+	}
+	dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
+	dep.Spec.Template.Annotations["crelan.platform/hardenedAt"] = time.Now().UTC().Format(time.RFC3339)
+
+	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	return err
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 8: RBAC Blast Radius & Privilege Escalation Analyzer
+// -------------------------------------------------------------
+
+func runRBACBlastRadiusAnalysis(ctx context.Context, client kubernetes.Interface) (rbacBlastRadiusReport, error) {
+	if client == nil {
+		return rbacBlastRadiusReport{}, errKubernetesNotConfigured
+	}
+
+	tenantNS := make(map[string]bool)
+	nsList, _ := client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: capsuleTenantLabel})
+	if nsList != nil {
+		for _, ns := range nsList.Items {
+			tenantNS[ns.Name] = true
+		}
+	}
+
+	crList, err := client.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return rbacBlastRadiusReport{}, err
+	}
+	crRules := make(map[string][]rbacv1.PolicyRule)
+	for _, cr := range crList.Items {
+		crRules[cr.Name] = cr.Rules
+	}
+
+	crbList, err := client.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return rbacBlastRadiusReport{}, err
+	}
+
+	rolesList, _ := client.RbacV1().Roles("").List(ctx, metav1.ListOptions{})
+	roleRules := make(map[string][]rbacv1.PolicyRule)
+	if rolesList != nil {
+		for _, r := range rolesList.Items {
+			roleRules[r.Namespace+"/"+r.Name] = r.Rules
+		}
+	}
+
+	rbList, _ := client.RbacV1().RoleBindings("").List(ctx, metav1.ListOptions{})
+
+	report := rbacBlastRadiusReport{
+		TotalBindingsScanned: len(crbList.Items),
+	}
+	if rbList != nil {
+		report.TotalBindingsScanned += len(rbList.Items)
+	}
+
+	saRisksMap := make(map[string]*serviceAccountRisk)
+	var findings []rbacBindingFinding
+
+	for _, crb := range crbList.Items {
+		var subjs []string
+		hasTenantSA := false
+		for _, s := range crb.Subjects {
+			subjStr := fmt.Sprintf("%s:%s", s.Kind, s.Name)
+			if s.Namespace != "" {
+				subjStr += fmt.Sprintf(" (%s)", s.Namespace)
+				if s.Kind == "ServiceAccount" && tenantNS[s.Namespace] {
+					hasTenantSA = true
+				}
+			}
+			subjs = append(subjs, subjStr)
+		}
+
+		var reasons []string
+		riskLevel := "low"
+
+		if crb.RoleRef.Name == "cluster-admin" {
+			report.ClusterAdminCount++
+			riskLevel = "critical"
+			reasons = append(reasons, "Grants complete, unrestricted superuser privileges across the entire Kubernetes cluster.")
+			if hasTenantSA {
+				report.CrossTenantBindingsCount++
+				reasons = append(reasons, "CRITICAL LEAK: ServiceAccount belonging to a tenant workspace has cluster-wide cluster-admin access!")
+			}
+		}
+
+		rules := crRules[crb.RoleRef.Name]
+		hasWildcard := false
+		hasEscalate := false
+		var sensitiveResources []string
+
+		for _, r := range rules {
+			isWildVerb := false
+			isWildRes := false
+			for _, v := range r.Verbs {
+				if v == "*" {
+					isWildVerb = true
+				}
+				if v == "bind" || v == "escalate" || v == "impersonate" {
+					hasEscalate = true
+				}
+			}
+			for _, res := range r.Resources {
+				if res == "*" {
+					isWildRes = true
+				}
+				if res == "secrets" || res == "nodes/proxy" || res == "pods/exec" || res == "certificatesigningrequests" {
+					sensitiveResources = append(sensitiveResources, res)
+				}
+			}
+			if isWildVerb && isWildRes {
+				hasWildcard = true
+			}
+		}
+
+		if hasWildcard && crb.RoleRef.Name != "cluster-admin" {
+			report.WildcardPermissionsCount++
+			if riskLevel != "critical" {
+				riskLevel = "high"
+			}
+			reasons = append(reasons, "Role contains wildcard (*) verbs on wildcard (*) resources.")
+		}
+
+		if hasEscalate {
+			report.PrivilegeEscalationCount++
+			if riskLevel != "critical" {
+				riskLevel = "high"
+			}
+			reasons = append(reasons, "Role contains dangerous privilege escalation verbs (bind, escalate, impersonate).")
+		}
+
+		if len(sensitiveResources) > 0 {
+			if riskLevel == "low" {
+				riskLevel = "medium"
+			}
+			reasons = append(reasons, fmt.Sprintf("Access to sensitive cluster resources: %s.", strings.Join(uniqueStrings(sensitiveResources), ", ")))
+		}
+
+		if riskLevel != "low" {
+			findings = append(findings, rbacBindingFinding{
+				Kind:        "ClusterRoleBinding",
+				Name:        crb.Name,
+				RoleRef:     crb.RoleRef.Name,
+				RoleKind:    crb.RoleRef.Kind,
+				Subjects:    subjs,
+				RiskLevel:   riskLevel,
+				RiskReasons: reasons,
+				Remediation: "Scope permissions to specific namespaces using RoleBindings instead of cluster-wide bindings, and avoid wildcards.",
+			})
+
+			for _, s := range crb.Subjects {
+				if s.Kind == "ServiceAccount" {
+					ns := s.Namespace
+					if ns == "" {
+						ns = "default"
+					}
+					key := ns + "/" + s.Name
+					if _, exists := saRisksMap[key]; !exists {
+						saRisksMap[key] = &serviceAccountRisk{
+							ServiceAccount: s.Name,
+							Namespace:      ns,
+							IsTenant:       tenantNS[ns],
+							RolesBound:     []string{crb.RoleRef.Name},
+							RiskSummary:    fmt.Sprintf("Cluster-wide binding via %s (%s)", crb.Name, riskLevel),
+						}
+					} else {
+						saRisksMap[key].RolesBound = append(saRisksMap[key].RolesBound, crb.RoleRef.Name)
+					}
+				}
+			}
+		}
+	}
+
+	// Namespaced RoleBindings
+	if rbList != nil {
+		for _, rb := range rbList.Items {
+			rules := roleRules[rb.Namespace+"/"+rb.RoleRef.Name]
+			if len(rules) == 0 && rb.RoleRef.Kind == "ClusterRole" {
+				rules = crRules[rb.RoleRef.Name]
+			}
+			hasWildcard := false
+			hasEscalate := false
+			crossNS := false
+			var subjs []string
+			for _, s := range rb.Subjects {
+				subjStr := fmt.Sprintf("%s:%s", s.Kind, s.Name)
+				if s.Namespace != "" {
+					subjStr += fmt.Sprintf(" (%s)", s.Namespace)
+					if s.Namespace != rb.Namespace {
+						crossNS = true
+					}
+				}
+				subjs = append(subjs, subjStr)
+			}
+			for _, r := range rules {
+				for _, v := range r.Verbs {
+					if v == "*" {
+						hasWildcard = true
+					}
+					if v == "bind" || v == "escalate" || v == "impersonate" {
+						hasEscalate = true
+					}
+				}
+			}
+			var reasons []string
+			riskLevel := "low"
+			if crossNS {
+				riskLevel = "high"
+				report.CrossTenantBindingsCount++
+				reasons = append(reasons, fmt.Sprintf("Subject from namespace outside %q is granted access in this namespace.", rb.Namespace))
+			}
+			if hasEscalate {
+				riskLevel = "high"
+				report.PrivilegeEscalationCount++
+				reasons = append(reasons, "Role contains privilege escalation verbs (bind, escalate, impersonate).")
+			}
+			if hasWildcard {
+				if riskLevel == "low" {
+					riskLevel = "medium"
+				}
+				report.WildcardPermissionsCount++
+				reasons = append(reasons, "Role contains wildcard (*) verbs.")
+			}
+			if riskLevel != "low" {
+				findings = append(findings, rbacBindingFinding{
+					Kind:        "RoleBinding",
+					Name:        rb.Name,
+					Namespace:   rb.Namespace,
+					RoleRef:     rb.RoleRef.Name,
+					RoleKind:    rb.RoleRef.Kind,
+					Subjects:    subjs,
+					RiskLevel:   riskLevel,
+					RiskReasons: reasons,
+					Remediation: "Ensure service accounts belong to the same namespace and restrict verbs.",
+				})
+			}
+		}
+	}
+
+	score := report.ClusterAdminCount*25 + report.PrivilegeEscalationCount*20 + report.CrossTenantBindingsCount*20 + report.WildcardPermissionsCount*10
+	if score > 100 {
+		score = 100
+	}
+	report.RiskScore = score
+
+	sort.Slice(findings, func(i, j int) bool {
+		priority := func(lvl string) int {
+			switch lvl {
+			case "critical":
+				return 3
+			case "high":
+				return 2
+			case "medium":
+				return 1
+			default:
+				return 0
+			}
+		}
+		return priority(findings[i].RiskLevel) > priority(findings[j].RiskLevel)
+	})
+	report.HighRiskBindings = findings
+
+	var saRisks []serviceAccountRisk
+	for _, v := range saRisksMap {
+		saRisks = append(saRisks, *v)
+	}
+	sort.Slice(saRisks, func(i, j int) bool {
+		if saRisks[i].IsTenant != saRisks[j].IsTenant {
+			return saRisks[i].IsTenant
+		}
+		return saRisks[i].ServiceAccount < saRisks[j].ServiceAccount
+	})
+	report.ServiceAccountRisks = saRisks
+
+	return report, nil
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 9: AI Resource Right-Sizing & Cost Advisor
+// -------------------------------------------------------------
+
+func calculateResourceRightSizing(ctx context.Context, client kubernetes.Interface) (rightSizingReport, error) {
+	if client == nil {
+		return rightSizingReport{}, errKubernetesNotConfigured
+	}
+
+	depList, err := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return rightSizingReport{}, err
+	}
+
+	report := rightSizingReport{
+		TotalDeployments: len(depList.Items),
+	}
+
+	var recs []rightSizingRecommendation
+	totalWasteUSD := 0.0
+
+	for _, dep := range depList.Items {
+		if len(dep.Spec.Template.Spec.Containers) == 0 {
+			continue
+		}
+
+		for _, c := range dep.Spec.Template.Spec.Containers {
+			cpuReq := c.Resources.Requests.Cpu()
+			cpuLim := c.Resources.Limits.Cpu()
+			memReq := c.Resources.Requests.Memory()
+			memLim := c.Resources.Limits.Memory()
+
+			hasCPULim := cpuLim != nil && !cpuLim.IsZero()
+			hasMemLim := memLim != nil && !memLim.IsZero()
+			hasCPUReq := cpuReq != nil && !cpuReq.IsZero()
+			hasMemReq := memReq != nil && !memReq.IsZero()
+
+			currentCPUReqStr := "none"
+			if hasCPUReq {
+				currentCPUReqStr = fmt.Sprintf("%dm", cpuReq.MilliValue())
+			}
+			currentCPULimStr := "none"
+			if hasCPULim {
+				currentCPULimStr = fmt.Sprintf("%dm", cpuLim.MilliValue())
+			}
+			currentMemReqStr := "none"
+			if hasMemReq {
+				currentMemReqStr = fmt.Sprintf("%dMi", memReq.Value()/(1024*1024))
+			}
+			currentMemLimStr := "none"
+			if hasMemLim {
+				currentMemLimStr = fmt.Sprintf("%dMi", memLim.Value()/(1024*1024))
+			}
+
+			rec := rightSizingRecommendation{
+				DeploymentName:    dep.Name,
+				Namespace:         dep.Namespace,
+				ContainerName:     c.Name,
+				CurrentCPURequest: currentCPUReqStr,
+				CurrentCPULimit:   currentCPULimStr,
+				CurrentMemRequest: currentMemReqStr,
+				CurrentMemLimit:   currentMemLimStr,
+				CanAutoApply:      true,
+			}
+
+			if !hasCPULim || !hasMemLim {
+				report.MissingLimitsCount++
+				rec.RiskLevel = "Uncapped"
+				rec.Reason = "Missing container CPU or memory limits risks node exhaustion and pod eviction cascades."
+				rec.RecommendedCPURequest = "100m"
+				rec.RecommendedCPULimit = "500m"
+				rec.RecommendedMemRequest = "128Mi"
+				rec.RecommendedMemLimit = "512Mi"
+				recs = append(recs, rec)
+				continue
+			}
+
+			cpuMilli := cpuReq.MilliValue()
+			memMi := memReq.Value() / (1024 * 1024)
+
+			if cpuMilli >= 1000 || memMi >= 2048 {
+				report.OverprovisionedCount++
+				rec.RiskLevel = "High Waste"
+
+				recCPU := "250m"
+				recCPUMilli := int64(250)
+				recMem := "512Mi"
+				recMemMi := int64(512)
+
+				rec.RecommendedCPURequest = recCPU
+				recCPULimVal := cpuLim.MilliValue() / 2
+				if recCPULimVal < 500 {
+					recCPULimVal = 500
+				}
+				rec.RecommendedCPULimit = fmt.Sprintf("%dm", recCPULimVal)
+
+				rec.RecommendedMemRequest = recMem
+				recMemLimVal := memLim.Value() / (1024 * 1024 * 2)
+				if recMemLimVal < 1024 {
+					recMemLimVal = 1024
+				}
+				rec.RecommendedMemLimit = fmt.Sprintf("%dMi", recMemLimVal)
+
+				savedCPU := float64(cpuMilli-recCPUMilli) / 1000.0
+				savedMem := float64(memMi-recMemMi) / 1024.0
+				monthly := (savedCPU * 30.0) + (savedMem * 4.0)
+				if monthly < 0 {
+					monthly = 0
+				}
+				rec.MonthlySavingsUSD = math.Round(monthly*100) / 100
+				totalWasteUSD += rec.MonthlySavingsUSD
+				rec.Reason = fmt.Sprintf("High allocation (%s CPU, %s RAM). Downsizing to recommended baseline saves ~$%.2f/month per replica.", currentCPUReqStr, currentMemReqStr, rec.MonthlySavingsUSD)
+				recs = append(recs, rec)
+			} else {
+				rec.RiskLevel = "Optimized"
+				rec.Reason = "Workload requests and limits are well-proportioned."
+				rec.RecommendedCPURequest = currentCPUReqStr
+				rec.RecommendedCPULimit = currentCPULimStr
+				rec.RecommendedMemRequest = currentMemReqStr
+				rec.RecommendedMemLimit = currentMemLimStr
+				recs = append(recs, rec)
+			}
+		}
+	}
+
+	report.EstimatedMonthlySavingsUSD = math.Round(totalWasteUSD*100) / 100
+	if report.TotalDeployments > 0 {
+		report.EstimatedClusterWastePercent = math.Round((float64(report.OverprovisionedCount)/float64(report.TotalDeployments))*1000) / 10
+	}
+	report.Recommendations = recs
+	return report, nil
+}
+
+func applyRightSizingPatch(ctx context.Context, client kubernetes.Interface, namespace, name string, cpuReq, cpuLim, memReq, memLim string) error {
+	if client == nil {
+		return errKubernetesNotConfigured
+	}
+	dep, err := client.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if len(dep.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("deployment has no containers")
+	}
+
+	c := &dep.Spec.Template.Spec.Containers[0]
+	if c.Resources.Requests == nil {
+		c.Resources.Requests = make(corev1.ResourceList)
+	}
+	if c.Resources.Limits == nil {
+		c.Resources.Limits = make(corev1.ResourceList)
+	}
+
+	if cpuReq != "" && cpuReq != "none" {
+		q, err := resource.ParseQuantity(cpuReq)
+		if err != nil {
+			return fmt.Errorf("invalid cpu request: %w", err)
+		}
+		c.Resources.Requests[corev1.ResourceCPU] = q
+	}
+	if cpuLim != "" && cpuLim != "none" {
+		q, err := resource.ParseQuantity(cpuLim)
+		if err != nil {
+			return fmt.Errorf("invalid cpu limit: %w", err)
+		}
+		c.Resources.Limits[corev1.ResourceCPU] = q
+	}
+	if memReq != "" && memReq != "none" {
+		q, err := resource.ParseQuantity(memReq)
+		if err != nil {
+			return fmt.Errorf("invalid memory request: %w", err)
+		}
+		c.Resources.Requests[corev1.ResourceMemory] = q
+	}
+	if memLim != "" && memLim != "none" {
+		q, err := resource.ParseQuantity(memLim)
+		if err != nil {
+			return fmt.Errorf("invalid memory limit: %w", err)
+		}
+		c.Resources.Limits[corev1.ResourceMemory] = q
+	}
+
+	if dep.Spec.Template.Annotations == nil {
+		dep.Spec.Template.Annotations = make(map[string]string)
+	}
+	dep.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
+	dep.Spec.Template.Annotations["crelan.platform/rightSizedAt"] = time.Now().UTC().Format(time.RFC3339)
+
+	_, err = client.AppsV1().Deployments(namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	return err
+}
+
+// -------------------------------------------------------------
+// Advanced Feature 10: Natural Language AI K8s Copilot
+// -------------------------------------------------------------
+
+func runAICopilotQuery(ctx context.Context, client kubernetes.Interface, db *sql.DB, query string) (aiCopilotResponse, error) {
+	if client == nil {
+		return aiCopilotResponse{
+			Query:   query,
+			Intent:  "Cluster Offline",
+			Summary: "No Kubernetes cluster is currently connected. Please connect a cluster first via the Connect Cluster page.",
+		}, nil
+	}
+
+	q := strings.ToLower(strings.TrimSpace(query))
+	resp := aiCopilotResponse{
+		Query: query,
+	}
+
+	// 1. Crash, Restart, Health Intent
+	if strings.Contains(q, "crash") || strings.Contains(q, "restart") || strings.Contains(q, "oom") || strings.Contains(q, "fail") || strings.Contains(q, "error") || strings.Contains(q, "down") || strings.Contains(q, "unhealthy") || strings.Contains(q, "broken") {
+		resp.Intent = "Workload Health & Crash Diagnostics"
+		pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return resp, err
+		}
+
+		var failingPods []aiCopilotMatch
+		for _, p := range pods.Items {
+			hasIssue := false
+			reason := string(p.Status.Phase)
+			msg := ""
+
+			if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodSucceeded {
+				hasIssue = true
+			}
+			for _, cs := range p.Status.ContainerStatuses {
+				if cs.RestartCount > 0 || !cs.Ready || cs.State.Waiting != nil || cs.State.Terminated != nil {
+					if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+						reason = cs.State.Waiting.Reason
+						msg = cs.State.Waiting.Message
+						hasIssue = true
+					}
+					if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+						reason = cs.State.Terminated.Reason
+						hasIssue = true
+					}
+					if cs.RestartCount > 0 {
+						hasIssue = true
+						msg = fmt.Sprintf("%d container restarts", cs.RestartCount)
+					}
+				}
+			}
+
+			if hasIssue {
+				failingPods = append(failingPods, aiCopilotMatch{
+					Kind:      "Pod",
+					Name:      p.Name,
+					Namespace: p.Namespace,
+					Status:    string(p.Status.Phase),
+					Reason:    reason,
+					Message:   msg,
+					Link:      fmt.Sprintf("#pods?ns=%s&name=%s", p.Namespace, p.Name),
+				})
+			}
+		}
+
+		resp.Matches = failingPods
+		if len(failingPods) == 0 {
+			resp.Summary = "All pods across all namespaces are currently healthy and running normally with 0 crash loops."
+		} else {
+			resp.Summary = fmt.Sprintf("Identified %d pod(s) with errors, elevated restarts, or non-running phase. Click any pod to inspect or trigger deep AI RCA.", len(failingPods))
+			first := failingPods[0]
+			resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+				ActionID:    "diagnose_pod",
+				Title:       fmt.Sprintf("Run AI RCA on %s", first.Name),
+				Description: "Extract live logs and events to analyze root cause.",
+				Route:       fmt.Sprintf("#pods?ns=%s&name=%s&diagnose=true", first.Namespace, first.Name),
+			})
+		}
+		return resp, nil
+	}
+
+	// 2. Security, CIS, Root, Privilege, Secret Leaks Intent
+	if strings.Contains(q, "security") || strings.Contains(q, "root") || strings.Contains(q, "privilege") || strings.Contains(q, "leak") || strings.Contains(q, "secret") || strings.Contains(q, "cis") || strings.Contains(q, "vulnerability") {
+		resp.Intent = "Security Posture & CIS Hardening"
+		audit, err := runSecurityAudit(ctx, client)
+		if err != nil {
+			return resp, err
+		}
+
+		for _, iss := range audit.Issues {
+			resp.Matches = append(resp.Matches, aiCopilotMatch{
+				Kind:      "SecurityFinding",
+				Name:      iss.PodName,
+				Namespace: iss.Namespace,
+				Status:    iss.Severity,
+				Reason:    iss.Rule,
+				Message:   iss.Description,
+				Link:      "#security",
+			})
+			if len(resp.Matches) >= 15 {
+				break
+			}
+		}
+
+		resp.Summary = fmt.Sprintf("Security audit score is %d%% (%d checks passed, %d flagged). Found %d root containers, %d privileged workloads, and %d exposed secret credentials.",
+			audit.Score, audit.PassedChecks, audit.FailedChecks, audit.RootCount, audit.PrivilegedCount, audit.SecretLeaksCount)
+
+		resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+			ActionID:    "view_security",
+			Title:       "Open Security Center",
+			Description: "Review complete CIS benchmark findings and tenant isolation status.",
+			Route:       "#security",
+		})
+		return resp, nil
+	}
+
+	// 3. RBAC, Permissions, ClusterAdmin Intent
+	if strings.Contains(q, "rbac") || strings.Contains(q, "admin") || strings.Contains(q, "cluster-admin") || strings.Contains(q, "permission") || strings.Contains(q, "privilege escalation") || strings.Contains(q, "impersonat") {
+		resp.Intent = "RBAC Blast Radius & Privilege Escalation"
+		rbac, err := runRBACBlastRadiusAnalysis(ctx, client)
+		if err != nil {
+			return resp, err
+		}
+
+		for _, f := range rbac.HighRiskBindings {
+			resp.Matches = append(resp.Matches, aiCopilotMatch{
+				Kind:      f.Kind,
+				Name:      f.Name,
+				Namespace: f.Namespace,
+				Status:    f.RiskLevel,
+				Reason:    f.RoleRef,
+				Message:   strings.Join(f.RiskReasons, " "),
+				Link:      "#rbac",
+			})
+			if len(resp.Matches) >= 15 {
+				break
+			}
+		}
+
+		resp.Summary = fmt.Sprintf("Cluster RBAC risk score is %d/100. Discovered %d cluster-admin bindings, %d wildcard permission paths, and %d privilege escalation vectors across %d bindings.",
+			rbac.RiskScore, rbac.ClusterAdminCount, rbac.WildcardPermissionsCount, rbac.PrivilegeEscalationCount, rbac.TotalBindingsScanned)
+
+		resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+			ActionID:    "view_rbac",
+			Title:       "Open RBAC Analyzer",
+			Description: "Inspect high-risk bindings and tenant service account access.",
+			Route:       "#rbac",
+		})
+		return resp, nil
+	}
+
+	// 4. Cost, Waste, Right-Sizing, Resource Requests/Limits Intent
+	if strings.Contains(q, "cost") || strings.Contains(q, "waste") || strings.Contains(q, "rightsize") || strings.Contains(q, "right-size") || strings.Contains(q, "limit") || strings.Contains(q, "request") || strings.Contains(q, "cpu") || strings.Contains(q, "memory") || strings.Contains(q, "sizing") {
+		resp.Intent = "Resource Right-Sizing & Cost Optimization"
+		sizing, err := calculateResourceRightSizing(ctx, client)
+		if err != nil {
+			return resp, err
+		}
+
+		for _, r := range sizing.Recommendations {
+			if r.RiskLevel != "Optimized" {
+				resp.Matches = append(resp.Matches, aiCopilotMatch{
+					Kind:      "Deployment",
+					Name:      r.DeploymentName,
+					Namespace: r.Namespace,
+					Status:    r.RiskLevel,
+					Reason:    fmt.Sprintf("Req: %s CPU / %s Mem", r.CurrentCPURequest, r.CurrentMemRequest),
+					Message:   r.Reason,
+					Link:      "#rightsizing",
+				})
+			}
+		}
+
+		resp.Summary = fmt.Sprintf("Evaluated %d deployments. Identified %d overprovisioned workloads (est. $%.2f/month waste) and %d uncapped containers risking eviction.",
+			sizing.TotalDeployments, sizing.OverprovisionedCount, sizing.EstimatedMonthlySavingsUSD, sizing.MissingLimitsCount)
+
+		resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+			ActionID:    "view_rightsizing",
+			Title:       "Open Right-Sizing Advisor",
+			Description: "Review 1-click resource adjustment recommendations.",
+			Route:       "#rightsizing",
+		})
+		return resp, nil
+	}
+
+	// 5. Storage / PVC Intent
+	if strings.Contains(q, "storage") || strings.Contains(q, "pvc") || strings.Contains(q, "pv") || strings.Contains(q, "volume") || strings.Contains(q, "disk") {
+		resp.Intent = "Storage & Persistent Volumes"
+		pvcs, err := client.CoreV1().PersistentVolumeClaims("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return resp, err
+		}
+		for _, pvc := range pvcs.Items {
+			cap := ""
+			if q, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok {
+				cap = q.String()
+			}
+			resp.Matches = append(resp.Matches, aiCopilotMatch{
+				Kind:      "PersistentVolumeClaim",
+				Name:      pvc.Name,
+				Namespace: pvc.Namespace,
+				Status:    string(pvc.Status.Phase),
+				Reason:    pvc.Spec.VolumeName,
+				Message:   fmt.Sprintf("Capacity: %s", cap),
+				Link:      "#pvcs",
+			})
+		}
+		resp.Summary = fmt.Sprintf("Found %d PersistentVolumeClaim(s) across the cluster.", len(pvcs.Items))
+		resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+			ActionID:    "view_pvcs",
+			Title:       "View All PVCs",
+			Route:       "#pvcs",
+		})
+		return resp, nil
+	}
+
+	// 6. Events / Warnings Intent
+	if strings.Contains(q, "event") || strings.Contains(q, "warn") || strings.Contains(q, "alert") {
+		resp.Intent = "Cluster Warning Events"
+		events, err := client.CoreV1().Events("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return resp, err
+		}
+		count := 0
+		for _, e := range events.Items {
+			if e.Type == "Warning" {
+				count++
+				resp.Matches = append(resp.Matches, aiCopilotMatch{
+					Kind:      e.InvolvedObject.Kind,
+					Name:      e.InvolvedObject.Name,
+					Namespace: e.Namespace,
+					Status:    "Warning",
+					Reason:    e.Reason,
+					Message:   e.Message,
+					Link:      "#events",
+				})
+				if len(resp.Matches) >= 20 {
+					break
+				}
+			}
+		}
+		resp.Summary = fmt.Sprintf("Discovered %d warning event(s) across the cluster.", count)
+		resp.SuggestedActions = append(resp.SuggestedActions, aiCopilotAction{
+			ActionID:    "view_events",
+			Title:       "Open Events Timeline",
+			Route:       "#events",
+		})
+		return resp, nil
+	}
+
+	// 7. General Search / Fallback Intent
+	resp.Intent = "Cluster Search & Overview"
+	pods, _ := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	deps, _ := client.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	nodes, _ := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+
+	podCount := 0
+	if pods != nil {
+		podCount = len(pods.Items)
+		for _, p := range pods.Items {
+			if strings.Contains(strings.ToLower(p.Name), q) || strings.Contains(strings.ToLower(p.Namespace), q) {
+				resp.Matches = append(resp.Matches, aiCopilotMatch{
+					Kind:      "Pod",
+					Name:      p.Name,
+					Namespace: p.Namespace,
+					Status:    string(p.Status.Phase),
+					Link:      fmt.Sprintf("#pods?ns=%s&name=%s", p.Namespace, p.Name),
+				})
+			}
+		}
+	}
+	depCount := 0
+	if deps != nil {
+		depCount = len(deps.Items)
+		for _, d := range deps.Items {
+			if strings.Contains(strings.ToLower(d.Name), q) || strings.Contains(strings.ToLower(d.Namespace), q) {
+				resp.Matches = append(resp.Matches, aiCopilotMatch{
+					Kind:      "Deployment",
+					Name:      d.Name,
+					Namespace: d.Namespace,
+					Status:    fmt.Sprintf("%d/%d", d.Status.ReadyReplicas, d.Status.Replicas),
+					Link:      fmt.Sprintf("#deployments?ns=%s&name=%s", d.Namespace, d.Name),
+				})
+			}
+		}
+	}
+	nodeCount := 0
+	if nodes != nil {
+		nodeCount = len(nodes.Items)
+	}
+
+	if len(resp.Matches) > 0 {
+		resp.Summary = fmt.Sprintf("Found %d matching resource(s) for %q across cluster.", len(resp.Matches), query)
+	} else {
+		resp.Summary = fmt.Sprintf("Cluster has %d node(s), %d active deployment(s), and %d running pod(s). No specific name matches for %q. Ask about 'crashing pods', 'security', 'rbac', or 'cost'.",
+			nodeCount, depCount, podCount, query)
+	}
+	return resp, nil
 }

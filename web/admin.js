@@ -241,8 +241,17 @@ async function renderCurrentView() {
       case "events":
         await renderEvents(container);
         break;
+      case "copilot":
+        await renderCopilot(container);
+        break;
       case "security":
         await renderSecurityAudit(container);
+        break;
+      case "rbac":
+        await renderRBAC(container);
+        break;
+      case "rightsizing":
+        await renderRightSizing(container);
         break;
       case "databases":
         await renderDatabaseTopology(container);
@@ -1091,38 +1100,452 @@ async function renderSecurityAudit(container) {
 
   container.innerHTML = `
     <div class="admin-view-header">
-      <div class="admin-view-title"><h1>Cluster Security & Isolation Audit</h1></div>
-      <button class="admin-btn admin-btn-primary" onclick="renderSecurityAudit($('#admin-content-area'))">Re-scan Cluster</button>
+      <div class="admin-view-title"><h1>Capsule Tenant Radar & CIS Security Scanner</h1></div>
+      <div style="display: flex; gap: 8px;">
+        <button class="admin-btn" onclick="setRoute('rbac')">RBAC Blast Radius</button>
+        <button class="admin-btn admin-btn-primary" onclick="renderSecurityAudit($('#admin-content-area'))">Re-scan Cluster</button>
+      </div>
     </div>
 
     <div class="admin-score-banner">
       <div class="admin-score-circle ${scoreColor}">${audit.score}%</div>
       <div class="admin-score-details">
-        <h3>Cluster Security Posture: ${audit.score >= 80 ? "Good" : "Needs Attention"}</h3>
-        <p>${audit.total_pods_scanned} pods evaluated · ${audit.passed_checks} checks passed · ${audit.failed_checks} findings flagged</p>
-        <p style="margin-top: 6px;">Capsule Multi-Tenant Isolation: <strong style="color: ${audit.tenant_isolation.status === "Secure" ? "var(--admin-green)" : "var(--admin-amber)"};">${escapeHTML(audit.tenant_isolation.status)}</strong> (${audit.tenant_isolation.enforced_namespaces}/${audit.tenant_isolation.total_tenant_namespaces} namespaces enforced with NetworkPolicy)</p>
+        <h3>CIS Kubernetes Security Posture: ${audit.score >= 80 ? "Hardened" : "Hardening Recommended"}</h3>
+        <p>${audit.total_pods_scanned} active workloads evaluated · ${audit.passed_checks} checks passed · ${audit.failed_checks} policy findings</p>
+        <p style="margin-top: 6px;">Capsule Tenant Isolation: <strong style="color: ${audit.tenant_isolation.status === "Secure" ? "var(--admin-green)" : "var(--admin-amber)"};">${escapeHTML(audit.tenant_isolation.status)}</strong> (${audit.tenant_isolation.enforced_namespaces}/${audit.tenant_isolation.total_tenant_namespaces} tenant namespaces enforced with NetworkPolicy)</p>
       </div>
     </div>
 
-    <h2 style="font-size: 15px; margin: 20px 0 10px;">Security Findings</h2>
+    <div class="admin-overview-grid" style="margin-top: 20px;">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Critical Findings</span><span>CIS 5.2</span></div>
+        <div class="admin-stat-value" style="color: ${audit.critical_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${audit.critical_count || 0}</div>
+        <div class="admin-stat-subtext">Immediate privilege risks</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Secret Leak Guard</span><span>Tokens & Keys</span></div>
+        <div class="admin-stat-value" style="color: ${audit.secret_leaks_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${audit.secret_leaks_count || 0}</div>
+        <div class="admin-stat-subtext">Plaintext secrets in env/ConfigMaps</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Root Containers</span><span>UID 0</span></div>
+        <div class="admin-stat-value" style="color: ${audit.root_count > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${audit.root_count || 0}</div>
+        <div class="admin-stat-subtext">Workloads missing runAsNonRoot</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Privileged Pods</span><span>SecurityContext</span></div>
+        <div class="admin-stat-value" style="color: ${audit.privileged_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${audit.privileged_count || 0}</div>
+        <div class="admin-stat-subtext">Container privileged: true</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 15px; margin: 24px 0 10px;">Security & Isolation Findings</h2>
     <div class="admin-table-container">
       <table class="admin-table">
-        <thead><tr><th>Severity</th><th>Rule</th><th>Pod</th><th>Namespace</th><th>Description</th><th>Remediation</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Rule</th>
+            <th>Workload / Pod</th>
+            <th>Namespace</th>
+            <th>Description</th>
+            <th>Remediation & Action</th>
+          </tr>
+        </thead>
         <tbody>
-          ${audit.issues.length === 0 ? `<tr><td colspan="6" class="admin-empty-state">Zero security issues detected in active workloads.</td></tr>` : ""}
+          ${audit.issues.length === 0 ? `<tr><td colspan="6" class="admin-empty-state">Zero security violations detected in active workloads.</td></tr>` : ""}
           ${audit.issues.map((i) => `
             <tr>
               <td><span class="admin-badge ${i.severity === "critical" ? "admin-badge-crashloop" : "admin-badge-warning"}">${escapeHTML(i.severity.toUpperCase())}</span></td>
               <td><strong>${escapeHTML(i.rule)}</strong></td>
-              <td class="admin-table-name" onclick="openInspector('pod', '${escapeHTML(i.namespace)}', '${escapeHTML(i.pod_name)}')">${escapeHTML(i.pod_name)}</td>
+              <td class="admin-table-name" onclick="openInspector('pod', '${escapeHTML(i.namespace)}', '${escapeHTML(i.pod_name)}')">${escapeHTML(i.pod_name || i.workload_name || "-")}</td>
               <td class="admin-table-ns">${escapeHTML(i.namespace)}</td>
               <td>${escapeHTML(i.description)}</td>
-              <td style="color: var(--admin-accent); font-size: 11px;">${escapeHTML(i.remediation)}</td>
+              <td>
+                <div style="font-size: 11px; color: var(--admin-accent); margin-bottom: 6px;">${escapeHTML(i.remediation)}</div>
+                ${i.can_auto_harden ? `
+                  <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="hardenWorkload('${escapeHTML(i.namespace)}', '${escapeHTML(i.workload_name)}')">1-Click Harden</button>
+                ` : ""}
+              </td>
             </tr>
           `).join("")}
         </tbody>
       </table>
     </div>`;
+}
+
+async function hardenWorkload(namespace, deploymentName) {
+  if (!confirm(`Apply CIS Workload Hardening to deployment "${deploymentName}" in namespace "${namespace}"? This sets runAsNonRoot: true, drops all capabilities, and sets allowPrivilegeEscalation: false.`)) {
+    return;
+  }
+  try {
+    const res = await request(`/api/v1/admin/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(deploymentName)}/harden`, {
+      method: "POST",
+    });
+    alert(res.message || "Workload successfully hardened.");
+    renderSecurityAudit($("#admin-content-area"));
+  } catch (err) {
+    alert("Hardening failed: " + err.message);
+  }
+}
+
+async function renderRBAC(container) {
+  const rbac = await request("/api/v1/admin/security/rbac");
+
+  let riskColor = "green";
+  let riskTitle = "Low Privilege Risk";
+  if (rbac.risk_score >= 60) {
+    riskColor = "red";
+    riskTitle = "High Blast Radius Detected";
+  } else if (rbac.risk_score >= 30) {
+    riskColor = "amber";
+    riskTitle = "Moderate Privilege Exposure";
+  }
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title"><h1>RBAC Blast Radius & Privilege Escalation Analyzer</h1></div>
+      <button class="admin-btn admin-btn-primary" onclick="renderRBAC($('#admin-content-area'))">Re-scan RBAC</button>
+    </div>
+
+    <div class="admin-score-banner">
+      <div class="admin-score-circle ${riskColor}">${rbac.risk_score}</div>
+      <div class="admin-score-details">
+        <h3>Cluster Privilege Risk: ${riskTitle}</h3>
+        <p>${rbac.total_bindings_scanned} role bindings evaluated across cluster scopes.</p>
+        <p style="margin-top: 6px; color: var(--admin-text-muted);">
+          <strong>${rbac.cluster_admin_count}</strong> cluster-admin bindings ·
+          <strong>${rbac.privilege_escalation_count}</strong> privilege escalation paths ·
+          <strong>${rbac.wildcard_permissions_count}</strong> wildcard roles ·
+          <strong>${rbac.cross_tenant_bindings_count}</strong> cross-tenant leaks
+        </p>
+      </div>
+    </div>
+
+    <div class="admin-overview-grid" style="margin-top: 20px;">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>cluster-admin</span><span>Superuser</span></div>
+        <div class="admin-stat-value" style="color: ${rbac.cluster_admin_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${rbac.cluster_admin_count}</div>
+        <div class="admin-stat-subtext">Bindings granting full cluster control</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Escalation Verbs</span><span>bind / escalate</span></div>
+        <div class="admin-stat-value" style="color: ${rbac.privilege_escalation_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${rbac.privilege_escalation_count}</div>
+        <div class="admin-stat-subtext">Ability to grant oneself permissions</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Wildcard Roles</span><span>* on *</span></div>
+        <div class="admin-stat-value" style="color: ${rbac.wildcard_permissions_count > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">${rbac.wildcard_permissions_count}</div>
+        <div class="admin-stat-subtext">Broad wildcard verb/resource rules</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Cross-Tenant Leaks</span><span>Capsule Boundary</span></div>
+        <div class="admin-stat-value" style="color: ${rbac.cross_tenant_bindings_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${rbac.cross_tenant_bindings_count}</div>
+        <div class="admin-stat-subtext">Tenant SAs with external cluster access</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 15px; margin: 24px 0 10px;">High-Risk RBAC Bindings</h2>
+    <div class="admin-table-container" style="margin-bottom: 24px;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Risk Level</th>
+            <th>Binding Name</th>
+            <th>Type</th>
+            <th>Role Ref</th>
+            <th>Subjects Bound</th>
+            <th>Risk Analysis</th>
+            <th>Remediation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rbac.high_risk_bindings.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No high-risk bindings detected.</td></tr>` : ""}
+          ${rbac.high_risk_bindings.map((b) => `
+            <tr>
+              <td><span class="admin-badge ${b.risk_level === "critical" ? "admin-badge-crashloop" : "admin-badge-warning"}">${escapeHTML(b.risk_level.toUpperCase())}</span></td>
+              <td><strong>${escapeHTML(b.name)}</strong></td>
+              <td><span class="admin-kind-badge">${escapeHTML(b.kind)}</span></td>
+              <td><code>${escapeHTML(b.role_ref)}</code></td>
+              <td>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  ${b.subjects.map((s) => `<span class="admin-tag-chip">${escapeHTML(s)}</span>`).join("")}
+                </div>
+              </td>
+              <td>
+                <ul style="margin: 0; padding-left: 16px; font-size: 11px; color: var(--admin-red);">
+                  ${b.risk_reasons.map((r) => `<li>${escapeHTML(r)}</li>`).join("")}
+                </ul>
+              </td>
+              <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(b.remediation)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="font-size: 15px; margin: 24px 0 10px;">Service Account Blast Radius</h2>
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Service Account</th>
+            <th>Namespace</th>
+            <th>Tenant Space?</th>
+            <th>Bound Roles</th>
+            <th>Risk Exposure</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rbac.service_account_risks.length === 0 ? `<tr><td colspan="5" class="admin-empty-state">No elevated service accounts detected.</td></tr>` : ""}
+          ${rbac.service_account_risks.map((sa) => `
+            <tr>
+              <td><strong>${escapeHTML(sa.service_account)}</strong></td>
+              <td class="admin-table-ns">${escapeHTML(sa.namespace)}</td>
+              <td>
+                ${sa.is_tenant ? `<span class="admin-badge admin-badge-accent">Tenant Workspace</span>` : `<span class="admin-badge">System</span>`}
+              </td>
+              <td>
+                ${sa.roles_bound.map((r) => `<code>${escapeHTML(r)}</code>`).join(" ")}
+              </td>
+              <td style="color: var(--admin-accent); font-size: 11px;">${escapeHTML(sa.risk_summary)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderRightSizing(container) {
+  const sizing = await request("/api/v1/admin/ai/rightsizing");
+
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title"><h1>AI Resource Right-Sizing & Cost Advisor</h1></div>
+      <button class="admin-btn admin-btn-primary" onclick="renderRightSizing($('#admin-content-area'))">Re-evaluate Resources</button>
+    </div>
+
+    <div class="admin-overview-grid">
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Estimated Monthly Waste</span><span>Cloud Costs</span></div>
+        <div class="admin-stat-value" style="color: ${sizing.estimated_monthly_savings_usd > 0 ? "var(--admin-accent)" : "var(--admin-green)"};">
+          $${sizing.estimated_monthly_savings_usd.toFixed(2)}
+        </div>
+        <div class="admin-stat-subtext">Estimated potential savings / month</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Overprovisioned</span><span>High Allocation</span></div>
+        <div class="admin-stat-value" style="color: ${sizing.overprovisioned_count > 0 ? "var(--admin-amber)" : "var(--admin-green)"};">
+          ${sizing.overprovisioned_count}
+        </div>
+        <div class="admin-stat-subtext">Workloads exceeding baselines</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Uncapped Workloads</span><span>Missing Limits</span></div>
+        <div class="admin-stat-value" style="color: ${sizing.missing_limits_count > 0 ? "var(--admin-red)" : "var(--admin-green)"};">${sizing.missing_limits_count}</div>
+        <div class="admin-stat-subtext">Containers at risk of eviction</div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="admin-stat-header"><span>Evaluated Deployments</span><span>Total</span></div>
+        <div class="admin-stat-value">${sizing.total_deployments}</div>
+        <div class="admin-stat-subtext">Cluster waste rate: ${sizing.estimated_cluster_waste_percent}%</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 15px; margin: 24px 0 10px;">Workload Right-Sizing Recommendations</h2>
+    <div class="admin-table-container">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Deployment</th>
+            <th>Namespace</th>
+            <th>Current (Req / Lim)</th>
+            <th>Recommended Baseline</th>
+            <th>Est. Savings</th>
+            <th>Risk / Efficiency</th>
+            <th>Reasoning</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sizing.recommendations.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No deployments found to analyze.</td></tr>` : ""}
+          ${sizing.recommendations.map((r) => `
+            <tr>
+              <td class="admin-table-name" onclick="openInspector('deployment', '${escapeHTML(r.namespace)}', '${escapeHTML(r.deployment_name)}')">
+                <strong>${escapeHTML(r.deployment_name)}</strong>
+                <div style="font-size: 10px; color: var(--admin-text-muted);">${escapeHTML(r.container_name)}</div>
+              </td>
+              <td class="admin-table-ns">${escapeHTML(r.namespace)}</td>
+              <td>
+                <div style="font-size: 11px;">CPU: <code>${escapeHTML(r.current_cpu_request)}</code> / <code>${escapeHTML(r.current_cpu_limit)}</code></div>
+                <div style="font-size: 11px;">RAM: <code>${escapeHTML(r.current_mem_request)}</code> / <code>${escapeHTML(r.current_mem_limit)}</code></div>
+              </td>
+              <td>
+                <div style="font-size: 11px; color: var(--admin-green);">CPU: <strong>${escapeHTML(r.recommended_cpu_request)}</strong> / <strong>${escapeHTML(r.recommended_cpu_limit)}</strong></div>
+                <div style="font-size: 11px; color: var(--admin-green);">RAM: <strong>${escapeHTML(r.recommended_mem_request)}</strong> / <strong>${escapeHTML(r.recommended_mem_limit)}</strong></div>
+              </td>
+              <td>
+                ${r.monthly_savings_usd > 0 ? `<strong style="color: var(--admin-green);">+$${r.monthly_savings_usd.toFixed(2)}/mo</strong>` : "-"}
+              </td>
+              <td>
+                <span class="admin-badge ${r.risk_level === "High Waste" ? "admin-badge-warning" : r.risk_level === "Uncapped" ? "admin-badge-crashloop" : "admin-badge-active"}">
+                  ${escapeHTML(r.risk_level)}
+                </span>
+              </td>
+              <td style="font-size: 11px; max-width: 240px;">${escapeHTML(r.reason)}</td>
+              <td>
+                <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="openRightSizeModal('${escapeHTML(r.namespace)}', '${escapeHTML(r.deployment_name)}', '${escapeHTML(r.recommended_cpu_request)}', '${escapeHTML(r.recommended_cpu_limit)}', '${escapeHTML(r.recommended_mem_request)}', '${escapeHTML(r.recommended_mem_limit)}', ${r.monthly_savings_usd})">
+                  Apply Sizing
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openRightSizeModal(namespace, deploymentName, cpuReq, cpuLim, memReq, memLim, savings) {
+  const modal = $("#admin-rightsize-modal");
+  $("#rightsize-dep-name").textContent = deploymentName;
+  $("#rightsize-dep-ns").textContent = namespace;
+  $("#rightsize-cpu-req").value = cpuReq || "100m";
+  $("#rightsize-cpu-lim").value = cpuLim || "500m";
+  $("#rightsize-mem-req").value = memReq || "128Mi";
+  $("#rightsize-mem-lim").value = memLim || "512Mi";
+  $("#rightsize-savings-note").textContent = savings > 0 ? `Est. monthly savings: ~$${savings.toFixed(2)}/month per replica.` : "";
+  modal.dataset.namespace = namespace;
+  modal.dataset.deployment = deploymentName;
+  modal.classList.add("open");
+}
+
+async function renderCopilot(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title"><h1>Natural Language AI K8s Copilot</h1></div>
+    </div>
+
+    <div class="admin-copilot-container">
+      <div class="admin-copilot-hero">
+        <div class="admin-copilot-hero-title">
+          <span class="admin-copilot-sparkle">AI</span>
+          <h2>Text-to-K8s Cluster Intelligence</h2>
+        </div>
+        <p>Ask natural questions to inspect crashing workloads, evaluate security posture, analyze RBAC blast radius, or find cost savings.</p>
+
+        <form id="copilot-main-form" style="margin-top: 16px;">
+          <div style="display: flex; gap: 8px;">
+            <input class="text-input" id="copilot-main-input" placeholder="e.g. 'Which pods are crashing?', 'Check secret leaks', 'Show cluster-admin bindings'..." style="flex: 1; font-size: 14px; padding: 10px 14px;" autocomplete="off">
+            <button class="admin-btn admin-btn-primary" type="submit" style="padding: 0 20px;">Ask Copilot</button>
+          </div>
+        </form>
+
+        <div class="admin-quick-prompts" style="margin-top: 12px;">
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Which pods are crashing or restarting?">Crashing pods</button>
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Show me security vulnerabilities and root containers">Security scan</button>
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Check cluster-admin bindings and RBAC blast radius">RBAC blast radius</button>
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Find overprovisioned workloads and right-size recommendations">Cost right-sizing</button>
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Show all warning events across the cluster">Warning events</button>
+          <button class="admin-quick-cmd-btn" type="button" data-prompt="Are there any plaintext secret leaks in env or ConfigMaps?">Secret leaks</button>
+        </div>
+      </div>
+
+      <div id="copilot-main-results" style="margin-top: 24px;"></div>
+    </div>
+  `;
+
+  const form = $("#copilot-main-form");
+  const input = $("#copilot-main-input");
+  const results = $("#copilot-main-results");
+
+  async function executeCopilotQuery(q) {
+    if (!q || !q.trim()) return;
+    input.value = q;
+    results.innerHTML = `<div class="admin-empty-state">Evaluating query against cluster state…</div>`;
+
+    try {
+      const resp = await request("/api/v1/admin/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+
+      let matchesHtml = "";
+      if (resp.matches && resp.matches.length > 0) {
+        matchesHtml = `
+          <h3 style="font-size: 14px; margin: 20px 0 10px;">Matching Resources (${resp.matches.length})</h3>
+          <div class="admin-table-container">
+            <table class="admin-table">
+              <thead><tr><th>Kind</th><th>Name</th><th>Namespace</th><th>Status</th><th>Details</th><th>Action</th></tr></thead>
+              <tbody>
+                ${resp.matches.map((m) => `
+                  <tr>
+                    <td><span class="admin-kind-badge">${escapeHTML(m.kind)}</span></td>
+                    <td class="admin-table-name"><strong>${escapeHTML(m.name)}</strong></td>
+                    <td class="admin-table-ns">${escapeHTML(m.namespace || "-")}</td>
+                    <td><span class="admin-badge ${m.status === "CrashLoopBackOff" || m.status === "critical" ? "admin-badge-crashloop" : "admin-badge-warning"}">${escapeHTML(m.status)}</span></td>
+                    <td style="font-size: 11px;">${escapeHTML(m.reason ? `${m.reason}: ` : "")}${escapeHTML(m.message || "")}</td>
+                    <td>
+                      ${m.link ? `<a class="admin-btn admin-btn-sm" href="${escapeHTML(m.link)}">Inspect</a>` : ""}
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      let actionsHtml = "";
+      if (resp.suggested_actions && resp.suggested_actions.length > 0) {
+        actionsHtml = `
+          <div style="margin-top: 20px;">
+            <h3 style="font-size: 14px; margin-bottom: 10px;">Suggested Actions</h3>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              ${resp.suggested_actions.map((act) => `
+                <div class="admin-remediation-card" style="flex: 1; min-width: 260px;">
+                  <div class="admin-remediation-info">
+                    <strong>${escapeHTML(act.title)}</strong>
+                    <span>${escapeHTML(act.description)}</span>
+                  </div>
+                  ${act.route ? `<a class="admin-btn admin-btn-primary admin-btn-sm" href="${escapeHTML(act.route)}">Execute</a>` : ""}
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      results.innerHTML = `
+        <div class="admin-ai-banner">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="admin-tag-chip" style="color: var(--admin-accent); font-weight: 700;">Intent: ${escapeHTML(resp.intent)}</span>
+            <span style="font-size: 11px; color: var(--admin-text-muted);">Query: "${escapeHTML(resp.query)}"</span>
+          </div>
+          <p style="margin: 0; font-size: 13px; line-height: 1.6; color: var(--admin-text);">${escapeHTML(resp.summary)}</p>
+        </div>
+        ${actionsHtml}
+        ${matchesHtml}
+      `;
+    } catch (err) {
+      results.innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Query failed: ${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    executeCopilotQuery(input.value);
+  });
+
+  $$(".admin-quick-prompts button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      executeCopilotQuery(btn.dataset.prompt);
+    });
+  });
+
+  executeCopilotQuery("Which pods are crashing or restarting?");
 }
 
 async function renderDatabaseTopology(container) {
@@ -1698,18 +2121,52 @@ async function openAIDiagnosis(namespace, podName) {
   try {
     const diag = await request(`/api/v1/admin/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/diagnose`);
 
+    let exitCodeHtml = "";
+    if (diag.exit_code !== undefined && diag.exit_code !== 0) {
+      exitCodeHtml = `<span class="admin-badge admin-badge-crashloop">Exit Code ${escapeHTML(diag.exit_code)}${diag.last_termination_reason ? ` (${escapeHTML(diag.last_termination_reason)})` : ""}</span>`;
+    }
+
     body.innerHTML = `
       <div class="admin-ai-banner">
-        <div class="admin-ai-banner-title">
-          ${escapeHTML(diag.summary)}
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px;">
+          <div class="admin-ai-banner-title" style="margin: 0;">
+            ${escapeHTML(diag.summary)}
+          </div>
+          ${exitCodeHtml}
         </div>
         <div style="font-size: 11px; color: var(--admin-text-muted);">Confidence: <strong>${escapeHTML(diag.confidence)}</strong> · Severity: <strong>${escapeHTML(diag.severity.toUpperCase())}</strong></div>
       </div>
 
+      ${diag.log_anomaly ? `
+        <div class="admin-ai-anomaly-box" style="background: rgba(220, 38, 38, 0.08); border-left: 3px solid var(--admin-red); padding: 10px 14px; margin-bottom: 14px; border-radius: 4px;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--admin-red); margin-bottom: 4px;">Detected Log Anomaly / Error</div>
+          <div style="font-family: monospace; font-size: 12px; color: var(--admin-red); word-break: break-all;">${escapeHTML(diag.log_anomaly)}</div>
+        </div>
+      ` : ""}
+
       <div class="admin-ai-cause-box">
-        <div class="admin-ai-cause-title">Probable Cause & Analysis</div>
+        <div class="admin-ai-cause-title">Probable Cause & Root Analysis</div>
         <p style="margin: 0; font-size: 12px; line-height: 1.6; color: var(--admin-text);">${escapeHTML(diag.probable_cause)}</p>
       </div>
+
+      ${diag.stack_trace ? `
+        <div class="admin-spec-group">
+          <div class="admin-spec-group-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Extracted Application Stack Trace</span>
+            <span style="font-size: 10px; font-weight: normal; color: var(--admin-text-muted);">Automated RCA</span>
+          </div>
+          <pre class="admin-yaml-code" style="max-height: 220px; color: #dc2626; background: #fff5f5; border: 1px solid #fecaca;">${escapeHTML(diag.stack_trace)}</pre>
+        </div>
+      ` : ""}
+
+      ${diag.recommended_steps && diag.recommended_steps.length > 0 ? `
+        <div class="admin-spec-group">
+          <div class="admin-spec-group-title">Recommended Action Plan</div>
+          <ol style="margin: 0; padding-left: 20px; font-size: 12px; color: var(--admin-text); line-height: 1.7;">
+            ${diag.recommended_steps.map((st) => `<li>${escapeHTML(st)}</li>`).join("")}
+          </ol>
+        </div>
+      ` : ""}
 
       <div class="admin-spec-group">
         <div class="admin-spec-group-title">Diagnostic Evidence</div>
@@ -1719,7 +2176,7 @@ async function openAIDiagnosis(namespace, podName) {
       </div>
 
       <div class="admin-spec-group">
-        <div class="admin-spec-group-title">Recommended Remediations</div>
+        <div class="admin-spec-group-title">Remediation Actions</div>
         ${diag.remediation.map((act) => `
           <div class="admin-remediation-card">
             <div class="admin-remediation-info">
@@ -1733,7 +2190,7 @@ async function openAIDiagnosis(namespace, podName) {
 
       ${diag.relevant_logs ? `
         <div class="admin-spec-group">
-          <div class="admin-spec-group-title">Recent Crash Logs (Last 50 lines)</div>
+          <div class="admin-spec-group-title">Recent Crash Logs</div>
           <pre class="admin-yaml-code" style="max-height: 200px;">${escapeHTML(diag.relevant_logs)}</pre>
         </div>` : ""}
     `;
@@ -1996,6 +2453,118 @@ function setupEventListeners() {
       renderCurrentView();
     } catch (err) {
       alert("Namespace creation failed: " + err.message);
+    }
+  });
+
+  // Right-Sizing Modal
+  $("#rightsize-modal-close").addEventListener("click", () => $("#admin-rightsize-modal").classList.remove("open"));
+  $("#rightsize-modal-cancel").addEventListener("click", () => $("#admin-rightsize-modal").classList.remove("open"));
+  $("#rightsize-modal-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const modal = $("#admin-rightsize-modal");
+    const ns = modal.dataset.namespace;
+    const name = modal.dataset.deployment;
+    const cpuReq = $("#rightsize-cpu-req").value.trim();
+    const cpuLim = $("#rightsize-cpu-lim").value.trim();
+    const memReq = $("#rightsize-mem-req").value.trim();
+    const memLim = $("#rightsize-mem-lim").value.trim();
+    try {
+      const res = await request(`/api/v1/admin/deployments/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/rightsize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cpu_request: cpuReq,
+          cpu_limit: cpuLim,
+          mem_request: memReq,
+          mem_limit: memLim,
+        }),
+      });
+      modal.classList.remove("open");
+      alert(res.message || "Resources successfully updated.");
+      if (state.activeView === "rightsizing") {
+        renderRightSizing($("#admin-content-area"));
+      } else {
+        renderCurrentView();
+      }
+    } catch (err) {
+      alert("Right-sizing failed: " + err.message);
+    }
+  });
+
+  // Copilot Modal & Keyboard Shortcut
+  function openQuickCopilot(prompt = "") {
+    const modal = $("#admin-copilot-modal");
+    modal.classList.add("open");
+    const inp = $("#copilot-modal-input");
+    inp.focus();
+    if (prompt) {
+      inp.value = prompt;
+      runQuickCopilot(prompt);
+    }
+  }
+
+  async function runQuickCopilot(q) {
+    if (!q || !q.trim()) return;
+    const results = $("#copilot-modal-results");
+    results.innerHTML = `<div class="admin-empty-state">Analyzing cluster with AI Copilot…</div>`;
+    try {
+      const resp = await request("/api/v1/admin/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      let matchesHtml = "";
+      if (resp.matches && resp.matches.length > 0) {
+        matchesHtml = `
+          <div style="margin-top: 12px; max-height: 200px; overflow-y: auto;">
+            <table class="admin-table">
+              <thead><tr><th>Kind</th><th>Name</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>
+                ${resp.matches.slice(0, 8).map((m) => `
+                  <tr>
+                    <td><span class="admin-kind-badge">${escapeHTML(m.kind)}</span></td>
+                    <td class="admin-table-name"><strong>${escapeHTML(m.name)}</strong></td>
+                    <td><span class="admin-badge ${m.status === "CrashLoopBackOff" || m.status === "critical" ? "admin-badge-crashloop" : "admin-badge-warning"}">${escapeHTML(m.status)}</span></td>
+                    <td>
+                      ${m.link ? `<a class="admin-btn admin-btn-sm" href="${escapeHTML(m.link)}" onclick="$('#admin-copilot-modal').classList.remove('open')">View</a>` : ""}
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+      results.innerHTML = `
+        <div class="admin-ai-banner" style="margin-top: 8px;">
+          <div style="font-size: 11px; font-weight: 700; color: var(--admin-accent); margin-bottom: 4px;">Intent: ${escapeHTML(resp.intent)}</div>
+          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: var(--admin-text);">${escapeHTML(resp.summary)}</p>
+        </div>
+        ${matchesHtml}
+      `;
+    } catch (err) {
+      results.innerHTML = `<div class="admin-empty-state" style="color: var(--admin-red);">Copilot error: ${escapeHTML(err.message)}</div>`;
+    }
+  }
+
+  $("#topbar-copilot-btn").addEventListener("click", () => openQuickCopilot());
+  $("#copilot-modal-close").addEventListener("click", () => $("#admin-copilot-modal").classList.remove("open"));
+  $("#copilot-modal-dismiss").addEventListener("click", () => $("#admin-copilot-modal").classList.remove("open"));
+  $("#copilot-modal-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    runQuickCopilot($("#copilot-modal-input").value);
+  });
+  $$("#copilot-quick-prompts button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $("#copilot-modal-input").value = btn.dataset.prompt;
+      runQuickCopilot(btn.dataset.prompt);
+    });
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openQuickCopilot();
     }
   });
 

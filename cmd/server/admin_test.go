@@ -10,6 +10,8 @@ import (
 	assets "crelan"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/clientcmd"
@@ -281,4 +283,298 @@ users:
 		t.Errorf("expected temp CA to be embedded into CertificateAuthorityData")
 	}
 }
+
+func TestExtractStackTrace(t *testing.T) {
+	goPanicLogs := `2026-10-21T10:00:00Z server starting...
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x492102]
+goroutine 1 [running]:
+main.handleRequest(...)
+	/app/main.go:42 +0x2b
+`
+	trace, anomaly := extractStackTrace(goPanicLogs)
+	if !strings.Contains(anomaly, "panic: runtime error") {
+		t.Errorf("expected Go panic anomaly to be extracted, got: %q", anomaly)
+	}
+	if !strings.Contains(trace, "main.handleRequest") {
+		t.Errorf("expected stack trace snippet to include frame, got: %q", trace)
+	}
+
+	pyLogs := `Traceback (most recent call last):
+  File "app.py", line 12, in <module>
+    import psycopg2
+ModuleNotFoundError: No module named 'psycopg2'
+`
+	_, pyAnomaly := extractStackTrace(pyLogs)
+	if !strings.Contains(pyAnomaly, "ModuleNotFoundError") {
+		t.Errorf("expected python anomaly to be ModuleNotFoundError, got: %q", pyAnomaly)
+	}
+}
+
+func TestSecurityAuditAndSecretLeakGuard(t *testing.T) {
+	podWithRoot := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "insecure-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app": "insecure-app",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "web",
+					Image: "nginx:latest",
+					Env: []corev1.EnvVar{
+						{Name: "AWS_ACCESS_KEY_ID", Value: "AKIAIOSFODNN7EXAMPLE"},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	cmWithKey := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app-config",
+			Namespace: "default",
+		},
+		Data: map[string]string{
+			"id_rsa": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAz...==\n-----END RSA PRIVATE KEY-----",
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(podWithRoot, cmWithKey)
+	audit, err := runSecurityAudit(context.Background(), client)
+	if err != nil {
+		t.Fatalf("unexpected error running security audit: %v", err)
+	}
+
+	if audit.RootCount != 1 {
+		t.Errorf("expected 1 root container detected, got %d", audit.RootCount)
+	}
+	if audit.SecretLeaksCount < 2 {
+		t.Errorf("expected at least 2 secret leaks (env + configmap), got %d", audit.SecretLeaksCount)
+	}
+	if audit.Score >= 100 {
+		t.Errorf("expected security score to reflect findings, got %d", audit.Score)
+	}
+}
+
+func TestHardenDeployment(t *testing.T) {
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "api-dep",
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "api",
+							Image: "my-api:v1",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(dep)
+	err := hardenDeployment(context.Background(), client, "default", "api-dep")
+	if err != nil {
+		t.Fatalf("unexpected error hardening deployment: %v", err)
+	}
+
+	updated, err := client.AppsV1().Deployments("default").Get(context.Background(), "api-dep", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to fetch updated deployment: %v", err)
+	}
+
+	c := updated.Spec.Template.Spec.Containers[0]
+	if c.SecurityContext == nil {
+		t.Fatal("expected container securityContext to be populated")
+	}
+	if c.SecurityContext.RunAsNonRoot == nil || !*c.SecurityContext.RunAsNonRoot {
+		t.Errorf("expected runAsNonRoot to be true")
+	}
+	if c.SecurityContext.AllowPrivilegeEscalation == nil || *c.SecurityContext.AllowPrivilegeEscalation {
+		t.Errorf("expected allowPrivilegeEscalation to be false")
+	}
+	if c.SecurityContext.Privileged == nil || *c.SecurityContext.Privileged {
+		t.Errorf("expected privileged to be false")
+	}
+	if len(c.SecurityContext.Capabilities.Drop) == 0 || c.SecurityContext.Capabilities.Drop[0] != "ALL" {
+		t.Errorf("expected capabilities drop ALL")
+	}
+}
+
+func TestRBACBlastRadiusAnalysis(t *testing.T) {
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "admin-binding",
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "ClusterRole",
+			Name: "cluster-admin",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "ci-runner",
+				Namespace: "default",
+			},
+		},
+	}
+
+	crWildcard := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "wildcard-role",
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:     []string{"*"},
+				APIGroups: []string{"*"},
+				Resources: []string{"*"},
+			},
+		},
+	}
+
+	crbWildcard := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "wildcard-binding",
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind: "ClusterRole",
+			Name: "wildcard-role",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind: "User",
+				Name: "test-user",
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(crb, crWildcard, crbWildcard)
+	report, err := runRBACBlastRadiusAnalysis(context.Background(), client)
+	if err != nil {
+		t.Fatalf("unexpected error running rbac analysis: %v", err)
+	}
+
+	if report.ClusterAdminCount != 1 {
+		t.Errorf("expected 1 cluster admin binding, got %d", report.ClusterAdminCount)
+	}
+	if report.WildcardPermissionsCount != 1 {
+		t.Errorf("expected 1 wildcard permission detected, got %d", report.WildcardPermissionsCount)
+	}
+	if report.RiskScore <= 0 {
+		t.Errorf("expected positive risk score, got %d", report.RiskScore)
+	}
+}
+
+func TestCalculateResourceRightSizingAndApply(t *testing.T) {
+	depOverprovisioned := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "heavy-worker",
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "worker",
+							Image: "worker:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2000m"),
+									corev1.ResourceMemory: resource.MustParse("4096Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4000m"),
+									corev1.ResourceMemory: resource.MustParse("8192Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(depOverprovisioned)
+	report, err := calculateResourceRightSizing(context.Background(), client)
+	if err != nil {
+		t.Fatalf("unexpected error calculating right sizing: %v", err)
+	}
+
+	if report.OverprovisionedCount != 1 {
+		t.Errorf("expected 1 overprovisioned workload, got %d", report.OverprovisionedCount)
+	}
+	if report.EstimatedMonthlySavingsUSD <= 0 {
+		t.Errorf("expected positive monthly savings, got %f", report.EstimatedMonthlySavingsUSD)
+	}
+
+	// Apply patch
+	err = applyRightSizingPatch(context.Background(), client, "default", "heavy-worker", "250m", "500m", "512Mi", "1024Mi")
+	if err != nil {
+		t.Fatalf("unexpected error applying right sizing patch: %v", err)
+	}
+
+	updated, _ := client.AppsV1().Deployments("default").Get(context.Background(), "heavy-worker", metav1.GetOptions{})
+	cpuReq := updated.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu().String()
+	if cpuReq != "250m" {
+		t.Errorf("expected CPU request to be patched to 250m, got %s", cpuReq)
+	}
+}
+
+func TestAICopilotQueries(t *testing.T) {
+	podCrash := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "crash-pod",
+			Namespace: "default",
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "app",
+					RestartCount: 12,
+					Ready:        false,
+					State: corev1.ContainerState{
+						Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
+					},
+				},
+			},
+		},
+	}
+
+	client := k8sfake.NewSimpleClientset(podCrash)
+
+	// Test Crash intent query
+	resp, err := runAICopilotQuery(context.Background(), client, nil, "Which pods are crashing or restarting?")
+	if err != nil {
+		t.Fatalf("unexpected error running copilot query: %v", err)
+	}
+	if resp.Intent != "Workload Health & Crash Diagnostics" {
+		t.Errorf("expected crash intent, got %s", resp.Intent)
+	}
+	if len(resp.Matches) == 0 {
+		t.Errorf("expected at least 1 match for crashing pod")
+	}
+
+	// Test Security intent query
+	secResp, err := runAICopilotQuery(context.Background(), client, nil, "Show me security vulnerabilities and root containers")
+	if err != nil {
+		t.Fatalf("unexpected error running copilot security query: %v", err)
+	}
+	if secResp.Intent != "Security Posture & CIS Hardening" {
+		t.Errorf("expected security intent, got %s", secResp.Intent)
+	}
+}
+
 

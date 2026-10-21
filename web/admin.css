@@ -1413,3 +1413,113 @@ body.admin-body {
   color: var(--admin-text-muted);
   font-size: 12px;
 }
+
+/* ==========================================================================
+   AI Copilot, RBAC Analyzer & Right-Sizing Styles
+   ========================================================================== */
+
+.admin-copilot-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(196, 81, 0, 0.08), rgba(196, 81, 0, 0.16));
+  border: 1px solid rgba(196, 81, 0, 0.35);
+  color: var(--admin-accent);
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.admin-copilot-pill:hover {
+  background: var(--admin-accent);
+  color: #ffffff;
+  border-color: var(--admin-accent);
+}
+
+.admin-copilot-sparkle {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--admin-accent);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.admin-copilot-pill:hover .admin-copilot-sparkle {
+  background: #ffffff;
+  color: var(--admin-accent);
+}
+
+.admin-copilot-container {
+  max-width: 960px;
+}
+
+.admin-copilot-hero {
+  background: #ffffff;
+  border: 1px solid var(--admin-border);
+  border-radius: 9px;
+  padding: 24px;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-copilot-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.admin-copilot-hero-title h2 {
+  margin: 0;
+  font-family: var(--admin-font-heading);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.admin-copilot-hero p {
+  margin: 0;
+  color: var(--admin-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.admin-quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-tag-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  background: #f1f3f7;
+  border: 1px solid var(--admin-border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--admin-mono);
+  color: var(--admin-text);
+}
+
+.admin-stacktrace-block {
+  font-family: var(--admin-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #dc2626;
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+

@@ -121,12 +121,24 @@
             </a>
           </div>
 
-          <!-- PLATFORM INTELLIGENCE -->
+          <!-- PLATFORM INTELLIGENCE & SECURITY -->
           <div class="admin-tree-group">
-            <div class="admin-tree-header" style="color: var(--admin-accent);">Platform Intelligence</div>
+            <div class="admin-tree-header" style="color: var(--admin-accent);">Platform Intelligence & Security</div>
+            <a class="admin-tree-item" href="#copilot" data-view="copilot">
+              <span>AI K8s Copilot</span>
+              <span class="admin-item-badge" style="color: var(--admin-accent); font-weight: 700;">AI</span>
+            </a>
             <a class="admin-tree-item" href="#security" data-view="security">
-              <span>Security & Isolation</span>
-              <span class="admin-item-badge" id="badge-security" style="color: var(--admin-accent);">Audit</span>
+              <span>Security & Hardening</span>
+              <span class="admin-item-badge" id="badge-security" style="color: var(--admin-accent);">CIS</span>
+            </a>
+            <a class="admin-tree-item" href="#rbac" data-view="rbac">
+              <span>RBAC Blast Radius</span>
+              <span class="admin-item-badge" id="badge-rbac">Radar</span>
+            </a>
+            <a class="admin-tree-item" href="#rightsizing" data-view="rightsizing">
+              <span>Cost & Right-Sizing</span>
+              <span class="admin-item-badge" id="badge-rightsizing">Advisor</span>
             </a>
             <a class="admin-tree-item" href="#databases" data-view="databases">
               <span>Database Topology</span>
@@ -136,7 +148,7 @@
               <span class="admin-item-badge admin-badge-warning" id="badge-leaks" hidden>0</span>
             </a>
             <a class="admin-tree-item" href="#efficiency" data-view="efficiency">
-              <span>Resource Efficiency</span>
+              <span>Resource Heatmap</span>
             </a>
           </div>
 
@@ -179,6 +191,10 @@
             <input class="admin-search-input" id="admin-search-input" type="search" placeholder="Filter resources... (press /)" autocomplete="off">
             <span class="admin-search-key">/</span>
           </div>
+
+          <button class="admin-copilot-pill" id="topbar-copilot-btn" type="button" title="Natural Language AI K8s Copilot">
+            <span class="admin-copilot-sparkle">AI</span> Ask Copilot
+          </button>
 
           <div class="admin-topbar-right">
             <!-- Perspective Toggle -->
@@ -359,6 +375,78 @@
                 <button class="admin-btn admin-btn-primary" type="submit">Create</button>
               </div>
             </form>
+          </div>
+        </div>
+
+        <!-- 10. AI Right-Sizing Modal -->
+        <div class="admin-modal-overlay" id="admin-rightsize-modal">
+          <div class="admin-modal" style="width: 480px;">
+            <div class="admin-modal-header">
+              <h2>Apply Resource Right-Sizing</h2>
+              <button class="admin-drawer-close" id="rightsize-modal-close" type="button">Close</button>
+            </div>
+            <form id="rightsize-modal-form">
+              <div class="admin-modal-body">
+                <p>Fine-tune CPU and memory requests/limits for <strong id="rightsize-dep-name">app</strong> (<span id="rightsize-dep-ns">default</span>):</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+                  <div>
+                    <label class="form-label" for="rightsize-cpu-req">CPU Request</label>
+                    <input class="text-input" id="rightsize-cpu-req" placeholder="100m" required style="width: 100%;">
+                  </div>
+                  <div>
+                    <label class="form-label" for="rightsize-cpu-lim">CPU Limit</label>
+                    <input class="text-input" id="rightsize-cpu-lim" placeholder="500m" required style="width: 100%;">
+                  </div>
+                  <div>
+                    <label class="form-label" for="rightsize-mem-req">Memory Request</label>
+                    <input class="text-input" id="rightsize-mem-req" placeholder="128Mi" required style="width: 100%;">
+                  </div>
+                  <div>
+                    <label class="form-label" for="rightsize-mem-lim">Memory Limit</label>
+                    <input class="text-input" id="rightsize-mem-lim" placeholder="512Mi" required style="width: 100%;">
+                  </div>
+                </div>
+                <div id="rightsize-savings-note" style="margin-top: 14px; font-size: 12px; color: var(--admin-accent);"></div>
+              </div>
+              <div class="admin-modal-footer">
+                <button class="admin-btn" id="rightsize-modal-cancel" type="button">Cancel</button>
+                <button class="admin-btn admin-btn-primary" type="submit">Apply Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 11. Quick AI Copilot Modal -->
+        <div class="admin-modal-overlay" id="admin-copilot-modal">
+          <div class="admin-modal" style="width: 620px;">
+            <div class="admin-modal-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="admin-copilot-sparkle">AI</span>
+                <h2 style="margin: 0;">Natural Language K8s Copilot</h2>
+              </div>
+              <button class="admin-drawer-close" id="copilot-modal-close" type="button">Close</button>
+            </div>
+            <div class="admin-modal-body">
+              <form id="copilot-modal-form" style="margin-bottom: 14px;">
+                <div style="display: flex; gap: 8px;">
+                  <input class="text-input" id="copilot-modal-input" placeholder="Ask anything about the cluster (e.g. 'Which pods are crashing?', 'Check secret leaks')..." style="flex: 1;" autocomplete="off">
+                  <button class="admin-btn admin-btn-primary" type="submit">Ask</button>
+                </div>
+              </form>
+              <div class="admin-quick-prompts" id="copilot-quick-prompts">
+                <button class="admin-quick-cmd-btn" type="button" data-prompt="Which pods are crashing or restarting?">Crashing pods</button>
+                <button class="admin-quick-cmd-btn" type="button" data-prompt="Show me security vulnerabilities and root containers">Security scan</button>
+                <button class="admin-quick-cmd-btn" type="button" data-prompt="Check cluster-admin bindings and RBAC blast radius">RBAC blast radius</button>
+                <button class="admin-quick-cmd-btn" type="button" data-prompt="Find overprovisioned workloads and right-size recommendations">Cost right-sizing</button>
+                <button class="admin-quick-cmd-btn" type="button" data-prompt="Show all warning events across the cluster">Warning events</button>
+              </div>
+              <div id="copilot-modal-results" style="margin-top: 16px;">
+                <p style="color: var(--admin-text-muted); font-size: 13px;">Type a prompt or choose a shortcut above to analyze live cluster state.</p>
+              </div>
+            </div>
+            <div class="admin-modal-footer">
+              <button class="admin-btn" id="copilot-modal-dismiss" type="button">Close</button>
+            </div>
           </div>
         </div>
       </main>

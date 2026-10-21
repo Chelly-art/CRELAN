@@ -121,6 +121,11 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	// Platform Intelligence & Diagnostics
 	mux.HandleFunc("GET /api/v1/admin/workspaces/mapping", s.getWorkspaceMappings)
 	mux.HandleFunc("GET /api/v1/admin/security/audit", s.getSecurityAudit)
+	mux.HandleFunc("GET /api/v1/admin/security/rbac", s.getRBACBlastRadius)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/harden", s.hardenDeployment)
+	mux.HandleFunc("GET /api/v1/admin/ai/rightsizing", s.getResourceRightSizing)
+	mux.HandleFunc("POST /api/v1/admin/deployments/{namespace}/{name}/rightsize", s.applyRightSizing)
+	mux.HandleFunc("POST /api/v1/admin/ai/copilot", s.aiCopilot)
 	mux.HandleFunc("GET /api/v1/admin/databases/topology", s.getDatabaseTopology)
 	mux.HandleFunc("GET /api/v1/admin/resources/efficiency", s.getResourceEfficiency)
 }
@@ -1351,4 +1356,122 @@ func (s *adminService) getResourceEfficiency(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, eff)
 }
+
+func (s *adminService) getRBACBlastRadius(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := runRBACBlastRadiusAnalysis(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not run RBAC analysis: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) hardenDeployment(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+	if err := hardenDeployment(r.Context(), provisioner.client, ns, name); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not harden deployment: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "hardened", "message": fmt.Sprintf("Deployment %s/%s successfully hardened with non-root, dropped capabilities, and runtime seccomp profile.", ns, name)})
+}
+
+func (s *adminService) getResourceRightSizing(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	report, err := calculateResourceRightSizing(r.Context(), provisioner.client)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not calculate right-sizing: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *adminService) applyRightSizing(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
+	ns := r.PathValue("namespace")
+	name := r.PathValue("name")
+
+	var input rightSizeApplyRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid right-sizing parameters")
+		return
+	}
+
+	if err := applyRightSizingPatch(r.Context(), provisioner.client, ns, name, input.CPURequest, input.CPULimit, input.MemRequest, input.MemLimit); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not apply right-sizing patch: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "applied", "message": fmt.Sprintf("Deployment %s/%s resources successfully updated.", ns, name)})
+}
+
+func (s *adminService) aiCopilot(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	var input aiCopilotRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid copilot query")
+		return
+	}
+	if strings.TrimSpace(input.Query) == "" {
+		writeError(w, http.StatusBadRequest, "Query cannot be empty")
+		return
+	}
+
+	provisioner := s.currentKubernetesProvisioner()
+	var client kubernetes.Interface
+	if provisioner != nil {
+		client = provisioner.client
+	}
+
+	resp, err := runAICopilotQuery(r.Context(), client, s.auth.db, input.Query)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Copilot query evaluation failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 
