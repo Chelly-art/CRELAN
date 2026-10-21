@@ -16,7 +16,7 @@ variable "subnet_ids" {
 
 variable "node_subnet_ids" {
   type        = list(string)
-  description = "List of subnet IDs specifically for the EKS worker nodes (optional; defaults to general subnet_ids if left empty)"
+  description = "List of subnet IDs for the EKS worker nodes (falls back to subnet_ids if empty)"
   default     = []
 }
 
