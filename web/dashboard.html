@@ -44,7 +44,9 @@
           <div class="dashboard-page" id="applications-page">
             <div class="welcome">
               <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
-              <div class="welcome-actions">
+              <div class="welcome-actions" style="display: flex; align-items: center; gap: 8px;">
+                <span class="token-row-state active" id="github-connected-badge" hidden style="font-size: 11px;">✓ GitHub: <strong id="github-account-name"></strong></span>
+                <a class="inline-action" id="github-connect-btn" href="/settings/github/install" style="font-size: 11px; text-decoration: none;">🔗 Connect GitHub</a>
                 <a class="primary-button" href="#deploy" style="text-decoration: none;"><span>＋</span> Deploy an app</a>
               </div>
             </div>
@@ -75,13 +77,27 @@
               <section class="panel token-builder" id="deploy-form-panel">
                 <div class="panel-heading"><div><h2>Deployment configuration</h2><p>Provide your source code repository or container image coordinates.</p></div></div>
                 <form id="deployment-form">
-                  <label class="form-label" for="app-source">Source type</label>
-                  <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
+                  <div class="deployment-two-col">
+                    <div>
+                      <label class="form-label" for="app-source">Source type</label>
+                      <select class="text-input deployment-input" id="app-source" name="source_type"><option value="repository">Public GitHub repository</option><option value="image">Container image</option></select>
+                    </div>
+                    <div>
+                      <label class="form-label" for="app-cluster">Deployment cluster / target</label>
+                      <select class="text-input deployment-input" id="app-cluster" name="cluster_context">
+                        <option value="">Default cluster (platform managed)</option>
+                      </select>
+                    </div>
+                  </div>
                   <label class="form-label" for="app-name">Deployment name</label>
                   <input class="text-input deployment-input" id="app-name" name="name" placeholder="my-app" maxlength="63" pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" required>
                   <div id="repository-source-fields">
                     <label class="form-label" for="app-repository">GitHub repository URL</label>
                     <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
+                    <div id="github-auto-deploy-hint" style="margin-top: 6px; font-size: 11px;">
+                      <span id="github-app-status-text" style="color: #667085;">💡 Connect GitHub to automatically trigger zero-downtime deployments on git push.</span>
+                      <a id="github-app-connect-link" href="/settings/github/install" target="_blank" style="color: #c45100; font-weight: 600; margin-left: 6px; text-decoration: none;">Connect GitHub App →</a>
+                    </div>
                     <div class="deployment-two-col">
                       <div><label class="form-label" for="app-branch">Branch <span>(optional)</span></label><input class="text-input deployment-input" id="app-branch" name="branch" placeholder="Default branch" maxlength="255"></div>
                       <div><label class="form-label" for="app-port">Application port</label><input class="text-input deployment-input" id="app-port" name="port" type="number" min="1" max="65535" value="8080" required></div>
@@ -284,6 +300,48 @@
                 </div>
                 <div class="token-list" id="tokens-list">
                   <div class="token-empty">Loading workspace tokens…</div>
+                </div>
+              </section>
+
+              <section class="panel issued-tokens" style="margin-top: 20px;">
+                <div class="panel-heading">
+                  <div>
+                    <div class="eyebrow">AUTOMATION & CI/CD</div>
+                    <h2>Continuous deployment setup</h2>
+                    <p>Integrate your CI/CD pipelines to build and deploy applications automatically.</p>
+                  </div>
+                </div>
+                <div style="display: grid; gap: 14px; margin-top: 12px;">
+                  <div style="background: #f8f9fb; border: 1px solid #e2e7ee; border-radius: 8px; padding: 16px;">
+                    <strong style="display: block; font-size: 13px; color: #202938; margin-bottom: 6px;">1. GitHub Actions (Official Action)</strong>
+                    <p style="font-size: 12px; color: #667085; margin: 0 0 10px;">Save <code>CRELAN_TOKEN</code> in your repository secrets and <code>CRELAN_API_URL</code> in variables:</p>
+                    <pre style="background: #101923; color: #e9edf4; padding: 12px; border-radius: 6px; font: 11px/1.6 monospace; overflow-x: auto; margin: 0;"><code>name: Deploy to Crelan
+on:
+  push:
+    branches: [ main ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
+        with:
+          api-url: ${{ vars.CRELAN_API_URL }}
+          token: ${{ secrets.CRELAN_TOKEN }}
+          app-name: storefront
+          port: "8080"</code></pre>
+                  </div>
+                  <div style="background: #f8f9fb; border: 1px solid #e2e7ee; border-radius: 8px; padding: 16px;">
+                    <strong style="display: block; font-size: 13px; color: #202938; margin-bottom: 6px;">2. GitLab CI / Any CI Runner (Image Deploy)</strong>
+                    <p style="font-size: 12px; color: #667085; margin: 0 0 10px;">Build and push your container image in CI, then instruct Crelan to roll out the image:</p>
+                    <pre style="background: #101923; color: #e9edf4; padding: 12px; border-radius: 6px; font: 11px/1.6 monospace; overflow-x: auto; margin: 0;"><code>deploy:
+  stage: deploy
+  script:
+    - curl -X POST "$CRELAN_API_URL/api/v1/deployments" \
+        -H "Authorization: Bearer $CRELAN_TOKEN" \
+        -H "Content-Type: application/json" \
+        --data "{\"name\":\"storefront\",\"image\":\"$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA\",\"port\":8080}"</code></pre>
+                  </div>
                 </div>
               </section>
             </div>
