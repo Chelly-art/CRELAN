@@ -216,6 +216,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     $("#app-port").value = "8080";
     $("#image-port").value = "8080";
     updateSourceFields();
+    updateVolumeFields();
     window.location.hash = "applications";
     await loadDeployments();
   } catch (cause) {

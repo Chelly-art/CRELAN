@@ -275,7 +275,13 @@ func (s *deploymentService) provisionerForContext(contextName string) (Deploymen
 }
 
 func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Request) {
-	if !s.requirePlatformAdmin(w, r) {
+	principal, err := s.authenticate(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Valid workspace authentication is required")
+		return
+	}
+	if !principal.hasScope("deployments:read") {
+		writeError(w, http.StatusForbidden, "Token requires the deployments:read scope")
 		return
 	}
 	contexts, current, err := loadKubeconfigContexts()
