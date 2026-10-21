@@ -2671,7 +2671,7 @@ function setupEventListeners() {
   });
   $("#debug-form")?.addEventListener("submit", handleLaunchDebugContainer);
 
-  // Lens Pro Suite Event Listeners
+  // Enterprise Suite Event Listeners
   $("#open-cmd-k-btn")?.addEventListener("click", () => openCommandPalette());
   $("#cmd-k-close-btn")?.addEventListener("click", () => closeCommandPalette());
   $("#admin-cmd-k-modal")?.addEventListener("click", (e) => {
@@ -4584,7 +4584,7 @@ async function renderDisasterRecoveryRadar(container) {
 }
 
 // =============================================================
-// Lens Pro Suite: Commercial Features for Crelan Platform
+// Enterprise Suite: Core Capabilities for Crelan Platform
 // =============================================================
 
 // Helper: Lightweight YAML Formatter for objects
@@ -4623,7 +4623,7 @@ function objectToYAML(obj, indent = 0) {
 }
 
 // -------------------------------------------------------------
-// 1. Container Image Vulnerability Scanner (CVE Radar)
+// Container Image Vulnerability Scanner (CVE Radar)
 // -------------------------------------------------------------
 let currentCVEImages = [];
 
@@ -4645,7 +4645,7 @@ async function renderImageVulnerabilities(container) {
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Container Image Vulnerability Scanner (CVE Radar)</h1>
-        <p class="admin-view-subtitle">Lens Pro-tier real-time vulnerability scanner across all pod images with severity scoring, package impact, and remediation guidance.</p>
+        <p class="admin-view-subtitle">Real-time vulnerability scanner across all pod images with severity scoring, package impact, and remediation guidance.</p>
       </div>
       <div style="display: flex; gap: 8px;">
         <button class="admin-btn" onclick="openCommandPalette('cve')">⌘K Quick Scan</button>
@@ -4803,7 +4803,7 @@ function openCVEModalByIndex(idx) {
 }
 
 // -------------------------------------------------------------
-// 2. Helm Release Lifecycle Manager
+// Helm Release Lifecycle Manager
 // -------------------------------------------------------------
 let currentHelmReleases = [];
 let currentHelmValues = null;
@@ -5007,7 +5007,7 @@ async function uninstallHelmReleasePrompt(namespace, name) {
 }
 
 // -------------------------------------------------------------
-// 3. Custom Resource Definitions (CRDs) & Operator Browser
+// Custom Resource Definitions (CRDs) & Operator Browser
 // -------------------------------------------------------------
 let currentCRDList = [];
 let activeCRDInstances = null;
@@ -5229,7 +5229,7 @@ function inspectCRDInstanceYAML(idx) {
 }
 
 // -------------------------------------------------------------
-// 4. Interactive RBAC Permission Inspector (can-i)
+// Interactive RBAC Permission Inspector (can-i)
 // -------------------------------------------------------------
 async function renderCanI(container) {
   const defaultNs = state.selectedNamespace || "default";
@@ -5377,7 +5377,7 @@ async function handleCanISubmit(e) {
 }
 
 // -------------------------------------------------------------
-// 5. Multi-Cluster Fleet Dashboard
+// Multi-Cluster Fleet Dashboard
 // -------------------------------------------------------------
 async function renderClusterFleet(container) {
   container.innerHTML = `<div class="admin-empty-state">Loading cluster fleet status…</div>`;
@@ -5477,7 +5477,7 @@ async function switchClusterContext(contextName) {
 }
 
 // -------------------------------------------------------------
-// 6. Quick Launcher Command Palette (Cmd+K / Ctrl+K)
+// Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
   { title: "Container Image CVE Radar", category: "Lens Pro Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },

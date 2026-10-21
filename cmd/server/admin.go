@@ -159,7 +159,7 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/gitops/reconcile", s.reconcileGitOpsDrift)
 	mux.HandleFunc("GET /api/v1/admin/dr/radar", s.getDisasterRecoveryRadar)
 
-	// Lens Pro Parity (CVE Image Scanner, Helm Releases, CRD Explorer, RBAC can-i, Cluster Fleet)
+	// Enterprise Suite (CVE Image Scanner, Helm Releases, CRD Explorer, RBAC can-i, Cluster Fleet)
 	mux.HandleFunc("GET /api/v1/admin/security/image-vulnerabilities", s.getImageVulnerabilities)
 	mux.HandleFunc("GET /api/v1/admin/helm/releases", s.getHelmReleases)
 	mux.HandleFunc("GET /api/v1/admin/helm/releases/{namespace}/{name}/values", s.getHelmReleaseValues)

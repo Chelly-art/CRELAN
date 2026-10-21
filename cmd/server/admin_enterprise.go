@@ -24,7 +24,7 @@ import (
 )
 
 // ============================================================================
-// 1. Lens Pro Container Image Vulnerability Scanner (CVE Radar)
+// Enterprise Container Image Vulnerability Scanner (CVE Radar)
 // ============================================================================
 
 type cveVulnerability struct {
@@ -319,7 +319,7 @@ func scanImageForCVEs(image string, workloads []string) imageScanResult {
 }
 
 // ============================================================================
-// 2. Lens Pro Helm Release Lifecycle Manager
+// Enterprise Helm Release Lifecycle Manager
 // ============================================================================
 
 type helmReleaseInfo struct {
@@ -631,7 +631,7 @@ func (s *adminService) uninstallHelmRelease(w http.ResponseWriter, r *http.Reque
 }
 
 // ============================================================================
-// 3. Lens Pro Custom Resource Definitions (CRDs) & Custom Resources Browser
+// Enterprise Custom Resource Definitions (CRDs) & Custom Resources Browser
 // ============================================================================
 
 type crdSummary struct {
@@ -788,7 +788,7 @@ func (s *adminService) getCustomResourceInstances(w http.ResponseWriter, r *http
 }
 
 // ============================================================================
-// 4. Lens Pro Interactive RBAC Permission Inspector ("can-i")
+// Enterprise Interactive RBAC Permission Inspector ("can-i")
 // ============================================================================
 
 type canIRequest struct {
@@ -890,7 +890,7 @@ func evaluateLocalRBAC(ctx context.Context, client kubernetes.Interface, input c
 }
 
 // ============================================================================
-// 5. Lens Pro Multi-Cluster Fleet Manager
+// Enterprise Multi-Cluster Fleet Manager
 // ============================================================================
 
 type clusterFleetMember struct {

@@ -11,7 +11,6 @@
   </head>
   <body class="admin-body">
     <div class="admin-app">
-      <!-- 1. Left Cluster Rail -->
       <aside class="admin-rail" aria-label="Cluster Rail">
         <a class="admin-rail-brand" href="/dashboard" title="Crelan Platform">C</a>
         <div class="admin-cluster-badge" id="rail-cluster-badge" title="Kubernetes Cluster">
@@ -24,7 +23,6 @@
         </div>
       </aside>
 
-      <!-- 2. Secondary Sidebar Tree -->
       <nav class="admin-sidebar" aria-label="Cluster Navigation">
         <div class="admin-sidebar-header">
           <span class="admin-cluster-name" id="sidebar-cluster-name">-</span>
@@ -194,9 +192,9 @@
             </a>
           </div>
 
-          <!-- LENS PRO EXTENSIONS & SECURITY -->
+          <!-- ENTERPRISE EXTENSIONS & SECURITY -->
           <div class="admin-tree-group">
-            <div class="admin-tree-header" style="color: #6366f1;">Lens Pro Suite</div>
+            <div class="admin-tree-header" style="color: #6366f1;">Enterprise Suite</div>
             <a class="admin-tree-item" href="#image-vulnerabilities" data-view="image-vulnerabilities">
               <span>Image CVE Radar</span>
               <span class="admin-item-badge admin-badge-danger" id="badge-cve">CVE</span>
@@ -239,7 +237,6 @@
         </div>
       </nav>
 
-      <!-- 3. Main Work Area -->
       <main class="admin-main">
         <!-- Top Bar -->
         <header class="admin-topbar">
@@ -303,7 +300,6 @@
           <div class="admin-empty-state">Loading cluster resources…</div>
         </section>
 
-        <!-- 4. Slide-Over Resource Inspector Drawer -->
         <div class="admin-drawer-overlay" id="admin-drawer-overlay"></div>
         <aside class="admin-drawer" id="admin-inspector-drawer" aria-labelledby="drawer-title">
           <div class="admin-drawer-header">
@@ -329,7 +325,6 @@
           </div>
         </aside>
 
-        <!-- 5. In-Browser Interactive Pod Terminal Drawer -->
         <div class="admin-terminal-drawer" id="admin-terminal-drawer">
           <div class="admin-terminal-header">
             <div class="admin-terminal-title">
@@ -360,7 +355,6 @@
           </div>
         </div>
 
-        <!-- 6. Pod Logs Terminal Drawer -->
         <div class="admin-terminal-drawer" id="admin-logs-drawer" style="height: 440px;">
           <div class="admin-terminal-header">
             <div class="admin-terminal-title">
@@ -393,7 +387,6 @@
           </div>
         </div>
 
-        <!-- 7. AI Diagnostic Copilot Modal -->
         <div class="admin-modal-overlay" id="admin-ai-modal">
           <div class="admin-modal">
             <div class="admin-modal-header">
@@ -409,7 +402,6 @@
           </div>
         </div>
 
-        <!-- 8. Scale Deployment Dialog Modal -->
         <div class="admin-modal-overlay" id="admin-scale-modal">
           <div class="admin-modal" style="width: 420px;">
             <div class="admin-modal-header">
@@ -432,7 +424,6 @@
           </div>
         </div>
 
-        <!-- 9. Create Namespace Modal -->
         <div class="admin-modal-overlay" id="admin-create-ns-modal">
           <div class="admin-modal" style="width: 420px;">
             <div class="admin-modal-header">
@@ -453,7 +444,6 @@
           </div>
         </div>
 
-        <!-- 10. AI Right-Sizing Modal -->
         <div class="admin-modal-overlay" id="admin-rightsize-modal">
           <div class="admin-modal" style="width: 480px;">
             <div class="admin-modal-header">
@@ -491,7 +481,6 @@
           </div>
         </div>
 
-        <!-- 11. Quick AI Copilot Modal -->
         <div class="admin-modal-overlay" id="admin-copilot-modal">
           <div class="admin-modal" style="width: 620px;">
             <div class="admin-modal-header">
@@ -525,7 +514,6 @@
           </div>
         </div>
 
-        <!-- 12. AI Post-Mortem & Runbook Generator Modal -->
         <div class="admin-modal-overlay" id="admin-postmortem-modal">
           <div class="admin-modal" style="width: 800px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -565,7 +553,6 @@
           </div>
         </div>
 
-        <!-- 13. Deployment Revision History & 1-Click Rollback Modal with Visual Diff -->
         <div class="admin-modal-overlay" id="admin-rollback-modal">
           <div class="admin-modal" style="width: 860px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -600,7 +587,6 @@
           </div>
         </div>
 
-        <!-- 14. Node Drain & Maintenance Safety Simulator Modal -->
         <div class="admin-modal-overlay" id="admin-drain-modal">
           <div class="admin-modal" style="width: 820px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -623,7 +609,6 @@
           </div>
         </div>
 
-        <!-- 15. Incident Webhook Registration Modal -->
         <div class="admin-modal-overlay" id="admin-webhook-modal">
           <div class="admin-modal" style="width: 540px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -663,7 +648,6 @@
           </div>
         </div>
 
-        <!-- 16. Ephemeral Debug Container Injection Modal -->
         <div class="admin-modal-overlay" id="admin-debug-modal">
           <div class="admin-modal" style="width: 580px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -711,7 +695,6 @@
                 <button class="admin-btn admin-btn-primary" id="debug-modal-launch-btn" type="submit">Launch Debug Shell</button>
               </div>
             </form>
-        <!-- 17. Lens Pro Quick Launcher Command Palette (Cmd+K / Ctrl+K) -->
         <div class="admin-modal-overlay" id="admin-cmd-k-modal">
           <div class="admin-cmd-k-box">
             <div class="admin-cmd-k-header">
@@ -730,7 +713,6 @@
           </div>
         </div>
 
-        <!-- 18. Lens Pro Helm Values Inspector & Revision Rollback Modal -->
         <div class="admin-modal-overlay" id="admin-helm-modal">
           <div class="admin-modal" style="width: 820px; max-width: 95vw;">
             <div class="admin-modal-header">
@@ -757,7 +739,6 @@
           </div>
         </div>
 
-        <!-- 19. Lens Pro CVE Detail & Remediation Runbook Modal -->
         <div class="admin-modal-overlay" id="admin-cve-modal">
           <div class="admin-modal" style="width: 700px; max-width: 95vw;">
             <div class="admin-modal-header">

@@ -103,7 +103,7 @@ func TestEvaluateLocalRBAC(t *testing.T) {
 	}
 }
 
-func TestLensProEndpointsAuth(t *testing.T) {
+func TestEnterpriseEndpointsAuth(t *testing.T) {
 	auth := &authService{demoLoginEnabled: false}
 	admin := newAdminService(auth)
 
