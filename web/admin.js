@@ -4822,7 +4822,7 @@ async function renderHelmReleases(container) {
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Helm Releases &amp; Lifecycle Manager</h1>
-        <p class="admin-view-subtitle">Lens Pro-tier discovery of Helm v3 releases, values inspection (values.yaml), rollback, and uninstallation.</p>
+        <p class="admin-view-subtitle">Discovery of Helm v3 releases, values inspection (values.yaml), rollback, and uninstallation.</p>
       </div>
       <div style="display: flex; gap: 8px;">
         <button class="admin-btn" onclick="openCommandPalette('helm')">⌘K Search Helm</button>
@@ -5026,7 +5026,7 @@ async function renderCRDs(container) {
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Custom Resource Definitions (CRDs) &amp; Operator Browser</h1>
-        <p class="admin-view-subtitle">Lens Pro-tier CRD exploration, schema discovery, and real-time instance browsing for all installed Kubernetes operators.</p>
+        <p class="admin-view-subtitle">CRD exploration, schema discovery, and real-time instance browsing for all installed Kubernetes operators.</p>
       </div>
       <div style="display: flex; gap: 8px;">
         <button class="admin-btn" onclick="openCommandPalette('crd')">⌘K Search CRDs</button>
@@ -5238,7 +5238,7 @@ async function renderCanI(container) {
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Interactive RBAC Permission Inspector (can-i)</h1>
-        <p class="admin-view-subtitle">Lens Pro-tier visual &quot;Who Can Do What&quot; inspector. Evaluate Kubernetes RBAC authorizations across users, groups, and service accounts.</p>
+        <p class="admin-view-subtitle">Visual &quot;Who Can Do What&quot; inspector. Evaluate Kubernetes RBAC authorizations across users, groups, and service accounts.</p>
       </div>
       <div style="display: flex; gap: 8px;">
         <button class="admin-btn" onclick="openCommandPalette('can-i')">⌘K Quick Can-I</button>
@@ -5390,7 +5390,7 @@ async function renderClusterFleet(container) {
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Multi-Cluster Fleet Dashboard</h1>
-        <p class="admin-view-subtitle">Lens Pro-tier centralized multi-cluster fleet management with instant context switching and live health telemetry.</p>
+        <p class="admin-view-subtitle">Centralized multi-cluster fleet management with instant context switching and live health telemetry.</p>
       </div>
       <div style="display: flex; gap: 8px;">
         <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect New Cluster</a>
@@ -5480,11 +5480,11 @@ async function switchClusterContext(contextName) {
 // Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
-  { title: "Container Image CVE Radar", category: "Lens Pro Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
-  { title: "Helm Releases Manager", category: "Lens Pro Suite", hash: "helm-releases", icon: "⎈", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
-  { title: "Custom Resource Definitions (CRDs)", category: "Lens Pro Suite", hash: "crds", icon: "🧩", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
-  { title: "Interactive RBAC Tester (can-i)", category: "Lens Pro Suite", hash: "can-i", icon: "🔑", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
-  { title: "Multi-Cluster Fleet Dashboard", category: "Lens Pro Suite", hash: "cluster-fleet", icon: "🌐", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
+  { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
+  { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", icon: "⎈", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
+  { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", icon: "🧩", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
+  { title: "Interactive RBAC Tester (can-i)", category: "Enterprise Suite", hash: "can-i", icon: "🔑", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
+  { title: "Multi-Cluster Fleet Dashboard", category: "Enterprise Suite", hash: "cluster-fleet", icon: "🌐", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
   { title: "Cluster Overview", category: "Cluster", hash: "overview", icon: "📊", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
   { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", icon: "🖥️", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
   { title: "Pods & Containers", category: "Workloads", hash: "pods", icon: "📦", desc: "Explore running pods, container logs, exec terminal, and restarts" },
