@@ -700,11 +700,14 @@
                 <div id="postmortem-runbook-body"></div>
               </div>
             </div>
-            <div class="admin-modal-footer" style="display: flex; justify-content: space-between;">
+            <div class="admin-modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <span id="postmortem-modal-id" style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">INC-POSTMORTEM</span>
-              <div>
-                <button class="admin-btn" id="postmortem-modal-dismiss" type="button">Close</button>
-                <button class="admin-btn admin-btn-primary" id="postmortem-modal-copy-btn" type="button">1-Click Copy Markdown</button>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-md" type="button" title="Download GitHub-Flavored Markdown report">📥 .MD</button>
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-json" type="button" title="Download raw structured telemetry JSON">📥 .JSON</button>
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-html" type="button" title="Download standalone styled executive HTML / Print to PDF">📥 .HTML (PDF)</button>
+                <button class="admin-btn admin-btn-sm admin-btn-primary" id="postmortem-modal-copy-btn" type="button">1-Click Copy</button>
+                <button class="admin-btn admin-btn-sm" id="postmortem-modal-dismiss" type="button">Close</button>
               </div>
             </div>
           </div>

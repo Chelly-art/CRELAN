@@ -3294,6 +3294,9 @@ function setupEventListeners() {
   $("#postmortem-modal-dismiss")?.addEventListener("click", () => $("#admin-postmortem-modal").classList.remove("open"));
   $("#postmortem-modal-copy-btn")?.addEventListener("click", copyPostMortemMarkdown);
   $("#btn-copy-postmortem-markdown")?.addEventListener("click", copyPostMortemMarkdown);
+  $("#btn-download-postmortem-md")?.addEventListener("click", downloadPostMortemMD);
+  $("#btn-download-postmortem-json")?.addEventListener("click", downloadPostMortemJSON);
+  $("#btn-download-postmortem-html")?.addEventListener("click", downloadPostMortemHTML);
 
   $("#tab-btn-postmortem-preview")?.addEventListener("click", () => switchPostMortemTab("preview"));
   $("#tab-btn-postmortem-markdown")?.addEventListener("click", () => switchPostMortemTab("markdown"));
@@ -4051,6 +4054,7 @@ async function openPostMortem(namespace, podName) {
 
   try {
     const report = await request(`/api/v1/admin/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/post-mortem`);
+    state.activePostMortem = report;
 
     $("#postmortem-modal-title").textContent = report.title || "Incident Post-Mortem";
     $("#postmortem-modal-severity").textContent = report.severity || "CRITICAL";
@@ -4141,6 +4145,109 @@ function copyPostMortemMarkdown() {
       if (btn2) btn2.textContent = "1-Click Copy Markdown";
     }, 2000);
   });
+}
+
+function triggerFileDownload(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadPostMortemMD() {
+  const report = state.activePostMortem;
+  if (!report || !report.markdown_content) {
+    alert("Post-mortem report is not loaded yet.");
+    return;
+  }
+  const filename = `${report.incident_id || 'postmortem'}.md`;
+  triggerFileDownload(filename, report.markdown_content, "text/markdown;charset=utf-8");
+}
+
+function downloadPostMortemJSON() {
+  const report = state.activePostMortem;
+  if (!report) {
+    alert("Post-mortem report is not loaded yet.");
+    return;
+  }
+  const filename = `${report.incident_id || 'postmortem'}.json`;
+  triggerFileDownload(filename, JSON.stringify(report, null, 2), "application/json;charset=utf-8");
+}
+
+function downloadPostMortemHTML() {
+  const report = state.activePostMortem;
+  if (!report) {
+    alert("Post-mortem report is not loaded yet.");
+    return;
+  }
+  const filename = `${report.incident_id || 'postmortem'}.html`;
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHTML(report.title || 'Incident Post-Mortem')}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1e293b; background: #fff; margin: 40px auto; max-width: 900px; line-height: 1.6; padding: 0 20px; }
+    h1 { font-size: 24px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 20px; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 12px; text-transform: uppercase; background: #fee2e2; color: #991b1b; }
+    .meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+    .section { margin-bottom: 28px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 10px; border-left: 4px solid #2563eb; padding-left: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+    th { background: #f8fafc; font-weight: 600; }
+    pre { background: #f1f5f9; padding: 12px; border-radius: 6px; overflow-x: auto; font-family: monospace; font-size: 12px; }
+    .checklist-item { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    @media print { body { margin: 20px; max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <h1>${escapeHTML(report.title || 'Incident Post-Mortem')}</h1>
+    <span class="badge">${escapeHTML(report.severity || 'CRITICAL')}</span>
+  </div>
+  <div class="meta">
+    Incident ID: <strong>${escapeHTML(report.incident_id || '')}</strong> | Generated: <strong>${new Date().toUTCString()}</strong>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Executive Summary</div>
+    <p>${escapeHTML(report.executive_summary || '')}</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Timeline of Events</div>
+    <table>
+      <thead><tr><th>Time (UTC)</th><th>Source</th><th>Event</th></tr></thead>
+      <tbody>
+        ${(report.timeline || []).map(t => `<tr><td>${escapeHTML(t.timestamp)}</td><td>${escapeHTML(t.source)}</td><td>${escapeHTML(t.event)}</td></tr>`).join("")}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Technical Root Cause Analysis</div>
+    <p>${escapeHTML(report.root_cause_technical || '')}</p>
+    ${report.stack_trace ? `<pre>${escapeHTML(report.stack_trace)}</pre>` : ''}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Blast Radius & Multi-Tenant Impact</div>
+    <p>${escapeHTML(report.blast_radius || '')}</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Preventative Runbook & Action Items</div>
+    ${(report.preventative_runbook || []).map((item) => `<div class="checklist-item">[ ] ${escapeHTML(item)}</div>`).join("")}
+  </div>
+</body>
+</html>`;
+  triggerFileDownload(filename, htmlContent, "text/html;charset=utf-8");
 }
 
 // -------------------------------------------------------------
