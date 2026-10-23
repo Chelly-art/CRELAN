@@ -91,28 +91,28 @@ const DOMAIN_METADATA = {
   k8s: {
     id: "k8s",
     title: "Cluster Core",
-    icon: "K8S",
+    icon: "☸️",
     desc: "Workloads & Infrastructure",
     defaultView: "overview",
   },
   sre: {
     id: "sre",
     title: "SRE & Reliability",
-    icon: "SRE",
+    icon: "📈",
     desc: "SLOs, RED Signals & Chaos",
     defaultView: "sre-slos",
   },
   security: {
     id: "security",
     title: "Security & Compliance",
-    icon: "SEC",
+    icon: "🛡️",
     desc: "CVEs, CIS Hardening & RBAC",
     defaultView: "security",
   },
   ops: {
     id: "ops",
     title: "Platform Ops & Fleet",
-    icon: "OPS",
+    icon: "⚙️",
     desc: "Multi-Cluster, Helm & GitOps",
     defaultView: "cluster-fleet",
   },
@@ -7651,44 +7651,44 @@ async function renderSREScorecards(container) {
 // Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
-  { title: "Console Docs & Component Guide", category: "Documentation", hash: "docs", icon: "DOC", desc: "Interactive architecture breakdown and component guide across all 4 operational domains + Lens vs Crelan matrix" },
-  { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", icon: "SRE", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
-  { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", icon: "SRE", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
-  { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", icon: "SRE", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
-  { title: "Multi-AZ & PDB Resilience Auditor", category: "SRE & Reliability", hash: "sre-resilience", icon: "SRE", desc: "Audit cross-AZ zone spread topology, single points of failure, and PodDisruptionBudget gaps" },
-  { title: "Progressive Delivery & Canary Guard", category: "SRE & Reliability", hash: "sre-canary", icon: "SRE", desc: "Visualize canary vs baseline traffic splits, error differentials, and 1-click rollback" },
-  { title: "Guarded Chaos Engineering Prober", category: "SRE & Reliability", hash: "sre-chaos", icon: "SRE", desc: "Run controlled pod disruption & latency game days with strict 2-replica safety gates" },
-  { title: "Service Reliability & Incident Scorecards", category: "SRE & Reliability", hash: "sre-scorecards", icon: "SRE", desc: "A-F reliability grading, MTTD, MTTR, MTBF, and uptime stability indices" },
-  { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", icon: "SEC", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
-  { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", icon: "OPS", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
-  { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", icon: "OPS", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
-  { title: "Interactive RBAC Tester (can-i)", category: "Enterprise Suite", hash: "can-i", icon: "SEC", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
-  { title: "Multi-Cluster Fleet Dashboard", category: "Enterprise Suite", hash: "cluster-fleet", icon: "OPS", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
-  { title: "Cluster Overview", category: "Cluster", hash: "overview", icon: "K8S", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
-  { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", icon: "K8S", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
-  { title: "Pods & Containers", category: "Workloads", hash: "pods", icon: "K8S", desc: "Explore running pods, container logs, exec terminal, and restarts" },
-  { title: "Deployments", category: "Workloads", hash: "deployments", icon: "K8S", desc: "Manage deployments, rollout restarts, and replica scaling" },
-  { title: "StatefulSets", category: "Workloads", hash: "statefulsets", icon: "K8S", desc: "Stateful workloads, volume claim templates, and status" },
-  { title: "DaemonSets", category: "Workloads", hash: "daemonsets", icon: "K8S", desc: "Per-node daemon workloads and scheduled pods" },
-  { title: "Jobs & CronJobs", category: "Workloads", hash: "jobs", icon: "K8S", desc: "Batch jobs and scheduled cron schedules" },
-  { title: "Services & Endpoints", category: "Networking", hash: "services", icon: "K8S", desc: "ClusterIP, NodePort, and LoadBalancer routing" },
-  { title: "Ingress Controllers", category: "Networking", hash: "ingresses", icon: "K8S", desc: "HTTP/HTTPS routing rules, hosts, and TLS certificates" },
-  { title: "Network Policies", category: "Networking", hash: "networkpolicies", icon: "SEC", desc: "Ingress/egress isolation rules and pod selectors" },
-  { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", icon: "K8S", desc: "Cluster configuration maps and encoded secrets" },
-  { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", icon: "K8S", desc: "Storage claims, sizes, and bound PersistentVolumes" },
-  { title: "Persistent Volumes (PVs)", category: "Config & Storage", hash: "pvs", icon: "K8S", desc: "Cluster storage volumes, capacity, and reclaim policies" },
-  { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", icon: "K8S", desc: "Dynamic provisioners and volume expansion rules" },
-  { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", icon: "K8S", desc: "Namespace isolation, quotas, and customer tenant bindings" },
-  { title: "Cluster Warning Events", category: "Cluster", hash: "events", icon: "K8S", desc: "Real-time cluster warning event stream and reasons" },
-  { title: "AI Diagnostic Copilot", category: "Intelligence", hash: "copilot", icon: "AI", desc: "Cluster troubleshooting and natural language remediation engine" },
-  { title: "Incident War Room", category: "Intelligence", hash: "war-room", icon: "SRE", desc: "Live incident triage, root-cause diagnosis, and post-mortem runbooks" },
-  { title: "Right-Sizing & Cost Optimization", category: "Intelligence", hash: "rightsizing", icon: "OPS", desc: "Over-provisioned CPU/Memory detection and cost savings" },
-  { title: "Disaster Recovery Radar", category: "Intelligence", hash: "backup-radar", icon: "OPS", desc: "Unprotected PVC discovery, RPO tracking, and backup verification" },
-  { title: "GitOps Drift Detector", category: "Intelligence", hash: "gitops-drift", icon: "OPS", desc: "Detect out-of-sync cluster resources and manual kubectl overrides" },
-  { title: "Network Topology Visualizer", category: "Intelligence", hash: "topology", icon: "OPS", desc: "Interactive cross-namespace service traffic and ingress graph" },
-  { title: "Capsule Tenant Isolation Matrix", category: "Security", hash: "isolation-matrix", icon: "SEC", desc: "Multi-tenant namespace boundaries and cross-tenant leak checks" },
-  { title: "TLS Certificate Expiry Radar", category: "Security", hash: "certificates", icon: "SEC", desc: "Expiring TLS certificates and cert-manager issuers" },
-  { title: "Connect Kubernetes Cluster", category: "Cluster", hash: "cluster-connect", icon: "OPS", desc: "Upload kubeconfig to connect a new Kubernetes cluster" },
+  { title: "Console Docs & Component Guide", category: "Documentation", hash: "docs", pictogram: "book", desc: "Interactive architecture breakdown and component guide across all 4 operational domains + Lens vs Crelan matrix" },
+  { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", pictogram: "clock", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
+  { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", pictogram: "activity", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
+  { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", pictogram: "activity", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
+  { title: "Multi-AZ & PDB Resilience Auditor", category: "SRE & Reliability", hash: "sre-resilience", pictogram: "shield", desc: "Audit cross-AZ zone spread topology, single points of failure, and PodDisruptionBudget gaps" },
+  { title: "Progressive Delivery & Canary Guard", category: "SRE & Reliability", hash: "sre-canary", pictogram: "layers", desc: "Visualize canary vs baseline traffic splits, error differentials, and 1-click rollback" },
+  { title: "Guarded Chaos Engineering Prober", category: "SRE & Reliability", hash: "sre-chaos", pictogram: "flame", desc: "Run controlled pod disruption & latency game days with strict 2-replica safety gates" },
+  { title: "Service Reliability & Incident Scorecards", category: "SRE & Reliability", hash: "sre-scorecards", pictogram: "activity", desc: "A-F reliability grading, MTTD, MTTR, MTBF, and uptime stability indices" },
+  { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", pictogram: "shield", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
+  { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", pictogram: "cube", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
+  { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", pictogram: "layers", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
+  { title: "Interactive RBAC Tester (can-i)", category: "Enterprise Suite", hash: "can-i", pictogram: "key", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
+  { title: "Multi-Cluster Fleet Dashboard", category: "Enterprise Suite", hash: "cluster-fleet", pictogram: "layers", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
+  { title: "Cluster Overview", category: "Cluster", hash: "overview", pictogram: "activity", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
+  { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", pictogram: "server", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
+  { title: "Pods & Containers", category: "Workloads", hash: "pods", pictogram: "cube", desc: "Explore running pods, container logs, exec terminal, and restarts" },
+  { title: "Deployments", category: "Workloads", hash: "deployments", pictogram: "layers", desc: "Manage deployments, rollout restarts, and replica scaling" },
+  { title: "StatefulSets", category: "Workloads", hash: "statefulsets", pictogram: "database", desc: "Stateful workloads, volume claim templates, and status" },
+  { title: "DaemonSets", category: "Workloads", hash: "daemonsets", pictogram: "server", desc: "Per-node daemon workloads and scheduled pods" },
+  { title: "Jobs & CronJobs", category: "Workloads", hash: "jobs", pictogram: "clock", desc: "Batch jobs and scheduled cron schedules" },
+  { title: "Services & Endpoints", category: "Networking", hash: "services", pictogram: "network", desc: "ClusterIP, NodePort, and LoadBalancer routing" },
+  { title: "Ingress Controllers", category: "Networking", hash: "ingresses", pictogram: "network", desc: "HTTP/HTTPS routing rules, hosts, and TLS certificates" },
+  { title: "Network Policies", category: "Networking", hash: "networkpolicies", pictogram: "shield", desc: "Ingress/egress isolation rules and pod selectors" },
+  { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", pictogram: "key", desc: "Cluster configuration maps and encoded secrets" },
+  { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", pictogram: "database", desc: "Storage claims, sizes, and bound PersistentVolumes" },
+  { title: "Persistent Volumes (PVs)", category: "Config & Storage", hash: "pvs", pictogram: "database", desc: "Cluster storage volumes, capacity, and reclaim policies" },
+  { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", pictogram: "database", desc: "Dynamic provisioners and volume expansion rules" },
+  { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", pictogram: "cube", desc: "Namespace isolation, quotas, and customer tenant bindings" },
+  { title: "Cluster Warning Events", category: "Cluster", hash: "events", pictogram: "activity", desc: "Real-time cluster warning event stream and reasons" },
+  { title: "AI Diagnostic Copilot", category: "Intelligence", hash: "copilot", pictogram: "sparkles", desc: "Cluster troubleshooting and natural language remediation engine" },
+  { title: "Incident War Room", category: "Intelligence", hash: "war-room", pictogram: "flame", desc: "Live incident triage, root-cause diagnosis, and post-mortem runbooks" },
+  { title: "Right-Sizing & Cost Optimization", category: "Intelligence", hash: "rightsizing", pictogram: "activity", desc: "Over-provisioned CPU/Memory detection and cost savings" },
+  { title: "Disaster Recovery Radar", category: "Intelligence", hash: "backup-radar", pictogram: "database", desc: "Unprotected PVC discovery, RPO tracking, and backup verification" },
+  { title: "GitOps Drift Detector", category: "Intelligence", hash: "gitops-drift", pictogram: "git-branch", desc: "Detect out-of-sync cluster resources and manual kubectl overrides" },
+  { title: "Network Topology Visualizer", category: "Intelligence", hash: "topology", pictogram: "network", desc: "Interactive cross-namespace service traffic and ingress graph" },
+  { title: "Capsule Tenant Isolation Matrix", category: "Security", hash: "isolation-matrix", pictogram: "shield", desc: "Multi-tenant namespace boundaries and cross-tenant leak checks" },
+  { title: "TLS Certificate Expiry Radar", category: "Security", hash: "certificates", pictogram: "shield", desc: "Expiring TLS certificates and cert-manager issuers" },
+  { title: "Connect Kubernetes Cluster", category: "Cluster", hash: "cluster-connect", pictogram: "network", desc: "Upload kubeconfig to connect a new Kubernetes cluster" },
 ];
 
 let selectedCommandPaletteIndex = 0;
@@ -7741,7 +7741,7 @@ function renderCommandPaletteResults() {
 
   container.innerHTML = currentPaletteResults.map((item, idx) => `
     <div class="admin-cmd-k-item ${idx === selectedCommandPaletteIndex ? "selected" : ""}" data-index="${idx}" onclick="executePaletteItem(${idx})">
-      <span class="admin-cmd-k-item-icon" style="font-size: 10px; font-weight: 700; font-family: var(--admin-mono); color: var(--admin-text-muted); background: var(--admin-surface-hover); padding: 2px 5px; border-radius: 4px;">${escapeHTML(item.icon)}</span>
+      <span class="admin-cmd-k-item-icon" style="color: var(--admin-accent); display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; background: var(--admin-surface-hover);">${getSvgIcon(item.pictogram || "cube", 15)}</span>
       <div class="admin-cmd-k-item-details">
         <div class="admin-cmd-k-item-title">${escapeHTML(item.title)}</div>
         <div class="admin-cmd-k-item-desc">${escapeHTML(item.desc)}</div>
@@ -7798,6 +7798,60 @@ function scrollPaletteSelectionIntoView() {
   }
 }
 
+
+// -------------------------------------------------------------
+// Scalable SVG Pictograms & Icon System
+// -------------------------------------------------------------
+function getSvgIcon(name, size = 16) {
+  switch (name) {
+    case "search":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`;
+    case "check":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    case "chevron-down":
+      return `<svg class="admin-accordion-arrow" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+    case "cube":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>`;
+    case "activity":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>`;
+    case "shield":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
+    case "server":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>`;
+    case "database":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>`;
+    case "network":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>`;
+    case "git-branch":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>`;
+    case "sparkles":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.912 5.885a2 2 0 0 0 1.203 1.203L21 12l-5.885 1.912a2 2 0 0 0-1.203 1.203L12 21l-1.912-5.885a2 2 0 0 0-1.203-1.203L3 12l5.885-1.912a2 2 0 0 0 1.203-1.203L12 3z"></path></svg>`;
+    case "flame":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>`;
+    case "clock":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
+    case "key":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>`;
+    case "layers":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>`;
+    case "book":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+    case "terminal":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>`;
+    default:
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>`;
+  }
+}
+
+function toggleAllDocsAccordions() {
+  const accordions = document.querySelectorAll(".admin-docs-accordion");
+  if (!accordions.length) return;
+  const anyClosed = Array.from(accordions).some(a => !a.open);
+  accordions.forEach(a => a.open = anyClosed);
+  const btn = document.getElementById("docs-toggle-accordions-btn");
+  if (btn) btn.textContent = anyClosed ? "Collapse All" : "Expand All";
+}
+
 // -------------------------------------------------------------
 // Admin Documentation & Component Architecture Guide
 // -------------------------------------------------------------
@@ -7808,7 +7862,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Cluster Overview & Telemetry",
-    route: "overview",
+    pictogram: "activity", route: "overview",
     badge: "Core",
     desc: "Real-time cluster telemetry dashboard providing CPU, Memory, and Pod capacity utilization gauges alongside workload counts, warning event counters, and node health status.",
     features: [
@@ -7822,7 +7876,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Nodes & Node Health Inspector",
-    route: "nodes",
+    pictogram: "server", route: "nodes",
     badge: "Infra",
     desc: "Deep-dive node management inspecting node ready states, kubelet versions, internal/external IPs, OS images, kernel versions, and node conditions.",
     features: [
@@ -7836,7 +7890,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Pods & Container Diagnostics",
-    route: "pods",
+    pictogram: "cube", route: "pods",
     badge: "Core",
     desc: "Workload container orchestrator view with live status filters (Running, Pending, Failed, CrashLoopBackOff), pod restart tracking, terminal exec, and log streaming.",
     features: [
@@ -7850,7 +7904,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Deployments & Workload Rollouts",
-    route: "deployments",
+    pictogram: "layers", route: "deployments",
     badge: "Core",
     desc: "Deployment lifecycle controller enabling instant replica scaling, zero-downtime rolling restart triggers, container image inspections, and YAML editing.",
     features: [
@@ -7864,7 +7918,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "StatefulSets",
-    route: "statefulsets",
+    pictogram: "database", route: "statefulsets",
     badge: "Storage",
     desc: "Manages stateful applications requiring persistent identifiers, ordered deployment and scaling, and stable network identities.",
     features: [
@@ -7878,7 +7932,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "DaemonSets",
-    route: "daemonsets",
+    pictogram: "server", route: "daemonsets",
     badge: "Infra",
     desc: "Tracks node-level daemon workloads such as logging agents, CNI networking plugins, and monitoring probers scheduled across all eligible nodes.",
     features: [
@@ -7892,7 +7946,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Jobs & CronJobs",
-    route: "jobs",
+    pictogram: "clock", route: "jobs",
     badge: "Batch",
     desc: "Batch execution prober monitoring one-off batch Jobs and recurring CronJobs with schedule syntax, completion status, and last run timestamps.",
     features: [
@@ -7906,7 +7960,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Services & Networking Endpoints",
-    route: "services",
+    pictogram: "network", route: "services",
     badge: "Network",
     desc: "Service routing layer displaying ClusterIP, NodePort, LoadBalancer, and ExternalName services, port mappings, and backing endpoint slices.",
     features: [
@@ -7920,7 +7974,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Ingress Controllers & HTTP Routes",
-    route: "ingresses",
+    pictogram: "network", route: "ingresses",
     badge: "Network",
     desc: "L7 HTTP/HTTPS reverse proxy inspector monitoring Ingress rules, TLS secret bindings, host routing, and ingress controller class assignments.",
     features: [
@@ -7934,7 +7988,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Network Policies & Isolation Rules",
-    route: "networkpolicies",
+    pictogram: "shield", route: "networkpolicies",
     badge: "Security",
     desc: "Zero-trust firewall policies defining Ingress and Egress traffic filtering rules between pods, namespaces, and external CIDR blocks.",
     features: [
@@ -7948,7 +8002,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "ConfigMaps & Secrets",
-    route: "configmaps",
+    pictogram: "key", route: "configmaps",
     badge: "Config",
     desc: "Environment configuration and credential vault managing application configs, TLS keys, tokens, and environment variables.",
     features: [
@@ -7962,7 +8016,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "PersistentVolumeClaims (PVCs)",
-    route: "pvcs",
+    pictogram: "database", route: "pvcs",
     badge: "Storage",
     desc: "Storage claim manager auditing requested volume sizes, access modes (RWO/RWX), binding status, and attached StorageClasses.",
     features: [
@@ -7976,7 +8030,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Persistent Volumes (PVs)",
-    route: "pvs",
+    pictogram: "database", route: "pvs",
     badge: "Storage",
     desc: "Cluster storage provisioner managing underlying physical storage volumes, reclaim policies (Retain, Delete), and CSI driver bindings.",
     features: [
@@ -7990,7 +8044,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "StorageClasses",
-    route: "storageclasses",
+    pictogram: "database", route: "storageclasses",
     badge: "Storage",
     desc: "Defines dynamic storage provisioner rules, allowVolumeExpansion flags, reclaim policies, and volume binding modes (Immediate vs WaitForFirstConsumer).",
     features: [
@@ -8004,7 +8058,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Namespaces & Tenant Projects",
-    route: "namespaces",
+    pictogram: "cube", route: "namespaces",
     badge: "Multi-Tenant",
     desc: "Logical cluster partitions providing workload isolation, ResourceQuota enforcement, and customer project tenancy mapping.",
     features: [
@@ -8018,7 +8072,7 @@ const ADMIN_COMPONENTS = [
     domain: "k8s",
     domainLabel: "Cluster Core",
     title: "Cluster Events & Warning Stream",
-    route: "events",
+    pictogram: "activity", route: "events",
     badge: "Telemetry",
     desc: "Streaming cluster event bus capturing Warnings, Errors, BackOffs, and Normal scheduling events emitted by Kubernetes controllers.",
     features: [
@@ -8048,7 +8102,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "SLO & Error Budget Burn Radar",
-    route: "sre-slos",
+    pictogram: "clock", route: "sre-slos",
     badge: "Crelan Exclusive",
     desc: "Google SRE-standard Service Level Objective radar tracking 99.9% / 99.5% availability targets, multi-window error budget burn rates (1h, 6h, 24h, 30d), and automated deployment freeze gates.",
     features: [
@@ -8062,7 +8116,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "The 4 Golden Signals & RED Engine",
-    route: "sre-golden-signals",
+    pictogram: "activity", route: "sre-golden-signals",
     badge: "Crelan Exclusive",
     desc: "Real-time service telemetry engine monitoring Rate (req/sec), Errors (5xx rate), Duration (P50, P90, P99 latency percentiles), and Saturation across all cluster microservices.",
     features: [
@@ -8076,7 +8130,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Health Probe Doctor & Anti-Patterns",
-    route: "sre-probes",
+    pictogram: "activity", route: "sre-probes",
     badge: "Crelan Exclusive",
     desc: "Automated reliability auditor scanning every container for missing Liveness, Readiness, or Startup probes, misaligned timeouts, and cascading failure anti-patterns.",
     features: [
@@ -8090,7 +8144,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Multi-AZ & PDB Resilience Auditor",
-    route: "sre-resilience",
+    pictogram: "shield", route: "sre-resilience",
     badge: "Crelan Exclusive",
     desc: "High-availability auditor inspecting cross-availability-zone topology spreads (topologySpreadConstraints), Single Points of Failure (SPOF), and missing PodDisruptionBudgets (PDB).",
     features: [
@@ -8104,7 +8158,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Progressive Delivery & Canary Guard",
-    route: "sre-canary",
+    pictogram: "layers", route: "sre-canary",
     badge: "Crelan Exclusive",
     desc: "Canary rollout controller providing real-time traffic splitting visualizers (e.g. 10% canary / 90% baseline), error differential comparison, and a 1-click panic rollback button.",
     features: [
@@ -8118,7 +8172,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Guarded Chaos Engineering Prober",
-    route: "sre-chaos",
+    pictogram: "flame", route: "sre-chaos",
     badge: "Crelan Exclusive",
     desc: "Safety-gated chaos engineering platform allowing engineers to inject pod disruptions, network latency, and memory spikes with an uncompromised 2-replica safety guardrail.",
     features: [
@@ -8132,7 +8186,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Service Reliability & Incident Scorecards",
-    route: "sre-scorecards",
+    pictogram: "activity", route: "sre-scorecards",
     badge: "Crelan Exclusive",
     desc: "Objective reliability report card grading every service from A+ to F based on probe coverage, multi-AZ deployment, PDB protection, restart counts, and MTTD/MTTR metrics.",
     features: [
@@ -8146,7 +8200,7 @@ const ADMIN_COMPONENTS = [
     domain: "sre",
     domainLabel: "SRE & Reliability",
     title: "Incident War Room & Post-Mortem Generator",
-    route: "war-room",
+    pictogram: "flame", route: "war-room",
     badge: "Crelan Exclusive",
     desc: "Live incident response triage room synthesizing real-time error logs, affected microservices, and AI root cause diagnosis with an automated 1-click Markdown Post-Mortem Generator.",
     features: [
@@ -8204,7 +8258,7 @@ const ADMIN_COMPONENTS = [
     domain: "security",
     domainLabel: "Security & Compliance",
     title: "Container Image CVE Vulnerability Radar",
-    route: "image-vulnerabilities",
+    pictogram: "shield", route: "image-vulnerabilities",
     badge: "Enterprise",
     desc: "Continuous image vulnerability scanner auditing all running images against known CVE databases with CVSS scoring, affected packages, and fixed version guidance.",
     features: [
@@ -8232,7 +8286,7 @@ const ADMIN_COMPONENTS = [
     domain: "security",
     domainLabel: "Security & Compliance",
     title: "Interactive RBAC Tester (can-i)",
-    route: "can-i",
+    pictogram: "key", route: "can-i",
     badge: "Enterprise",
     desc: "Interactive permission evaluator allowing administrators to query whether a specific user, group, or service account is authorized to perform any Kubernetes API verb on any resource.",
     features: [
@@ -8246,7 +8300,7 @@ const ADMIN_COMPONENTS = [
     domain: "security",
     domainLabel: "Security & Compliance",
     title: "Capsule Multi-Tenant Isolation Matrix",
-    route: "isolation-matrix",
+    pictogram: "shield", route: "isolation-matrix",
     badge: "Enterprise",
     desc: "Enterprise multi-tenancy matrix built for Capsule and native Kubernetes, tracking tenant boundaries, project quotas, network isolation, and cross-tenant leakage.",
     features: [
@@ -8274,7 +8328,7 @@ const ADMIN_COMPONENTS = [
     domain: "security",
     domainLabel: "Security & Compliance",
     title: "TLS Certificate Expiration Radar",
-    route: "certificates",
+    pictogram: "shield", route: "certificates",
     badge: "Security",
     desc: "Proactive TLS certificate auditor monitoring all Ingress and Secret TLS certificates, cert-manager Issuers, and ClusterIssuers before expiration causes outages.",
     features: [
@@ -8304,7 +8358,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Multi-Cluster Switcher & Fleet Dashboard",
-    route: "cluster-fleet",
+    pictogram: "layers", route: "cluster-fleet",
     badge: "Fleet",
     desc: "ClickUp-style multi-cluster fleet management allowing platform teams to switch between multiple production, staging, and edge Kubernetes clusters instantly.",
     features: [
@@ -8318,7 +8372,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Helm Releases Manager",
-    route: "helm-releases",
+    pictogram: "cube", route: "helm-releases",
     badge: "Enterprise",
     desc: "Complete Helm v3 release lifecycle manager discovering installed charts, inspecting computed values.yaml, executing 1-click rollbacks, and uninstalling releases.",
     features: [
@@ -8332,7 +8386,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "CRD & Operator Browser",
-    route: "crds",
+    pictogram: "layers", route: "crds",
     badge: "Enterprise",
     desc: "Explorer for all installed Custom Resource Definitions (CRDs) and operator instances under apiextensions.k8s.io/v1.",
     features: [
@@ -8346,7 +8400,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "AI K8s Diagnostic Copilot",
-    route: "copilot",
+    pictogram: "sparkles", route: "copilot",
     badge: "AI Native",
     desc: "Integrated Google Gemini-powered diagnostic assistant providing intelligent root-cause analysis, natural-language cluster querying, and instant remediation commands.",
     features: [
@@ -8360,7 +8414,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Cost & Right-Sizing Advisor",
-    route: "rightsizing",
+    pictogram: "activity", route: "rightsizing",
     badge: "FinOps",
     desc: "FinOps cost intelligence engine identifying over-provisioned CPU and memory requests, calculating monthly dollar waste, and recommending optimized container limits.",
     features: [
@@ -8416,7 +8470,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Traffic & Ingress Network Topology",
-    route: "topology",
+    pictogram: "network", route: "topology",
     badge: "Network",
     desc: "Interactive visual topological graph mapping external HTTP traffic from Ingresses through Services down to backing Pods across all namespaces.",
     features: [
@@ -8444,7 +8498,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "GitOps Drift Radar",
-    route: "gitops-drift",
+    pictogram: "git-branch", route: "gitops-drift",
     badge: "GitOps",
     desc: "Detects unauthorized out-of-band changes, manual kubectl edit modifications, and configuration drift between cluster state and GitOps repository source of truth.",
     features: [
@@ -8458,7 +8512,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Disaster Recovery & Backup Radar",
-    route: "backup-radar",
+    pictogram: "database", route: "backup-radar",
     badge: "Resilience",
     desc: "Disaster recovery prober identifying unprotected PersistentVolumeClaims, calculating Recovery Point Objectives (RPO), and verifying backup schedules.",
     features: [
@@ -8472,7 +8526,7 @@ const ADMIN_COMPONENTS = [
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
     title: "Cluster Connect & Onboarding",
-    route: "cluster-connect",
+    pictogram: "network", route: "cluster-connect",
     badge: "Admin",
     desc: "Seamless onboarding wizard to connect any Kubernetes cluster via kubeconfig YAML, base64 environment variable, or in-cluster service account.",
     features: [
@@ -8704,27 +8758,32 @@ async function renderDocs(container) {
         All Components <span style="font-size:10px; opacity:0.8; margin-left:3px;">(52)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'k8s' ? 'active' : ''}" data-tab="k8s" type="button">
-        Cluster Core <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+        ☸️ Cluster Core <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'sre' ? 'active' : ''}" data-tab="sre" type="button">
-        SRE &amp; Reliability <span style="font-size:10px; opacity:0.8; margin-left:3px;">(10)</span>
+        📈 SRE &amp; Reliability <span style="font-size:10px; opacity:0.8; margin-left:3px;">(10)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'security' ? 'active' : ''}" data-tab="security" type="button">
-        Security &amp; Compliance <span style="font-size:10px; opacity:0.8; margin-left:3px;">(8)</span>
+        🛡️ Security &amp; Compliance <span style="font-size:10px; opacity:0.8; margin-left:3px;">(8)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'ops' ? 'active' : ''}" data-tab="ops" type="button">
-        Platform Ops &amp; Fleet <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+        ⚙️ Platform Ops &amp; Fleet <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'lens-matrix' ? 'active' : ''}" data-tab="lens-matrix" type="button" style="border-left:2px solid var(--admin-accent);">
         Lens vs Crelan Matrix <span style="font-size:10px; background:var(--admin-accent); color:#fff; padding:1px 5px; border-radius:10px; margin-left:3px;">16</span>
       </button>
     </div>
 
-    <!-- Search Bar -->
-    <div class="admin-docs-search-bar">
-      
-      <input class="admin-docs-search-input" id="docs-search-input" type="search" placeholder="Search components by name, domain, capability, or keyword... (e.g. SLO, Chaos, Post-Mortem, CVE, PVC, Drift)" value="${escapeHTML(docsSearchQuery)}" autocomplete="off">
-      <span id="docs-count-badge" style="font-size:11px; color:var(--admin-text-muted); font-weight:600; font-family:var(--admin-mono);"></span>
+    <!-- Search & Accordion Controls -->
+    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;">
+      <div class="admin-docs-search-bar" style="flex: 1; margin-bottom: 0;">
+        <span class="admin-svg-icon" style="color: var(--admin-text-muted);">${getSvgIcon("search", 15)}</span>
+        <input class="admin-docs-search-input" id="docs-search-input" type="search" placeholder="Search components by name, domain, capability, or keyword... (e.g. SLO, Chaos, Post-Mortem, CVE, PVC, Drift)" value="${escapeHTML(docsSearchQuery)}" autocomplete="off">
+        <span id="docs-count-badge" style="font-size:11px; color:var(--admin-text-muted); font-weight:600; font-family:var(--admin-mono);"></span>
+      </div>
+      <button class="admin-btn admin-btn-sm" type="button" id="docs-toggle-accordions-btn" onclick="toggleAllDocsAccordions()" style="white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;">
+        ${getSvgIcon("layers", 13)} Expand All
+      </button>
     </div>
 
     <!-- Dynamic Container -->
@@ -8902,6 +8961,9 @@ function updateDocsContent() {
           <div class="admin-docs-card">
             <div class="admin-docs-card-header">
               <div class="admin-docs-card-title">
+                <div class="admin-docs-card-pictogram">
+                  ${getSvgIcon(comp.pictogram || "cube", 18)}
+                </div>
                 <div>
                   <h3 style="font-size:14.5px; margin:0 0 2px;">${escapeHTML(comp.title)}</h3>
                   <span style="font-size:11px; color:var(--admin-text-muted); font-weight:600;">${escapeHTML(comp.domainLabel)}</span>
@@ -8912,10 +8974,23 @@ function updateDocsContent() {
 
             <p class="admin-docs-text">${escapeHTML(comp.desc)}</p>
 
-            <div class="admin-docs-section-title">Key Capabilities</div>
-            <ul class="admin-docs-metrics-list">
-              ${comp.features.map((f) => `<li>${escapeHTML(f)}</li>`).join("")}
-            </ul>
+            <details class="admin-docs-accordion" id="docs-accordion-${comp.route}">
+              <summary class="admin-docs-summary">
+                <span class="admin-docs-summary-title">
+                  ${getSvgIcon("layers", 13)}
+                  Key Capabilities (${comp.features.length})
+                </span>
+                ${getSvgIcon("chevron-down", 14)}
+              </summary>
+              <div class="admin-docs-accordion-body">
+                ${comp.features.map(f => `
+                  <div class="admin-docs-capability-item">
+                    <span class="admin-docs-capability-icon">${getSvgIcon("check", 13)}</span>
+                    <span>${escapeHTML(f)}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </details>
 
             <div class="admin-docs-card-footer">
               <span class="admin-docs-pill" style="color:var(--admin-text-muted);">#${escapeHTML(comp.route)}</span>

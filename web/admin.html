@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f7fa">
     <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
-    <link rel="stylesheet" href="/assets/admin.css?v=3.5.0">
-    <script src="/assets/admin.js?v=3.5.0" defer></script>
+    <link rel="stylesheet" href="/assets/admin.css?v=3.6.0">
+    <script src="/assets/admin.js?v=3.6.0" defer></script>
     <style>
       /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
       button.admin-rail-domain-btn,
@@ -101,19 +101,19 @@
         <!-- 4 Primary Operational Domain Switchers -->
         <div class="admin-rail-domains">
           <button class="admin-rail-domain-btn active" id="rail-domain-k8s" data-domain="k8s" type="button" title="Cluster Core (Workloads, Pods, Network, Storage)">
-            <span class="admin-rail-domain-icon">K8S</span>
+            <span class="admin-rail-domain-icon">☸️</span>
             <span class="admin-rail-domain-label">Core</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-sre" data-domain="sre" type="button" title="SRE & Reliability (SLOs, RED Signals, Chaos, War Room)">
-            <span class="admin-rail-domain-icon">SRE</span>
+            <span class="admin-rail-domain-icon">📈</span>
             <span class="admin-rail-domain-label">SRE</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-security" data-domain="security" type="button" title="Security & Compliance (CVEs, CIS, RBAC, Isolation)">
-            <span class="admin-rail-domain-icon">SEC</span>
+            <span class="admin-rail-domain-icon">🛡️</span>
             <span class="admin-rail-domain-label">Security</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-ops" data-domain="ops" type="button" title="Platform Ops & Fleet (Multi-Cluster, Helm, CRDs, Drift)">
-            <span class="admin-rail-domain-icon">OPS</span>
+            <span class="admin-rail-domain-icon">⚙️</span>
             <span class="admin-rail-domain-label">Fleet</span>
           </button>
         </div>
@@ -135,7 +135,7 @@
             <span class="admin-cluster-tag" id="sidebar-cluster-tag">Disconnected</span>
           </div>
           <div class="admin-sidebar-domain-badge" id="sidebar-domain-badge">
-            <span id="sidebar-domain-icon">K8S</span>
+            <span id="sidebar-domain-icon">☸️</span>
             <div style="display: flex; flex-direction: column; overflow: hidden;">
               <strong id="sidebar-domain-title">Cluster Core</strong>
               <span class="admin-sidebar-domain-desc" id="sidebar-domain-desc">Workloads & Infrastructure</span>
