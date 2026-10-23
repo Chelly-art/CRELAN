@@ -7,7 +7,7 @@
     <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
     <link rel="stylesheet" href="/assets/admin.css?v=3.0.0">
-    <script src="/assets/admin.js?v=3.0.0" defer></script>
+    <script src="/assets/admin.js?v=3.1.0" defer></script>
     <style>
       /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
       button.admin-rail-domain-btn,
@@ -90,7 +90,6 @@
         <div class="admin-rail-cluster-section">
           <div class="admin-rail-clusters" id="rail-cluster-list">
             <!-- Dynamically populated cluster avatars with individual background colors -->
-            <div class="admin-cluster-avatar active" style="background-color: #3b82f6;" title="Default Cluster">K8</div>
           </div>
           <button class="admin-cluster-add-btn" id="rail-add-cluster-btn" type="button" title="Connect New Cluster (Fleet)">
             <span>+</span>
@@ -434,9 +433,9 @@
 
             <!-- Auto-Refresh -->
             <select class="admin-auto-refresh-select" id="admin-auto-refresh-select" aria-label="Auto-refresh frequency">
-              <option value="0">Refresh: Manual</option>
+              <option value="0" selected>Refresh: Manual</option>
               <option value="5000">Every 5s</option>
-              <option value="10000" selected>Every 10s</option>
+              <option value="10000">Every 10s</option>
               <option value="30000">Every 30s</option>
             </select>
 
@@ -516,7 +515,7 @@
           <div class="admin-terminal-header">
             <div class="admin-terminal-title">
               <span>Container Logs:</span>
-              <strong id="logs-pod-name">pod-name</strong>
+              <strong id="logs-pod-name">-</strong>
             </div>
             <div class="admin-terminal-controls">
               <select class="admin-auto-refresh-select" id="logs-container-select"></select>
@@ -567,7 +566,7 @@
             </div>
             <form id="scale-modal-form">
               <div class="admin-modal-body">
-                <p>Set the desired number of replicas for <strong id="scale-dep-name">app</strong>:</p>
+                <p>Set the desired number of replicas for <strong id="scale-dep-name">-</strong>:</p>
                 <div style="display: flex; align-items: center; gap: 12px; margin: 16px 0;">
                   <input type="range" id="scale-range" min="0" max="15" value="1" style="flex: 1;">
                   <input class="text-input" id="scale-input" type="number" min="0" max="100" value="1" style="width: 70px; text-align: center;">
@@ -609,7 +608,7 @@
             </div>
             <form id="rightsize-modal-form">
               <div class="admin-modal-body">
-                <p>Fine-tune CPU and memory requests/limits for <strong id="rightsize-dep-name">app</strong> (<span id="rightsize-dep-ns">default</span>):</p>
+                <p>Fine-tune CPU and memory requests/limits for <strong id="rightsize-dep-name">-</strong> (<span id="rightsize-dep-ns">-</span>):</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
                   <div>
                     <label class="form-label" for="rightsize-cpu-req">CPU Request</label>
@@ -701,7 +700,7 @@
               </div>
             </div>
             <div class="admin-modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-              <span id="postmortem-modal-id" style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">INC-POSTMORTEM</span>
+              <span id="postmortem-modal-id" style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">-</span>
               <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                 <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-md" type="button" title="Download GitHub-Flavored Markdown report">📥 .MD</button>
                 <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-json" type="button" title="Download raw structured telemetry JSON">📥 .JSON</button>
@@ -973,7 +972,7 @@
                   </div>
                   <div>
                     <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Alert Pager / Webhook Channel</label>
-                    <input class="admin-form-input" id="slo-channel-input" type="text" placeholder="#sre-oncall, pagerduty" value="#sre-oncall" style="width: 100%;">
+                    <input class="admin-form-input" id="slo-channel-input" type="text" placeholder="#sre-oncall, pagerduty" style="width: 100%;">
                   </div>
                 </div>
               </div>
@@ -1052,10 +1051,10 @@
       <div class="admin-modal-card" style="max-width: 480px;">
         <div class="admin-modal-header">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <div class="cluster-preview-avatar" id="modal-cluster-preview">K8</div>
+            <div class="cluster-preview-avatar" id="modal-cluster-preview">--</div>
             <div>
               <h3 style="margin: 0; font-size: 16px; font-weight: 700;">Cluster Appearance</h3>
-              <p style="margin: 0; font-size: 12px; color: var(--admin-text-muted);" id="modal-cluster-context-name">context-name</p>
+              <p style="margin: 0; font-size: 12px; color: var(--admin-text-muted);" id="modal-cluster-context-name">-</p>
             </div>
           </div>
           <button class="admin-modal-close" id="modal-cluster-close-btn" type="button" aria-label="Close">&times;</button>

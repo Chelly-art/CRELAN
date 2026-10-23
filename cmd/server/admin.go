@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -177,6 +178,7 @@ func (s *adminService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/security/can-i", s.checkCanI)
 	mux.HandleFunc("GET /api/v1/admin/clusters/fleet", s.getClusterFleet)
 	mux.HandleFunc("POST /api/v1/admin/clusters/switch-context", s.switchClusterContext)
+	mux.HandleFunc("POST /api/v1/admin/clusters/disconnect", s.disconnectCluster)
 	mux.HandleFunc("GET /api/v1/admin/clusters/customizations", s.getClusterCustomizations)
 	mux.HandleFunc("POST /api/v1/admin/clusters/customizations", s.saveClusterCustomization)
 
@@ -235,7 +237,13 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		userName := "crelan-sa-user"
 		contextName := strings.TrimSpace(input.Context)
 		if contextName == "" {
-			contextName = "serviceaccount-cluster"
+			parsedURL, err := url.Parse(serverURL)
+			if err == nil && parsedURL.Host != "" {
+				hostClean := strings.ReplaceAll(strings.ReplaceAll(parsedURL.Host, ":", "-"), ".", "-")
+				contextName = "cluster-" + hostClean
+			} else {
+				contextName = fmt.Sprintf("sa-cluster-%d", time.Now().Unix())
+			}
 		}
 
 		clientCfg := clientcmdapi.NewConfig()
@@ -370,11 +378,46 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.deployments.setCluster(provisioner, contextName)
+	s.provisioner = provisioner
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "connect", "Cluster", "", contextName, "Connected cluster context: "+contextName)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"context":         contextName,
 		"status":          "connected",
 		"persisted":       persisted,
 		"persist_warning": persistWarning,
+	})
+}
+
+func (s *adminService) disconnectCluster(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	if !s.auth.sameOrigin(r) {
+		writeError(w, http.StatusForbidden, "Request origin is not allowed")
+		return
+	}
+	var input struct {
+		Context string `json:"context"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || strings.TrimSpace(input.Context) == "" {
+		writeError(w, http.StatusBadRequest, "Cluster context name is required")
+		return
+	}
+	contextName := strings.TrimSpace(input.Context)
+	if s.auth.db != nil {
+		_ = deleteKubeconfigCredential(s.auth.db, contextName)
+	}
+	if s.deployments != nil {
+		s.deployments.removeClusterProvider(contextName)
+	}
+	s.provisioner = s.currentKubernetesProvisioner()
+
+	_ = recordPlatformAudit(s.auth.db, s.currentOperatorEmail(r), "disconnect", "Cluster", "", contextName, "Disconnected cluster context: "+contextName)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "disconnected",
+		"context": contextName,
+		"message": fmt.Sprintf("Cluster context %s has been disconnected", contextName),
 	})
 }
 

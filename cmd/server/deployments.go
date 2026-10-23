@@ -237,6 +237,78 @@ func (s *deploymentService) setCluster(provisioner DeploymentProvisioner, contex
 	s.activeContext = contextName
 }
 
+func (s *deploymentService) addClusterProvider(provisioner DeploymentProvisioner, contextName string) {
+	s.providerMu.Lock()
+	defer s.providerMu.Unlock()
+	if s.providers == nil {
+		s.providers = make(map[string]DeploymentProvisioner)
+	}
+	s.providers[contextName] = provisioner
+	if s.provisioner == nil || s.activeContext == "" {
+		s.provisioner = provisioner
+		s.runtime, _ = provisioner.(deploymentRuntime)
+		s.activeContext = contextName
+	}
+}
+
+func (s *deploymentService) removeClusterProvider(contextName string) {
+	s.providerMu.Lock()
+	defer s.providerMu.Unlock()
+	delete(s.providers, contextName)
+	if s.activeContext == contextName {
+		s.activeContext = ""
+		s.provisioner = nil
+		s.runtime = nil
+		for name, prov := range s.providers {
+			s.activeContext = name
+			s.provisioner = prov
+			s.runtime, _ = prov.(deploymentRuntime)
+			break
+		}
+	}
+}
+
+func (s *deploymentService) allKnownContexts() []string {
+	seen := make(map[string]bool)
+	var list []string
+
+	if contexts, _, err := loadKubeconfigContexts(); err == nil {
+		for _, name := range contexts {
+			if name != "" && !seen[name] {
+				seen[name] = true
+				list = append(list, name)
+			}
+		}
+	}
+	s.providerMu.RLock()
+	for name := range s.providers {
+		if name != "" && !seen[name] {
+			seen[name] = true
+			list = append(list, name)
+		}
+	}
+	if s.activeContext != "" && !seen[s.activeContext] {
+		seen[s.activeContext] = true
+		list = append(list, s.activeContext)
+	}
+	s.providerMu.RUnlock()
+
+	if s.db != nil {
+		if rows, err := s.db.Query(`SELECT context_name FROM platform_cluster_config`); err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name string
+				if err := rows.Scan(&name); err == nil && name != "" && !seen[name] {
+					seen[name] = true
+					list = append(list, name)
+				}
+			}
+		}
+	}
+	slices.Sort(list)
+	return list
+}
+
 func (s *deploymentService) provisionerForContext(contextName string) (DeploymentProvisioner, error) {
 	s.providerMu.RLock()
 	if contextName == "" {
@@ -252,6 +324,20 @@ func (s *deploymentService) provisionerForContext(contextName string) (Deploymen
 	}
 	if contextName == "" {
 		return nil, errKubernetesNotConfigured
+	}
+	// Try loading from stored database kubeconfigs
+	if s.db != nil {
+		if yamlData, err := loadStoredKubeconfigByContext(s.db, contextName); err == nil && yamlData != "" {
+			if created, err := provisionerFromKubeconfigYAML(yamlData, contextName); err == nil {
+				s.providerMu.Lock()
+				if s.providers == nil {
+					s.providers = make(map[string]DeploymentProvisioner)
+				}
+				s.providers[contextName] = created
+				s.providerMu.Unlock()
+				return created, nil
+			}
+		}
 	}
 	created, err := newKubernetesProvisionerForContext(contextName)
 	if err != nil {
@@ -284,44 +370,12 @@ func (s *deploymentService) clusterContexts(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusForbidden, "Token requires the deployments:read scope")
 		return
 	}
-	contexts, current, err := loadKubeconfigContexts()
-	if err != nil && !errors.Is(err, errKubernetesNotConfigured) {
-		log.Printf("load cluster contexts: %v", err)
-		writeError(w, http.StatusBadGateway, "Could not read the server kubeconfig")
-		return
-	}
-	if contexts == nil {
-		contexts = []string{}
-	}
+	contexts := s.allKnownContexts()
 	s.providerMu.RLock()
 	active := s.activeContext
-	for name := range s.providers {
-		found := false
-		for _, contextName := range contexts {
-			if contextName == name {
-				found = true
-				break
-			}
-		}
-		if name != "" && !found {
-			contexts = append(contexts, name)
-		}
-	}
 	s.providerMu.RUnlock()
-	if active == "" {
-		active = current
-	}
-	if active != "" {
-		found := false
-		for _, contextName := range contexts {
-			if contextName == active {
-				found = true
-				break
-			}
-		}
-		if !found {
-			contexts = append(contexts, active)
-		}
+	if active == "" && len(contexts) > 0 {
+		active = contexts[0]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"contexts":   contexts,

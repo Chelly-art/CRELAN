@@ -87,6 +87,10 @@ func newAuthService() (*authService, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate workspace sessions: %w", err)
 	}
+	if err := ensureMultiClusterSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate multi-cluster schema: %w", err)
+	}
 	if databasePath != ":memory:" {
 		if err := os.Chmod(databasePath, 0o600); err != nil {
 			db.Close()
@@ -231,11 +235,12 @@ CREATE TABLE IF NOT EXISTS custom_domains (
 	verified_at TEXT
 );
 CREATE TABLE IF NOT EXISTS platform_cluster_config (
-	id INTEGER PRIMARY KEY CHECK (id = 1),
-	context_name TEXT NOT NULL,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	context_name TEXT NOT NULL UNIQUE,
 	encrypted_kubeconfig BLOB NOT NULL,
 	updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS platform_cluster_config_context ON platform_cluster_config(context_name);
 CREATE TABLE IF NOT EXISTS cluster_customizations (
 	context_name TEXT PRIMARY KEY,
 	color TEXT NOT NULL DEFAULT '#3b82f6',
@@ -430,6 +435,31 @@ func ensureDeploymentColumns(db *sql.DB) error {
 	}
 	return nil
 }
+
+func ensureMultiClusterSchema(db *sql.DB) error {
+	var tableSql string
+	_ = db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='platform_cluster_config'`).Scan(&tableSql)
+	if strings.Contains(tableSql, "CHECK (id = 1)") || strings.Contains(tableSql, "CHECK(id=1)") || strings.Contains(tableSql, "CHECK (id=1)") {
+		_, err := db.Exec(`
+			CREATE TABLE IF NOT EXISTS platform_cluster_config_v2 (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				context_name TEXT NOT NULL UNIQUE,
+				encrypted_kubeconfig BLOB NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			INSERT OR IGNORE INTO platform_cluster_config_v2 (context_name, encrypted_kubeconfig, updated_at)
+				SELECT context_name, encrypted_kubeconfig, updated_at FROM platform_cluster_config;
+			DROP TABLE platform_cluster_config;
+			ALTER TABLE platform_cluster_config_v2 RENAME TO platform_cluster_config;
+			CREATE UNIQUE INDEX IF NOT EXISTS platform_cluster_config_context ON platform_cluster_config(context_name);
+		`)
+		if err != nil {
+			return fmt.Errorf("migrate platform_cluster_config for multi-cluster: %w", err)
+		}
+	}
+	return nil
+}
+
 
 func (a *authService) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/signup", a.signup)

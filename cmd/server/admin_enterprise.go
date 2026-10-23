@@ -957,8 +957,15 @@ func (s *adminService) getClusterFleet(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	contexts, current, _ := loadKubeconfigContexts()
-	if s.deployments != nil && s.deployments.activeClusterContext() != "" {
+	var contexts []string
+	current := ""
+	if s.deployments != nil {
+		contexts = s.deployments.allKnownContexts()
+		current = s.deployments.activeClusterContext()
+	} else {
+		contexts, current, _ = loadKubeconfigContexts()
+	}
+	if current == "" && s.deployments != nil {
 		current = s.deployments.activeClusterContext()
 	}
 
@@ -985,74 +992,142 @@ func (s *adminService) getClusterFleet(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		serverHost := "Direct Kubeconfig Context"
+		serverVersion := "v1.28+"
+		nodeCount := 0
+		totalPods := 0
+		status := "connected"
+
+		var prov *kubernetesProvisioner
+		if isActive {
+			prov = p
+		} else if s.deployments != nil {
+			if dp, err := s.deployments.provisionerForContext(ctxName); err == nil {
+				prov, _ = dp.(*kubernetesProvisioner)
+			}
+		}
+
+		if prov != nil && prov.restConfig != nil && prov.restConfig.Host != "" {
+			serverHost = prov.restConfig.Host
+		}
+
+		if prov != nil && prov.client != nil {
+			if nodes, err := prov.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 20}); err == nil {
+				nodeCount = len(nodes.Items)
+				if len(nodes.Items) > 0 {
+					serverVersion = nodes.Items[0].Status.NodeInfo.KubeletVersion
+				}
+			} else if isActive {
+				status = "unreachable"
+			}
+			if pods, err := prov.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{Limit: 200}); err == nil {
+				totalPods = len(pods.Items)
+			}
+		} else if !isActive {
+			status = "standby"
+		}
+
 		member := clusterFleetMember{
 			Name:          ctxName,
-			ServerURL:     "Direct Kubeconfig Context",
-			Server:        "Direct Kubeconfig Context",
-			Status:        "connected",
+			ServerURL:     serverHost,
+			Server:        serverHost,
+			Status:        status,
 			IsActive:      isActive,
 			IsCurrent:     isActive,
 			Provider:      detectClusterProvider(ctxName),
-			NodeCount:     0,
-			NodesCount:    0,
-			TotalPods:     0,
-			Version:       "v1.28+",
-			ServerVersion: "v1.28+",
+			NodeCount:     nodeCount,
+			NodesCount:    nodeCount,
+			TotalPods:     totalPods,
+			Version:       serverVersion,
+			ServerVersion: serverVersion,
 			Color:         color,
 			Alias:         alias,
 			Environment:   env,
-		}
-
-		if isActive && p != nil && p.client != nil {
-			if nodes, err := p.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 20}); err == nil {
-				member.NodeCount = len(nodes.Items)
-				member.NodesCount = len(nodes.Items)
-				if len(nodes.Items) > 0 {
-					member.Version = nodes.Items[0].Status.NodeInfo.KubeletVersion
-					member.ServerVersion = nodes.Items[0].Status.NodeInfo.KubeletVersion
-				}
-			}
-			if pods, err := p.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{Limit: 200}); err == nil {
-				member.TotalPods = len(pods.Items)
-			}
 		}
 
 		fleet = append(fleet, member)
 	}
 
 	if len(fleet) == 0 {
-		color := defaultClusterColors[0]
-		alias := "In-Cluster"
-		env := "production"
-		if custom, ok := customMap["in-cluster"]; ok {
-			if custom.Color != "" {
-				color = custom.Color
+		if p != nil && p.client != nil {
+			color := defaultClusterColors[0]
+			alias := "in-cluster"
+			env := "production"
+			if custom, ok := customMap["in-cluster"]; ok {
+				if custom.Color != "" {
+					color = custom.Color
+				}
+				if custom.Alias != "" {
+					alias = custom.Alias
+				}
+				if custom.Environment != "" {
+					env = custom.Environment
+				}
 			}
-			if custom.Alias != "" {
-				alias = custom.Alias
+
+			nodeCount := 0
+			version := ""
+			totalPods := 0
+			if nodes, err := p.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 20}); err == nil {
+				nodeCount = len(nodes.Items)
+				if len(nodes.Items) > 0 {
+					version = nodes.Items[0].Status.NodeInfo.KubeletVersion
+				}
 			}
-			if custom.Environment != "" {
-				env = custom.Environment
+			if pods, err := p.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{Limit: 200}); err == nil {
+				totalPods = len(pods.Items)
+			}
+
+			fleet = append(fleet, clusterFleetMember{
+				Name:          "in-cluster",
+				ServerURL:     "in-cluster",
+				Server:        "in-cluster",
+				Status:        "connected",
+				IsActive:      true,
+				IsCurrent:     true,
+				Version:       version,
+				ServerVersion: version,
+				NodeCount:     nodeCount,
+				NodesCount:    nodeCount,
+				TotalPods:     totalPods,
+				Provider:      detectClusterProvider("in-cluster"),
+				Color:         color,
+				Alias:         alias,
+				Environment:   env,
+			})
+		} else if len(customMap) > 0 {
+			for ctxName, custom := range customMap {
+				color := defaultClusterColors[0]
+				if custom.Color != "" {
+					color = custom.Color
+				}
+				alias := ctxName
+				if custom.Alias != "" {
+					alias = custom.Alias
+				}
+				env := "production"
+				if custom.Environment != "" {
+					env = custom.Environment
+				}
+				fleet = append(fleet, clusterFleetMember{
+					Name:          ctxName,
+					ServerURL:     "-",
+					Server:        "-",
+					Status:        "disconnected",
+					IsActive:      false,
+					IsCurrent:     false,
+					Version:       "-",
+					ServerVersion: "-",
+					NodeCount:     0,
+					NodesCount:    0,
+					TotalPods:     0,
+					Provider:      detectClusterProvider(ctxName),
+					Color:         color,
+					Alias:         alias,
+					Environment:   env,
+				})
 			}
 		}
-
-		fleet = append(fleet, clusterFleetMember{
-			Name:          "in-cluster",
-			ServerURL:     "https://kubernetes.default.svc",
-			Server:        "https://kubernetes.default.svc",
-			Status:        "active",
-			IsActive:      true,
-			IsCurrent:     true,
-			Version:       "v1.28.0",
-			ServerVersion: "v1.28.0",
-			NodeCount:     1,
-			NodesCount:    1,
-			TotalPods:     5,
-			Provider:      "Kubernetes Local",
-			Color:         color,
-			Alias:         alias,
-			Environment:   env,
-		})
 	}
 
 	writeJSON(w, http.StatusOK, fleet)
@@ -1071,11 +1146,23 @@ func (s *adminService) switchClusterContext(w http.ResponseWriter, r *http.Reque
 	}
 	input.Context = strings.TrimSpace(input.Context)
 
-	provisioner, err := newKubernetesProvisionerForContext(input.Context)
-	if err != nil {
-		log.Printf("switch cluster context %q: %v", input.Context, err)
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("Could not load cluster context %q: %v", input.Context, err))
-		return
+	var provisioner *kubernetesProvisioner
+	if s.deployments != nil {
+		dp, err := s.deployments.provisionerForContext(input.Context)
+		if err == nil {
+			if kp, ok := dp.(*kubernetesProvisioner); ok {
+				provisioner = kp
+			}
+		}
+	}
+	if provisioner == nil {
+		var err error
+		provisioner, err = newKubernetesProvisionerForContext(input.Context)
+		if err != nil {
+			log.Printf("switch cluster context %q: %v", input.Context, err)
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("Could not load cluster context %q: %v", input.Context, err))
+			return
+		}
 	}
 	if provisioner.client != nil {
 		if _, err := provisioner.client.Discovery().ServerVersion(); err != nil {

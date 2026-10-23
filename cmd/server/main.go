@@ -76,12 +76,18 @@ func main() {
 	deployments := &deploymentService{
 		db: auth.db, auth: auth, provisioner: provisioner, runtime: runtime, activeContext: activeContext, providers: providers, githubApp: githubApp,
 	}
-	storedProvisioner, storedContext, storedErr := provisionerFromStoredKubeconfig(auth.db)
+	storedClusters, latestStored, storedErr := allProvisionersFromStoredKubeconfigs(auth.db)
 	if storedErr != nil {
-		log.Printf("restore stored cluster connection: %v", storedErr)
-	} else if storedProvisioner != nil {
-		deployments.setCluster(storedProvisioner, storedContext)
-		log.Printf("restored stored cluster connection for context %q", storedContext)
+		log.Printf("restore stored cluster connections: %v", storedErr)
+	} else if len(storedClusters) > 0 {
+		for ctxName, storedProv := range storedClusters {
+			deployments.addClusterProvider(storedProv, ctxName)
+			log.Printf("restored stored cluster connection for context %q", ctxName)
+		}
+		if latestStored != "" && storedClusters[latestStored] != nil {
+			deployments.setCluster(storedClusters[latestStored], latestStored)
+			log.Printf("activated most recent stored cluster %q", latestStored)
+		}
 	}
 	githubApp.deployments = deployments
 	deployments.registerRoutes(mux)

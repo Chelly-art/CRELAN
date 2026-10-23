@@ -298,9 +298,7 @@ function renderRailClusterList(fleet) {
   const container = $("#rail-cluster-list");
   if (!container) return;
   if (!fleet || fleet.length === 0) {
-    container.innerHTML = `
-      <button class="admin-cluster-avatar active" style="background-color: #3b82f6;" type="button" title="Default Cluster">K8</button>
-    `;
+    container.innerHTML = "";
     return;
   }
 
@@ -369,10 +367,38 @@ async function loadWorkspaceMappings() {
 // View Renderers
 // -------------------------------------------------------------
 
+const OFFLINE_ALLOWED_VIEWS = new Set([
+  "cluster-connect",
+  "cluster-fleet",
+  "audit-trail",
+  "admin-tokens",
+  "rbac-generator",
+  "release-notes",
+]);
+
 async function renderCurrentView() {
   updateNavigationActive();
   const container = $("#admin-content-area");
   container.innerHTML = `<div class="admin-empty-state">Loading ${state.activeView}…</div>`;
+
+  if ((!state.cluster || !state.cluster.connected) && !OFFLINE_ALLOWED_VIEWS.has(state.activeView)) {
+    const viewTitle = (state.activeView || "Dashboard").replace(/-/g, " ");
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title"><h1 style="text-transform: capitalize;">${escapeHTML(viewTitle)}</h1></div>
+      </div>
+      <div class="admin-table-container">
+        <div class="admin-empty-state" style="padding: 60px 20px;">
+          <div style="font-size: 36px; margin-bottom: 12px;">🔌</div>
+          <h2 style="font-size: 18px; margin-bottom: 8px;">No Kubernetes Cluster Connected</h2>
+          <p style="color: var(--admin-text-muted); max-width: 480px; margin: 0 auto 18px;">
+            Connect your Kubernetes cluster using a kubeconfig to inspect and manage nodes, pods, workloads, and cluster resources.
+          </p>
+          <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Cluster</a>
+        </div>
+      </div>`;
+    return;
+  }
 
   try {
     switch (state.activeView) {
@@ -2201,6 +2227,10 @@ async function handleClusterConnectSubmission(payload, btn, st) {
     `;
     await loadClusterHeader();
     await loadNamespacesDropdown();
+    await loadClusterFleetRail();
+    if (state.activeView === "cluster-fleet") {
+      await renderClusterFleet($("#admin-content-area"));
+    }
   } catch (err) {
     clearTimeout(timeoutId);
     const isTimeout = err.name === "AbortError" || (err.message && err.message.toLowerCase().includes("timeout"));
@@ -6179,6 +6209,30 @@ async function renderClusterFleet(container) {
   state.fleet = fleet;
 
   const totalClusters = fleet.length;
+  if (!fleet || fleet.length === 0) {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Multi-Cluster Fleet</h1>
+          <p class="admin-view-subtitle">Centralized multi-cluster fleet management with instant context switching, custom environment palettes, and live health telemetry.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <a class="admin-btn admin-btn-primary" href="#cluster-connect">+ Connect Cluster</a>
+        </div>
+      </div>
+      <div class="admin-table-container">
+        <div class="admin-empty-state" style="padding: 48px 20px;">
+          <h3>No Clusters Connected</h3>
+          <p style="color: var(--admin-text-muted); max-width: 480px; margin: 8px auto 20px;">
+            No Kubernetes cluster contexts were found in your environment or storage. Connect a cluster via kubeconfig or environment variables to start managing your fleet.
+          </p>
+          <a class="admin-btn admin-btn-primary" href="#cluster-connect">Connect Your First Cluster</a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   const currentCluster = fleet.find(c => c.is_current || c.is_active);
   const totalNodes = fleet.reduce((acc, c) => acc + (c.nodes_count || c.node_count || 0), 0);
   const totalPods = fleet.reduce((acc, c) => acc + (c.total_pods || 0), 0);
@@ -6300,6 +6354,9 @@ async function renderClusterFleet(container) {
                     <button class="admin-btn admin-btn-primary admin-btn-sm" style="flex: 1;" onclick="switchClusterContext('${escapeHTML(c.name)}')">
                       Switch Context
                     </button>
+                    <button class="admin-btn admin-btn-sm" type="button" title="Disconnect cluster from fleet" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">
+                      ✕
+                    </button>
                   `}
                   <button class="admin-btn admin-btn-sm" type="button" title="Customize Cluster Color & Name" onclick="openClusterColorModal('${escapeHTML(c.name)}')">
                     🎨 Color
@@ -6373,6 +6430,7 @@ async function renderClusterFleet(container) {
                       <span class="admin-badge admin-badge-ready" style="font-size: 11px;">Active</span>
                     ` : `
                       <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch</button>
+                      <button class="admin-btn admin-btn-sm" title="Disconnect Cluster" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">✕</button>
                     `}
                     <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">🎨</button>
                   </div>
@@ -6394,6 +6452,7 @@ async function switchClusterContext(contextName) {
       body: JSON.stringify({ context: contextName }),
     });
     await loadClusterHeader();
+    await loadClusterFleetRail();
     if (state.activeView === "cluster-fleet") {
       await renderClusterFleet($("#admin-content-area"));
     } else {
@@ -6401,6 +6460,26 @@ async function switchClusterContext(contextName) {
     }
   } catch (err) {
     alert(`Failed to switch context: ${err.message}`);
+  }
+}
+
+async function disconnectClusterContext(contextName) {
+  if (!confirm(`Are you sure you want to disconnect cluster "${contextName}" from the fleet?`)) return;
+  try {
+    await request("/api/v1/admin/clusters/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: contextName }),
+    });
+    await loadClusterHeader();
+    await loadClusterFleetRail();
+    if (state.activeView === "cluster-fleet") {
+      await renderClusterFleet($("#admin-content-area"));
+    } else {
+      await renderCurrentView();
+    }
+  } catch (err) {
+    alert(`Failed to disconnect cluster: ${err.message}`);
   }
 }
 
@@ -6514,8 +6593,9 @@ async function renderSRESLOs(container) {
   `;
 
   try {
-    const slos = await request(url);
-    if (!slos || slos.length === 0) {
+    const res = await request(url);
+    const slosRaw = (res && Array.isArray(res.slos)) ? res.slos : (Array.isArray(res) ? res : []);
+    if (!slosRaw || slosRaw.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
           <div class="admin-view-title">
@@ -6538,6 +6618,18 @@ async function renderSRESLOs(container) {
       `;
       return;
     }
+
+    const slos = slosRaw.map(s => ({
+      ...s,
+      service: s.service || s.service_name || "-",
+      target_percentage: Number(s.target_percentage !== undefined ? s.target_percentage : (s.target_sli !== undefined ? s.target_sli : 99.9)),
+      current_percentage: Number(s.current_percentage !== undefined ? s.current_percentage : (s.current_sli !== undefined ? s.current_sli : 100)),
+      remaining_budget_pct: Number(s.remaining_budget_pct !== undefined ? s.remaining_budget_pct : (s.error_budget_remaining !== undefined ? s.error_budget_remaining : 100)),
+      burn_velocity_1h: Number(s.burn_velocity_1h !== undefined ? s.burn_velocity_1h : (s.burn_rate_1h !== undefined ? s.burn_rate_1h : 0)),
+      burn_velocity_6h: Number(s.burn_velocity_6h !== undefined ? s.burn_velocity_6h : (s.burn_rate_6h !== undefined ? s.burn_rate_6h : 0)),
+      status: s.status || (s.current_sli >= s.target_sli ? "met" : "burning"),
+      deployment_frozen: Boolean(s.deployment_frozen !== undefined ? s.deployment_frozen : (s.deployment_freeze !== undefined ? s.deployment_freeze : false))
+    }));
 
     const total = slos.length;
     const met = slos.filter(s => s.status === "met").length;
@@ -6711,8 +6803,9 @@ async function renderSREGoldenSignals(container) {
   `;
 
   try {
-    const signals = await request(url);
-    if (!signals || signals.length === 0) {
+    const res = await request(url);
+    const signalsRaw = (res && Array.isArray(res.signals)) ? res.signals : (Array.isArray(res) ? res : []);
+    if (!signalsRaw || signalsRaw.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
           <div class="admin-view-title">
@@ -6730,8 +6823,21 @@ async function renderSREGoldenSignals(container) {
       return;
     }
 
+    const signals = signalsRaw.map(s => ({
+      ...s,
+      service: s.service || s.service_name || "-",
+      rate_rps: Number(s.rate_rps !== undefined ? s.rate_rps : 0),
+      error_rate_pct: Number(s.error_rate_pct !== undefined ? s.error_rate_pct : 0),
+      duration_p99_ms: Number(s.duration_p99_ms !== undefined ? s.duration_p99_ms : (s.latency_p99_ms !== undefined ? s.latency_p99_ms : 0)),
+      duration_p50_ms: Number(s.duration_p50_ms !== undefined ? s.duration_p50_ms : (s.latency_p50_ms !== undefined ? s.latency_p50_ms : 0)),
+      cpu_saturation_pct: Number(s.cpu_saturation_pct !== undefined ? s.cpu_saturation_pct : 0),
+      memory_saturation_pct: Number(s.memory_saturation_pct !== undefined ? s.memory_saturation_pct : 0),
+      saturation_cpu_pct: Number(s.saturation_cpu_pct !== undefined ? s.saturation_cpu_pct : (s.cpu_saturation_pct !== undefined ? s.cpu_saturation_pct : 0)),
+      saturation_mem_pct: Number(s.saturation_mem_pct !== undefined ? s.saturation_mem_pct : (s.memory_saturation_pct !== undefined ? s.memory_saturation_pct : 0)),
+    }));
+
     const totalRPS = signals.reduce((acc, s) => acc + s.rate_rps, 0);
-    const avgErrorPct = (signals.reduce((acc, s) => acc + s.error_rate_pct, 0) / signals.length);
+    const avgErrorPct = (signals.reduce((acc, s) => acc + s.error_rate_pct, 0) / (signals.length || 1));
     const degradedCount = signals.filter(s => s.error_rate_pct > 1.0 || s.duration_p99_ms > 500).length;
 
     container.innerHTML = `
@@ -6840,7 +6946,8 @@ async function renderSREProbes(container) {
   `;
 
   try {
-    const probes = await request(url);
+    const res = await request(url);
+    const probes = (res && Array.isArray(res.issues)) ? res.issues : (Array.isArray(res) ? res : []);
     if (!probes || probes.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
@@ -6975,7 +7082,8 @@ async function renderSREResilience(container) {
 
   try {
     const res = await request(url);
-    if (!res || res.length === 0) {
+    const workloads = (res && Array.isArray(res.workloads)) ? res.workloads : (Array.isArray(res) ? res : []);
+    if (!workloads || workloads.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
           <div class="admin-view-title">
@@ -6992,9 +7100,9 @@ async function renderSREResilience(container) {
       return;
     }
 
-    const multiAZCount = res.filter(r => r.multi_az_status).length;
-    const missingPDB = res.filter(r => !r.pdb_configured).length;
-    const singleReplica = res.filter(r => r.replicas <= 1).length;
+    const multiAZCount = workloads.filter(r => r.multi_az_status || r.multi_az_spread).length;
+    const missingPDB = workloads.filter(r => !r.pdb_configured).length;
+    const singleReplica = workloads.filter(r => r.replicas <= 1).length;
 
     container.innerHTML = `
       <div class="admin-view-header">
@@ -7007,7 +7115,7 @@ async function renderSREResilience(container) {
       <div class="sre-kpi-grid">
         <div class="sre-kpi-card">
           <div class="sre-kpi-label">Audited Workloads</div>
-          <div class="sre-kpi-val">${res.length}</div>
+          <div class="sre-kpi-val">${workloads.length}</div>
           <div class="sre-kpi-meta">High availability checks</div>
         </div>
         <div class="sre-kpi-card">
@@ -7041,7 +7149,7 @@ async function renderSREResilience(container) {
             </tr>
           </thead>
           <tbody>
-            ${res.map(r => `
+            ${workloads.map(r => `
               <tr>
                 <td><strong>${escapeHTML(r.workload_name)}</strong></td>
                 <td><code>${escapeHTML(r.namespace)}</code></td>
@@ -7091,7 +7199,8 @@ async function renderSRECanaries(container) {
   `;
 
   try {
-    const canaries = await request(url);
+    const res = await request(url);
+    const canaries = (res && Array.isArray(res.canaries)) ? res.canaries : (Array.isArray(res) ? res : []);
     if (!canaries || canaries.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
@@ -7210,10 +7319,21 @@ async function renderSREChaos(container) {
   `;
 
   try {
-    const runs = await request("/api/v1/admin/sre/chaos/experiments");
-    const totalRuns = runs ? runs.length : 0;
-    const completed = runs ? runs.filter(r => r.status === "completed").length : 0;
-    const dryRuns = runs ? runs.filter(r => r.dry_run).length : 0;
+    const res = await request("/api/v1/admin/sre/chaos/experiments");
+    const runsRaw = (res && Array.isArray(res.recent_runs)) ? res.recent_runs : (Array.isArray(res) ? res : []);
+    const runs = runsRaw.map(r => ({
+      ...r,
+      title: r.title || r.target_name || (r.experiment_type ? r.experiment_type.replace(/_/g, " ").toUpperCase() : "Chaos Drill"),
+      target_workload: r.target_workload || r.target_name || "-",
+      namespace: r.namespace || "default",
+      experiment_type: r.experiment_type || "pod_kill",
+      blast_radius: r.blast_radius !== undefined ? r.blast_radius : 1,
+      dry_run: Boolean(r.dry_run),
+      status: r.status || "completed",
+    }));
+    const totalRuns = runs.length;
+    const completed = runs.filter(r => (r.status || "").toLowerCase() === "completed" || (r.status || "").toLowerCase() === "success").length;
+    const dryRuns = runs.filter(r => r.dry_run).length;
 
     container.innerHTML = `
       <div class="admin-view-header">
@@ -7368,8 +7488,9 @@ async function renderSREScorecards(container) {
   `;
 
   try {
-    const cards = await request(url);
-    if (!cards || cards.length === 0) {
+    const res = await request(url);
+    const cardsRaw = (res && Array.isArray(res.scorecards)) ? res.scorecards : (Array.isArray(res) ? res : []);
+    if (!cardsRaw || cardsRaw.length === 0) {
       container.innerHTML = `
         <div class="admin-view-header">
           <div class="admin-view-title">
@@ -7386,10 +7507,17 @@ async function renderSREScorecards(container) {
       return;
     }
 
-    const avgScore = (cards.reduce((acc, c) => acc + c.score, 0) / cards.length).toFixed(1);
+    const cards = cardsRaw.map(c => ({
+      ...c,
+      service: c.service || c.service_name || "-",
+      grade: c.grade || c.overall_grade || "B",
+      score: Number(c.score !== undefined ? c.score : (c.overall_score !== undefined ? c.overall_score : 80)),
+    }));
+
+    const avgScore = (cards.reduce((acc, c) => acc + c.score, 0) / (cards.length || 1)).toFixed(1);
     const gradeCounts = { A: 0, B: 0, C: 0, D: 0, F: 0 };
     cards.forEach(c => {
-      const g = (c.grade || "C").charAt(0);
+      const g = (c.grade || "C").charAt(0).toUpperCase();
       if (gradeCounts[g] !== undefined) gradeCounts[g]++;
     });
 
@@ -7638,13 +7766,21 @@ async function initializeAdmin() {
     await Promise.all([loadClusterHeader(), loadNamespacesDropdown(), loadWorkspaceMappings()]);
     await renderCurrentView();
 
-    // Start 10s auto-refresh by default (skips forms and active input)
-    state.autoRefreshTimer = setInterval(() => {
-      if (shouldAutoRefresh()) {
-        loadClusterHeader();
-        renderCurrentView();
-      }
-    }, 10000);
+    // Auto-refresh is disabled by default; only start if select value > 0
+    if (state.autoRefreshTimer) {
+      clearInterval(state.autoRefreshTimer);
+      state.autoRefreshTimer = null;
+    }
+    const refreshSelect = $("#admin-auto-refresh-select");
+    const refreshMs = refreshSelect ? parseInt(refreshSelect.value, 10) : 0;
+    if (refreshMs > 0) {
+      state.autoRefreshTimer = setInterval(() => {
+        if (shouldAutoRefresh()) {
+          loadClusterHeader();
+          renderCurrentView();
+        }
+      }, refreshMs);
+    }
   } catch (err) {
     if (err.message !== "Sign in required") {
       $("#admin-content-area").innerHTML = `<div class="admin-empty-state">Failed to initialize: ${escapeHTML(err.message)}</div>`;

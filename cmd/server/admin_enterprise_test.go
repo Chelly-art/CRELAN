@@ -246,3 +246,149 @@ func TestClusterFleetAndCustomizations(t *testing.T) {
 		t.Errorf("expected %s in fleet, but not found", targetContext)
 	}
 }
+
+func TestMultiClusterPersistenceAndFleet(t *testing.T) {
+	t.Setenv("CRELAN_DEMO_LOGIN", "true")
+	auth, err := newAuthService()
+	if err != nil {
+		t.Fatalf("newAuthService: %v", err)
+	}
+	defer auth.db.Close()
+	auth.demoLoginEnabled = true
+
+	sessionToken := "admin-multi-token"
+	now := time.Now().UTC()
+	if _, err := auth.db.Exec(`INSERT INTO users (id, name, email, created_at) VALUES (1, 'Admin', 'admin@crelan.local', ?)`, now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert admin user: %v", err)
+	}
+	if _, err := auth.db.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, 1, ?, ?)`,
+		hashToken(sessionToken), now.Add(time.Hour).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+
+	deployments := &deploymentService{
+		db:        auth.db,
+		auth:      auth,
+		providers: make(map[string]DeploymentProvisioner),
+	}
+	admin := newAdminService(auth)
+	admin.deployments = deployments
+
+	dummyKubeconfig1 := `apiVersion: v1
+clusters:
+- cluster:
+    server: https://10.0.0.1:6443
+  name: cluster-alpha
+contexts:
+- context:
+    cluster: cluster-alpha
+    user: user-alpha
+  name: cluster-alpha
+current-context: cluster-alpha
+kind: Config
+users:
+- name: user-alpha
+  user:
+    token: token-alpha`
+
+	dummyKubeconfig2 := `apiVersion: v1
+clusters:
+- cluster:
+    server: https://10.0.0.2:6443
+  name: cluster-beta
+contexts:
+- context:
+    cluster: cluster-beta
+    user: user-beta
+  name: cluster-beta
+current-context: cluster-beta
+kind: Config
+users:
+- name: user-beta
+  user:
+    token: token-beta`
+
+	// 1. Connect Cluster 1
+	if err := saveKubeconfigCredential(auth.db, "cluster-alpha", dummyKubeconfig1); err != nil {
+		t.Fatalf("save cluster-alpha: %v", err)
+	}
+
+	// 2. Connect Cluster 2 - must NOT overwrite Cluster 1
+	if err := saveKubeconfigCredential(auth.db, "cluster-beta", dummyKubeconfig2); err != nil {
+		t.Fatalf("save cluster-beta: %v", err)
+	}
+
+	// 3. Verify database contains BOTH clusters
+	var count int
+	if err := auth.db.QueryRow(`SELECT COUNT(*) FROM platform_cluster_config`).Scan(&count); err != nil {
+		t.Fatalf("count clusters: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 clusters in database, got %d", count)
+	}
+
+	// 4. Verify allKnownContexts includes both
+	contexts := deployments.allKnownContexts()
+	hasAlpha, hasBeta := false, false
+	for _, c := range contexts {
+		if c == "cluster-alpha" {
+			hasAlpha = true
+		}
+		if c == "cluster-beta" {
+			hasBeta = true
+		}
+	}
+	if !hasAlpha || !hasBeta {
+		t.Fatalf("expected allKnownContexts to have cluster-alpha and cluster-beta, got: %v", contexts)
+	}
+
+	// 5. Test getClusterFleet returns BOTH clusters
+	reqFleet := httptest.NewRequest("GET", "/api/v1/admin/clusters/fleet", nil)
+	reqFleet.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	recFleet := httptest.NewRecorder()
+	admin.getClusterFleet(recFleet, reqFleet)
+
+	if recFleet.Code != http.StatusOK {
+		t.Fatalf("get fleet status %d: %s", recFleet.Code, recFleet.Body.String())
+	}
+
+	var fleet []clusterFleetMember
+	if err := json.Unmarshal(recFleet.Body.Bytes(), &fleet); err != nil {
+		t.Fatalf("unmarshal fleet: %v", err)
+	}
+
+	fleetAlpha, fleetBeta := false, false
+	for _, m := range fleet {
+		if m.Name == "cluster-alpha" {
+			fleetAlpha = true
+		}
+		if m.Name == "cluster-beta" {
+			fleetBeta = true
+		}
+	}
+	if !fleetAlpha || !fleetBeta {
+		t.Fatalf("expected fleet to contain both cluster-alpha and cluster-beta, got fleet: %+v", fleet)
+	}
+
+	// 6. Test disconnect cluster-alpha
+	discPayload := `{"context": "cluster-alpha"}`
+	reqDisc := httptest.NewRequest("POST", "/api/v1/admin/clusters/disconnect", bytes.NewBufferString(discPayload))
+	reqDisc.Header.Set("Content-Type", "application/json")
+	reqDisc.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	recDisc := httptest.NewRecorder()
+	admin.disconnectCluster(recDisc, reqDisc)
+
+	if recDisc.Code != http.StatusOK {
+		t.Fatalf("disconnect status %d: %s", recDisc.Code, recDisc.Body.String())
+	}
+
+	// 7. Verify cluster-alpha is deleted and cluster-beta remains
+	var remainingCount int
+	if err := auth.db.QueryRow(`SELECT COUNT(*) FROM platform_cluster_config`).Scan(&remainingCount); err != nil {
+		t.Fatalf("count remaining: %v", err)
+	}
+	if remainingCount != 1 {
+		t.Fatalf("expected 1 cluster remaining after disconnect, got %d", remainingCount)
+	}
+}
+

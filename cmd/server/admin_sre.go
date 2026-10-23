@@ -988,6 +988,11 @@ func (s *adminService) getSREChaosExperiments(w http.ResponseWriter, r *http.Req
 	if !s.authorize(w, r) {
 		return
 	}
+	provisioner := s.currentKubernetesProvisioner()
+	if provisioner == nil || provisioner.client == nil {
+		writeError(w, http.StatusServiceUnavailable, "No Kubernetes cluster is connected")
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
