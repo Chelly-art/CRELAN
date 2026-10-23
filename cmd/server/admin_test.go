@@ -630,11 +630,11 @@ func TestPlatformAuditTrailRecording(t *testing.T) {
 
 	ctx := context.Background()
 	// Record two audit logs
-	err = recordPlatformAudit(db, "admin@pipeops.app", "restart", "Deployment", "prod", "web-api", "Rollout restart triggered")
+	err = recordPlatformAudit(db, "admin@crelan.local", "restart", "Deployment", "prod", "web-api", "Rollout restart triggered")
 	if err != nil {
 		t.Fatalf("recordPlatformAudit failed: %v", err)
 	}
-	err = recordPlatformAudit(db, "sre@pipeops.app", "scale", "Deployment", "staging", "worker", "Scaled to 5")
+	err = recordPlatformAudit(db, "sre@crelan.local", "scale", "Deployment", "staging", "worker", "Scaled to 5")
 	if err != nil {
 		t.Fatalf("recordPlatformAudit failed: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestIncidentWarRoomAndPostMortemGenerator(t *testing.T) {
 	}
 
 	// 2. Post-Mortem Report & Markdown Generation
-	_ = recordPlatformAudit(db, "incident-commander@pipeops.app", "restart", "Pod", "production", "orders-api-crash", "Emergency pod reboot attempted")
+	_ = recordPlatformAudit(db, "incident-commander@crelan.local", "restart", "Pod", "production", "orders-api-crash", "Emergency pod reboot attempted")
 
 	postMortem, err := generatePostMortemReport(ctx, client, db, "production", "orders-api-crash")
 	if err != nil {
@@ -1042,10 +1042,10 @@ func TestTLSCertificateExpirationScanner(t *testing.T) {
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(12345),
 		Subject: pkix.Name{
-			CommonName:   "api.pipeops.app",
-			Organization: []string{"PipeOps Inc"},
+			CommonName:   "api.crelan.local",
+			Organization: []string{"Crelan Inc"},
 		},
-		DNSNames:  []string{"api.pipeops.app", "crelan.abj.pipeops.app"},
+		DNSNames:  []string{"api.crelan.local", "console.crelan.local"},
 		NotBefore: time.Now().Add(-24 * time.Hour),
 		NotAfter:  time.Now().Add(60 * 24 * time.Hour),
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -1078,8 +1078,8 @@ func TestTLSCertificateExpirationScanner(t *testing.T) {
 		t.Fatalf("expected 1 certificate, got %d", report.TotalCertificates)
 	}
 	cert := report.Certificates[0]
-	if cert.CommonName != "api.pipeops.app" {
-		t.Errorf("expected CN api.pipeops.app, got %s", cert.CommonName)
+	if cert.CommonName != "api.crelan.local" {
+		t.Errorf("expected CN api.crelan.local, got %s", cert.CommonName)
 	}
 	if cert.Status != "valid" {
 		t.Errorf("expected valid status, got %s", cert.Status)
@@ -1237,7 +1237,7 @@ func TestIncidentWebhooksDispatcher(t *testing.T) {
 		"severity":     "CRITICAL",
 		"workload":     "default/payment-api",
 		"summary":      "Container exited with code 137 (OOMKilled)",
-		"war_room_url": "https://crelan.abj.pipeops.app/admin#war-room",
+		"war_room_url": "/admin#war-room",
 	})
 	if err != nil {
 		t.Fatalf("dispatchIncidentWebhook failed: %v", err)

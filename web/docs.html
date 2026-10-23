@@ -654,7 +654,7 @@ pulumi up</code></pre>
         <p>API Endpoint: <code>POST /api/v1/admin/security/can-i</code></p>
 
         <h3 id="fleet-dashboard">5. Multi-Cluster Fleet Dashboard</h3>
-        <p>Centralized fleet overview across multiple Kubernetes clusters (AWS EKS, Google GKE, K3s, PipeOps, and local dev clusters). View health telemetry, node counts, and control plane versions, and switch active cluster contexts instantly with zero downtime.</p>
+        <p>Centralized fleet overview across multiple Kubernetes clusters (AWS EKS, Google GKE, K3s, Managed Cloud, and local dev clusters). View health telemetry, node counts, and control plane versions, and switch active cluster contexts instantly with zero downtime.</p>
         <p>API Endpoint: <code>GET /api/v1/admin/clusters/fleet</code>, <code>POST /api/v1/admin/clusters/switch-context</code></p>
 
         <h3 id="command-palette">6. Quick Launcher Command Palette (⌘K / Ctrl+K)</h3>
@@ -667,7 +667,7 @@ pulumi up</code></pre>
         <p>If app deployments return <code>503 Service Unavailable</code> with <em>"no Kubernetes deployment provisioner configured"</em>, Crelan is not currently connected to an active Kubernetes cluster. This can happen if the control plane was restarted or redeployed on an ephemeral container host without persistent disk storage.</p>
         <p>To persist cluster connectivity automatically across all future restarts and redeployments:</p>
         <ul>
-          <li><strong>Set the environment variable (Recommended):</strong> Encode your kubeconfig YAML in base64 (<code>base64 -w0 kubeconfig.yaml</code>) and set it as the <code>CRELAN_KUBECONFIG_DATA_B64</code> environment variable in your hosting platform (e.g., PipeOps Project Environment Variables). Crelan will automatically detect and connect to your cluster on every boot!</li>
+          <li><strong>Set the environment variable (Recommended):</strong> Encode your kubeconfig YAML in base64 (<code>base64 -w0 kubeconfig.yaml</code>) and set it as the <code>CRELAN_KUBECONFIG_DATA_B64</code> environment variable in your hosting platform (e.g., Cloud Project Environment Variables). Crelan will automatically detect and connect to your cluster on every boot!</li>
           <li><strong>Connect via the Admin Dashboard:</strong> Sign in as a platform administrator, navigate to <code>/assets/admin.html</code>, paste your kubeconfig YAML into the connection form, and click <strong>Connect cluster</strong>.</li>
         </ul>
 

@@ -6087,8 +6087,8 @@ async function renderCanI(container) {
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:anonymous', 'list', 'pods', '', 'default')">
             🕵️ Can Anonymous user list Pods?
           </button>
-          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:pipeops:builder', 'create', 'pods', '', 'pipeops')">
-            🏗️ Can PipeOps Builder create Pods?
+          <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:crelan:builder', 'create', 'pods', '', 'crelan')">
+            🏗️ Can Platform Builder create Pods?
           </button>
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('developer', 'delete', 'namespaces', '', '')">
             🛑 Can Developer delete Namespaces?

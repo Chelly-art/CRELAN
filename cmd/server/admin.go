@@ -386,7 +386,7 @@ func (s *adminService) getAgentManifest(w http.ResponseWriter, r *http.Request) 
 
 	host := r.Host
 	scheme := "https"
-	if r.TLS == nil && !strings.Contains(host, "pipeops") && (strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1")) {
+	if r.TLS == nil && (strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1")) {
 		scheme = "http"
 	}
 	serverURL := fmt.Sprintf("%s://%s", scheme, host)
@@ -2096,7 +2096,7 @@ func (s *adminService) testWebhook(w http.ResponseWriter, r *http.Request) {
 		"severity":     "WARNING",
 		"workload":     "production/orders-api",
 		"summary":      "This is a verified test alert dispatched from Crelan Day-2 Operational Intelligence to validate the webhook integration.",
-		"war_room_url": "https://crelan.abj.pipeops.app/admin#war-room",
+		"war_room_url": "/admin#war-room",
 	}
 	res, err := dispatchIncidentWebhook(r.Context(), *wh, testPayload)
 	if err != nil {

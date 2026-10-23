@@ -330,7 +330,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     await loadDeployments();
   } catch (cause) {
     if (String(cause.message || "").includes("not connected or unavailable")) {
-      error.innerHTML = `⚠️ ${cause.message}. Reconnect your cluster in the <a href="/admin" style="color: #c45100; text-decoration: underline; font-weight: 600;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in PipeOps environment variables.`;
+      error.innerHTML = `⚠️ ${cause.message}. Reconnect your cluster in the <a href="/admin" style="color: #c45100; text-decoration: underline; font-weight: 600;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in your environment variables.`;
     } else {
       error.textContent = cause.message;
     }

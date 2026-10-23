@@ -4795,8 +4795,8 @@ func dispatchIncidentWebhook(ctx context.Context, webhook platformIncidentWebhoo
 		workload = "default/unknown-pod"
 	}
 	warRoomURL := fmt.Sprintf("%v", payload["war_room_url"])
-	if warRoomURL == "" {
-		warRoomURL = "https://crelan.abj.pipeops.app/admin#war-room"
+	if warRoomURL == "" || warRoomURL == "<nil>" {
+		warRoomURL = "/admin#war-room"
 	}
 
 	if webhook.Provider == "slack" {

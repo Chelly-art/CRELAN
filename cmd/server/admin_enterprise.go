@@ -1168,8 +1168,8 @@ func detectClusterProvider(contextName string) string {
 		return "Minikube Local"
 	case strings.Contains(ctxLower, "kind"):
 		return "KinD Local"
-	case strings.Contains(ctxLower, "pipeops"):
-		return "PipeOps Cloud"
+	case strings.Contains(ctxLower, "cloud"):
+		return "Managed Cloud"
 	default:
 		return "Standard Kubernetes"
 	}

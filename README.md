@@ -4,9 +4,9 @@ Crelan provides authenticated customer workspaces for deploying GitHub repositor
 
 ## Kubernetes access & cloud persistence
 
-Platform administrators can connect the deployment cluster either via environment variables (recommended for cloud hosts like PipeOps) or from the internal admin page at `/assets/admin.html`.
+Platform administrators can connect the deployment cluster either via environment variables (recommended for cloud hosting environments) or from the internal admin page at `/assets/admin.html`.
 
-### Automatic cluster connection on cloud platforms (PipeOps, Render, Kubernetes)
+### Automatic cluster connection on cloud platforms (Cloud, Render, Kubernetes)
 When running Crelan on containerized cloud platforms where filesystem state may reset on redeployment, pass your kubeconfig via an environment variable. Crelan automatically parses, validates, and activates the cluster on every service startup:
 
 ```sh
@@ -14,7 +14,7 @@ When running Crelan on containerized cloud platforms where filesystem state may 
 base64 -w0 kubeconfig.yaml
 ```
 
-Set the output as `CRELAN_KUBECONFIG_DATA_B64` (or set `CRELAN_KUBECONFIG_DATA` with the raw YAML) in your PipeOps Project Environment Variables.
+Set the output as `CRELAN_KUBECONFIG_DATA_B64` (or set `CRELAN_KUBECONFIG_DATA` with the raw YAML) in your host environment variables.
 
 ### Admin UI cluster connection
 Platform administrators can also connect or switch clusters interactively from `/assets/admin.html`. Paste a self-contained kubeconfig, select its context, and connect. Crelan validates Kubernetes API access before making that cluster active. Customer sessions never receive or see the kubeconfig.
@@ -111,14 +111,14 @@ Crelan embeds a complete enterprise capability set directly into the platform we
 2. **Helm Release Lifecycle Manager:** In-cluster discovery of Helm v3 releases stored in Kubernetes secrets. Includes a values inspector (`values.yaml`), revision history, one-click rollback (`POST /api/v1/admin/helm/releases/{ns}/{name}/rollback`), and uninstallation (`DELETE /api/v1/admin/helm/releases/{ns}/{name}`).
 3. **Custom Resource Definitions (CRDs) & Operator Browser:** Deep schema exploration and dynamic instance querying for installed operators (`apiextensions.k8s.io/v1`) with instant YAML/JSON definition viewers (`GET /api/v1/admin/crds`).
 4. **Interactive RBAC Permission Inspector (`can-i`):** Visual "Who Can Do What" permission evaluation across users, groups, and service accounts using live `SelfSubjectAccessReview` and local RBAC engine fallback (`POST /api/v1/admin/security/can-i`).
-5. **Multi-Cluster Fleet Dashboard:** Centralized fleet health monitoring across EKS, GKE, K3s, and PipeOps clusters with seamless context switching (`GET /api/v1/admin/clusters/fleet`, `POST /api/v1/admin/clusters/switch-context`).
+5. **Multi-Cluster Fleet Dashboard:** Centralized fleet health monitoring across EKS, GKE, K3s, and Managed Cloud clusters with seamless context switching (`GET /api/v1/admin/clusters/fleet`, `POST /api/v1/admin/clusters/switch-context`).
 6. **Quick Launcher Command Palette (`Cmd+K` / `Ctrl+K`):** Global fuzzy search across all cluster resources, workloads, nodes, and administrative actions for instant keyboard navigation.
 
 ## Environment Variables Reference
 
 | Variable | Description | Default / Example |
 |---|---|---|
-| `CRELAN_KUBECONFIG_DATA_B64` | Base64-encoded kubeconfig YAML for automatic cluster connection | Recommended for PipeOps & cloud hosting |
+| `CRELAN_KUBECONFIG_DATA_B64` | Base64-encoded kubeconfig YAML for automatic cluster connection | Recommended for cloud hosting |
 | `CRELAN_KUBECONFIG_DATA` | Raw kubeconfig YAML string | Alternative to `_B64` |
 | `CRELAN_KUBECONFIG_ENCRYPTION_KEY` | 32-byte base64 AES key for encrypting stored kubeconfigs in SQLite | `openssl rand -base64 32` |
 | `DATABASE_PATH` | Path to persistent SQLite database file | `/data/crelan.db` (or in-memory if empty) |

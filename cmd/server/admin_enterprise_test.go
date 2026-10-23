@@ -79,7 +79,7 @@ func TestClusterFleetDetection(t *testing.T) {
 		{"aks-cluster-admin", "Azure AKS"},
 		{"k3s-default", "K3s / Lightweight"},
 		{"minikube", "Minikube Local"},
-		{"pipeops-cluster-01", "PipeOps Cloud"},
+		{"cloud-cluster-01", "Managed Cloud"},
 		{"custom-k8s", "Standard Kubernetes"},
 	}
 
