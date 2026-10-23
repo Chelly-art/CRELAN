@@ -1562,6 +1562,14 @@ func (s *adminService) getResourceYAML(w http.ResponseWriter, r *http.Request) {
 		rawObj, err = provisioner.client.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
 	case "deployment", "deployments":
 		rawObj, err = provisioner.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+	case "statefulset", "statefulsets", "sts":
+		rawObj, err = provisioner.client.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
+	case "daemonset", "daemonsets", "ds":
+		rawObj, err = provisioner.client.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
+	case "job", "jobs":
+		rawObj, err = provisioner.client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{})
+	case "cronjob", "cronjobs", "cj":
+		rawObj, err = provisioner.client.BatchV1().CronJobs(ns).Get(ctx, name, metav1.GetOptions{})
 	case "service", "services":
 		rawObj, err = provisioner.client.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
 	case "configmap", "configmaps":
@@ -1572,8 +1580,16 @@ func (s *adminService) getResourceYAML(w http.ResponseWriter, r *http.Request) {
 		rawObj, err = provisioner.client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	case "persistentvolumeclaim", "pvc", "pvcs":
 		rawObj, err = provisioner.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{})
+	case "persistentvolume", "pv", "pvs":
+		rawObj, err = provisioner.client.CoreV1().PersistentVolumes().Get(ctx, name, metav1.GetOptions{})
+	case "storageclass", "storageclasses", "sc":
+		rawObj, err = provisioner.client.StorageV1().StorageClasses().Get(ctx, name, metav1.GetOptions{})
 	case "ingress", "ingresses":
 		rawObj, err = provisioner.client.NetworkingV1().Ingresses(ns).Get(ctx, name, metav1.GetOptions{})
+	case "networkpolicy", "networkpolicies", "netpol":
+		rawObj, err = provisioner.client.NetworkingV1().NetworkPolicies(ns).Get(ctx, name, metav1.GetOptions{})
+	case "namespace", "namespaces", "ns":
+		rawObj, err = provisioner.client.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 	default:
 		writeError(w, http.StatusBadRequest, "Unsupported resource kind for YAML inspection")
 		return

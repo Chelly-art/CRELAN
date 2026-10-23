@@ -1507,9 +1507,9 @@ func fetchPVCsList(ctx context.Context, client kubernetes.Interface, namespace s
 	if err != nil {
 		return nil, err
 	}
-	var result []pvcSummary
+	result := make([]pvcSummary, 0)
 	for _, p := range list.Items {
-		var modes []string
+		modes := make([]string, 0)
 		for _, m := range p.Spec.AccessModes {
 			modes = append(modes, string(m))
 		}
@@ -1546,9 +1546,9 @@ func fetchPVsList(ctx context.Context, client kubernetes.Interface) ([]pvSummary
 	if err != nil {
 		return nil, err
 	}
-	var result []pvSummary
+	result := make([]pvSummary, 0)
 	for _, p := range list.Items {
-		var modes []string
+		modes := make([]string, 0)
 		for _, m := range p.Spec.AccessModes {
 			modes = append(modes, string(m))
 		}

@@ -71,6 +71,7 @@ function escapeHTML(str) {
 }
 
 function filterRows(items, fields) {
+  if (!items || !Array.isArray(items)) return [];
   if (!state.searchQuery) return items;
   const q = state.searchQuery.toLowerCase();
   return items.filter((item) => {
@@ -983,7 +984,8 @@ async function renderDeployments(container) {
 
 async function renderStatefulSets(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/statefulsets${ns}`);
+  const raw = await request(`/api/v1/admin/statefulsets${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -994,12 +996,12 @@ async function renderStatefulSets(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="5" class="admin-empty-state">No statefulsets found.</td></tr>` : ""}
           ${filtered.map((s) => `
-            <tr>
+            <tr onclick="openInspector('statefulset', '${escapeHTML(s.namespace)}', '${escapeHTML(s.name)}')">
               <td class="admin-table-name">${escapeHTML(s.name)}</td>
               <td class="admin-table-ns">${escapeHTML(s.namespace)}</td>
-              <td><strong>${s.ready_replicas} / ${s.replicas}</strong></td>
-              <td class="admin-table-ns">${escapeHTML(s.images.join(", "))}</td>
-              <td class="admin-table-age">${escapeHTML(s.age)}</td>
+              <td><strong>${s.ready_replicas ?? 0} / ${s.replicas ?? 0}</strong></td>
+              <td class="admin-table-ns">${escapeHTML((s.images || []).join(", "))}</td>
+              <td class="admin-table-age">${escapeHTML(s.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1009,7 +1011,8 @@ async function renderStatefulSets(container) {
 
 async function renderDaemonSets(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/daemonsets${ns}`);
+  const raw = await request(`/api/v1/admin/daemonsets${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -1020,13 +1023,13 @@ async function renderDaemonSets(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="6" class="admin-empty-state">No daemonsets found.</td></tr>` : ""}
           ${filtered.map((d) => `
-            <tr>
+            <tr onclick="openInspector('daemonset', '${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">
               <td class="admin-table-name">${escapeHTML(d.name)}</td>
               <td class="admin-table-ns">${escapeHTML(d.namespace)}</td>
-              <td>${d.desired}</td>
-              <td>${d.current}</td>
-              <td>${d.ready}</td>
-              <td class="admin-table-age">${escapeHTML(d.age)}</td>
+              <td>${d.desired ?? 0}</td>
+              <td>${d.current ?? 0}</td>
+              <td>${d.ready ?? 0}</td>
+              <td class="admin-table-age">${escapeHTML(d.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1036,7 +1039,8 @@ async function renderDaemonSets(container) {
 
 async function renderJobs(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/jobs${ns}`);
+  const raw = await request(`/api/v1/admin/jobs${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -1047,12 +1051,12 @@ async function renderJobs(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="5" class="admin-empty-state">No batch jobs found.</td></tr>` : ""}
           ${filtered.map((j) => `
-            <tr>
+            <tr onclick="openInspector('job', '${escapeHTML(j.namespace)}', '${escapeHTML(j.name)}')">
               <td class="admin-table-name">${escapeHTML(j.name)}</td>
               <td class="admin-table-ns">${escapeHTML(j.namespace)}</td>
-              <td>${j.succeeded} / ${j.completions}</td>
+              <td>${j.succeeded ?? 0} / ${j.completions ?? 0}</td>
               <td>${escapeHTML(j.duration || "-")}</td>
-              <td class="admin-table-age">${escapeHTML(j.age)}</td>
+              <td class="admin-table-age">${escapeHTML(j.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1062,7 +1066,8 @@ async function renderJobs(container) {
 
 async function renderCronJobs(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/cronjobs${ns}`);
+  const raw = await request(`/api/v1/admin/cronjobs${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace", "schedule"]);
 
   container.innerHTML = `
@@ -1073,14 +1078,14 @@ async function renderCronJobs(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No cronjobs found.</td></tr>` : ""}
           ${filtered.map((c) => `
-            <tr>
+            <tr onclick="openInspector('cronjob', '${escapeHTML(c.namespace)}', '${escapeHTML(c.name)}')">
               <td class="admin-table-name">${escapeHTML(c.name)}</td>
               <td class="admin-table-ns">${escapeHTML(c.namespace)}</td>
-              <td><code>${escapeHTML(c.schedule)}</code></td>
+              <td><code>${escapeHTML(c.schedule || "* * * * *")}</code></td>
               <td>${c.suspend ? "Yes" : "No"}</td>
-              <td>${c.active}</td>
+              <td>${c.active ?? 0}</td>
               <td>${escapeHTML(c.last_schedule || "-")}</td>
-              <td class="admin-table-age">${escapeHTML(c.age)}</td>
+              <td class="admin-table-age">${escapeHTML(c.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1094,7 +1099,8 @@ async function renderCronJobs(container) {
 
 async function renderServices(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/services${ns}`);
+  const raw = await request(`/api/v1/admin/services${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace", "type", "cluster_ip"]);
 
   container.innerHTML = `
@@ -1108,11 +1114,11 @@ async function renderServices(container) {
             <tr onclick="openInspector('service', '${escapeHTML(s.namespace)}', '${escapeHTML(s.name)}')">
               <td class="admin-table-name">${escapeHTML(s.name)}</td>
               <td class="admin-table-ns">${escapeHTML(s.namespace)}</td>
-              <td><span class="admin-badge admin-badge-completed">${escapeHTML(s.type)}</span></td>
-              <td class="admin-table-ns">${escapeHTML(s.cluster_ip)}</td>
-              <td>${escapeHTML(s.external_ips.join(", ") || "-")}</td>
-              <td>${escapeHTML(s.ports.join(", "))}</td>
-              <td class="admin-table-age">${escapeHTML(s.age)}</td>
+              <td><span class="admin-badge admin-badge-completed">${escapeHTML(s.type || "ClusterIP")}</span></td>
+              <td class="admin-table-ns">${escapeHTML(s.cluster_ip || "-")}</td>
+              <td>${escapeHTML((s.external_ips || []).join(", ") || "-")}</td>
+              <td>${escapeHTML((s.ports || []).join(", ") || "-")}</td>
+              <td class="admin-table-age">${escapeHTML(s.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1122,7 +1128,8 @@ async function renderServices(container) {
 
 async function renderIngresses(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/ingresses${ns}`);
+  const raw = await request(`/api/v1/admin/ingresses${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -1137,9 +1144,9 @@ async function renderIngresses(container) {
               <td class="admin-table-name">${escapeHTML(i.name)}</td>
               <td class="admin-table-ns">${escapeHTML(i.namespace)}</td>
               <td>${escapeHTML(i.ingress_class || "-")}</td>
-              <td>${escapeHTML(i.hosts.join(", ") || "*")}</td>
-              <td>${escapeHTML(i.addresses.join(", ") || "-")}</td>
-              <td class="admin-table-age">${escapeHTML(i.age)}</td>
+              <td>${escapeHTML((i.hosts || []).join(", ") || "*")}</td>
+              <td>${escapeHTML((i.addresses || []).join(", ") || "-")}</td>
+              <td class="admin-table-age">${escapeHTML(i.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1149,7 +1156,8 @@ async function renderIngresses(container) {
 
 async function renderNetworkPolicies(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/networkpolicies${ns}`);
+  const raw = await request(`/api/v1/admin/networkpolicies${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -1160,12 +1168,12 @@ async function renderNetworkPolicies(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="5" class="admin-empty-state">No network policies found.</td></tr>` : ""}
           ${filtered.map((np) => `
-            <tr>
+            <tr onclick="openInspector('networkpolicy', '${escapeHTML(np.namespace)}', '${escapeHTML(np.name)}')">
               <td class="admin-table-name">${escapeHTML(np.name)}</td>
               <td class="admin-table-ns">${escapeHTML(np.namespace)}</td>
               <td><code>${escapeHTML(np.pod_selector || "All pods")}</code></td>
-              <td>${escapeHTML(np.policy_types.join(", "))}</td>
-              <td class="admin-table-age">${escapeHTML(np.age)}</td>
+              <td>${escapeHTML((np.policy_types || []).join(", ") || "-")}</td>
+              <td class="admin-table-age">${escapeHTML(np.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1179,7 +1187,8 @@ async function renderNetworkPolicies(container) {
 
 async function renderConfigMaps(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/configmaps${ns}`);
+  const raw = await request(`/api/v1/admin/configmaps${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace"]);
 
   container.innerHTML = `
@@ -1193,9 +1202,9 @@ async function renderConfigMaps(container) {
             <tr onclick="openInspector('configmap', '${escapeHTML(cm.namespace)}', '${escapeHTML(cm.name)}')">
               <td class="admin-table-name">${escapeHTML(cm.name)}</td>
               <td class="admin-table-ns">${escapeHTML(cm.namespace)}</td>
-              <td>${cm.keys_count}</td>
-              <td class="admin-table-ns">${escapeHTML(cm.keys.slice(0, 5).join(", "))}${cm.keys.length > 5 ? "…" : ""}</td>
-              <td class="admin-table-age">${escapeHTML(cm.age)}</td>
+              <td>${cm.keys_count ?? 0}</td>
+              <td class="admin-table-ns">${escapeHTML((cm.keys || []).slice(0, 5).join(", "))}${(cm.keys || []).length > 5 ? "…" : ""}</td>
+              <td class="admin-table-age">${escapeHTML(cm.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1205,7 +1214,8 @@ async function renderConfigMaps(container) {
 
 async function renderSecrets(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/secrets${ns}`);
+  const raw = await request(`/api/v1/admin/secrets${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace", "type"]);
 
   container.innerHTML = `
@@ -1219,10 +1229,10 @@ async function renderSecrets(container) {
             <tr onclick="openInspector('secret', '${escapeHTML(s.namespace)}', '${escapeHTML(s.name)}')">
               <td class="admin-table-name">${escapeHTML(s.name)}</td>
               <td class="admin-table-ns">${escapeHTML(s.namespace)}</td>
-              <td><span class="admin-badge admin-badge-completed">${escapeHTML(s.type)}</span></td>
-              <td>${s.keys_count}</td>
-              <td class="admin-table-ns">${escapeHTML(s.keys.slice(0, 5).join(", "))}${s.keys.length > 5 ? "…" : ""}</td>
-              <td class="admin-table-age">${escapeHTML(s.age)}</td>
+              <td><span class="admin-badge admin-badge-completed">${escapeHTML(s.type || "Opaque")}</span></td>
+              <td>${s.keys_count ?? 0}</td>
+              <td class="admin-table-ns">${escapeHTML((s.keys || []).slice(0, 5).join(", "))}${(s.keys || []).length > 5 ? "…" : ""}</td>
+              <td class="admin-table-age">${escapeHTML(s.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1232,7 +1242,8 @@ async function renderSecrets(container) {
 
 async function renderPVCs(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const list = await request(`/api/v1/admin/pvcs${ns}`);
+  const raw = await request(`/api/v1/admin/pvcs${ns}`).catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "namespace", "volume_name", "storage_class"]);
 
   container.innerHTML = `
@@ -1246,11 +1257,11 @@ async function renderPVCs(container) {
             <tr onclick="openInspector('pvc', '${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">
               <td class="admin-table-name">${escapeHTML(p.name)}</td>
               <td class="admin-table-ns">${escapeHTML(p.namespace)}</td>
-              <td><span class="admin-badge ${p.status === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(p.status)}</span></td>
+              <td><span class="admin-badge ${p.status === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(p.status || "Unknown")}</span></td>
               <td>${escapeHTML(p.capacity || "-")}</td>
               <td>${escapeHTML(p.storage_class || "-")}</td>
               <td class="admin-table-ns">${escapeHTML(p.volume_name || "-")}</td>
-              <td class="admin-table-age">${escapeHTML(p.age)}</td>
+              <td class="admin-table-age">${escapeHTML(p.age || "-")}</td>
               <td style="text-align: right;">
                 <button class="admin-action-btn btn-delete" onclick="event.stopPropagation(); deletePVC('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Delete PVC">Delete</button>
               </td>
@@ -1262,7 +1273,8 @@ async function renderPVCs(container) {
 }
 
 async function renderPVs(container) {
-  const list = await request("/api/v1/admin/pvs");
+  const raw = await request("/api/v1/admin/pvs").catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "storage_class", "status"]);
 
   container.innerHTML = `
@@ -1273,15 +1285,15 @@ async function renderPVs(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No persistent volumes found.</td></tr>` : ""}
           ${filtered.map((pv) => `
-            <tr>
+            <tr onclick="openInspector('pv', '', '${escapeHTML(pv.name)}')">
               <td class="admin-table-name">${escapeHTML(pv.name)}</td>
-              <td>${escapeHTML(pv.capacity)}</td>
-              <td>${escapeHTML(pv.access_modes.join(", "))}</td>
-              <td>${escapeHTML(pv.reclaim_policy)}</td>
-              <td><span class="admin-badge ${pv.status === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(pv.status)}</span></td>
+              <td>${escapeHTML(pv.capacity || "-")}</td>
+              <td>${escapeHTML((pv.access_modes || []).join(", ") || "-")}</td>
+              <td>${escapeHTML(pv.reclaim_policy || "-")}</td>
+              <td><span class="admin-badge ${pv.status === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(pv.status || "Unknown")}</span></td>
               <td class="admin-table-ns">${escapeHTML(pv.claim || "-")}</td>
               <td>${escapeHTML(pv.storage_class || "-")}</td>
-              <td class="admin-table-age">${escapeHTML(pv.age)}</td>
+              <td class="admin-table-age">${escapeHTML(pv.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1290,7 +1302,8 @@ async function renderPVs(container) {
 }
 
 async function renderStorageClasses(container) {
-  const list = await request("/api/v1/admin/storageclasses");
+  const raw = await request("/api/v1/admin/storageclasses").catch(() => []);
+  const list = Array.isArray(raw) ? raw : [];
   const filtered = filterRows(list, ["name", "provisioner"]);
 
   container.innerHTML = `
@@ -1301,14 +1314,14 @@ async function renderStorageClasses(container) {
         <tbody>
           ${filtered.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No storage classes found.</td></tr>` : ""}
           ${filtered.map((sc) => `
-            <tr>
+            <tr onclick="openInspector('storageclass', '', '${escapeHTML(sc.name)}')">
               <td class="admin-table-name">${escapeHTML(sc.name)}</td>
-              <td class="admin-table-ns">${escapeHTML(sc.provisioner)}</td>
+              <td class="admin-table-ns">${escapeHTML(sc.provisioner || "-")}</td>
               <td>${escapeHTML(sc.reclaim_policy || "-")}</td>
               <td>${escapeHTML(sc.volume_binding_mode || "-")}</td>
               <td>${sc.allow_volume_expansion ? "Yes" : "No"}</td>
               <td>${sc.is_default ? `<span class="admin-badge admin-badge-ready">Default</span>` : "-"}</td>
-              <td class="admin-table-age">${escapeHTML(sc.age)}</td>
+              <td class="admin-table-age">${escapeHTML(sc.age || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -2687,6 +2700,33 @@ function renderInspectorOverview(container, kind, raw) {
           </div>
         `).join("")}
       </div>`;
+  } else if (kind === "pvc" || kind === "persistentvolumeclaim") {
+    const spec = raw.spec || {};
+    const status = raw.status || {};
+    const cap = (status.capacity && status.capacity.storage) || (spec.resources && spec.resources.requests && spec.resources.requests.storage) || "-";
+    specDetails = `
+      <div class="admin-spec-group">
+        <div class="admin-spec-group-title">PersistentVolumeClaim Status & Specs</div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Phase Status</span><span class="admin-spec-val"><span class="admin-badge ${status.phase === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(status.phase || "Unknown")}</span></span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Bound Volume</span><span class="admin-spec-val"><code>${escapeHTML(spec.volumeName || "-")}</code></span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Storage Capacity</span><span class="admin-spec-val">${escapeHTML(cap)}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">StorageClass</span><span class="admin-spec-val">${escapeHTML(spec.storageClassName || "-")}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Access Modes</span><span class="admin-spec-val">${escapeHTML((spec.accessModes || []).join(", ") || "-")}</span></div>
+      </div>`;
+  } else if (kind === "pv" || kind === "persistentvolume") {
+    const spec = raw.spec || {};
+    const status = raw.status || {};
+    const cap = (spec.capacity && spec.capacity.storage) || "-";
+    specDetails = `
+      <div class="admin-spec-group">
+        <div class="admin-spec-group-title">PersistentVolume Status & Specs</div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Phase Status</span><span class="admin-spec-val"><span class="admin-badge ${status.phase === "Bound" ? "admin-badge-ready" : "admin-badge-warning"}">${escapeHTML(status.phase || "Unknown")}</span></span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Storage Capacity</span><span class="admin-spec-val">${escapeHTML(cap)}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Reclaim Policy</span><span class="admin-spec-val">${escapeHTML(spec.persistentVolumeReclaimPolicy || "-")}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">StorageClass</span><span class="admin-spec-val">${escapeHTML(spec.storageClassName || "-")}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Access Modes</span><span class="admin-spec-val">${escapeHTML((spec.accessModes || []).join(", ") || "-")}</span></div>
+        <div class="admin-spec-row"><span class="admin-spec-label">Claim Reference</span><span class="admin-spec-val">${spec.claimRef ? `${escapeHTML(spec.claimRef.namespace)}/${escapeHTML(spec.claimRef.name)}` : "None"}</span></div>
+      </div>`;
   }
 
   container.innerHTML = `
@@ -3316,6 +3356,10 @@ function setupEventListeners() {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
       openCommandPalette();
+    } else if (e.key === "Escape") {
+      closeCommandPalette();
+      closeInspector();
+      closeClusterColorModal();
     }
   });
 
@@ -7628,6 +7672,7 @@ const COMMAND_PALETTE_ITEMS = [
   { title: "Network Policies", category: "Networking", hash: "networkpolicies", icon: "🧱", desc: "Ingress/egress isolation rules and pod selectors" },
   { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", icon: "🔐", desc: "Cluster configuration maps and encoded secrets" },
   { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", icon: "💽", desc: "Storage claims, sizes, and bound PersistentVolumes" },
+  { title: "Persistent Volumes (PVs)", category: "Config & Storage", hash: "pvs", icon: "💾", desc: "Cluster storage volumes, capacity, and reclaim policies" },
   { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", icon: "🏷️", desc: "Dynamic provisioners and volume expansion rules" },
   { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", icon: "📁", desc: "Namespace isolation, quotas, and customer tenant bindings" },
   { title: "Cluster Warning Events", category: "Cluster", hash: "events", icon: "⚠️", desc: "Real-time cluster warning event stream and reasons" },

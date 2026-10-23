@@ -2728,9 +2728,6 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   .admin-content {
     padding: 16px 20px;
   }
-  .admin-cmd-k-btn {
-    display: none;
-  }
 }
 
 @media (max-width: 1024px) {
@@ -2746,6 +2743,12 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
     padding: 14px 16px;
   }
   .admin-perspective-toggle {
+    display: none;
+  }
+  .admin-cmd-k-btn .admin-cmd-k-label {
+    display: none;
+  }
+  .admin-copilot-pill span:not(.admin-copilot-sparkle) {
     display: none;
   }
 }

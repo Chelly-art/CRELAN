@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f7fa">
     <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
-    <link rel="stylesheet" href="/assets/admin.css?v=3.2.0">
-    <script src="/assets/admin.js?v=3.2.0" defer></script>
+    <link rel="stylesheet" href="/assets/admin.css?v=3.3.0">
+    <script src="/assets/admin.js?v=3.3.0" defer></script>
     <style>
       /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
       button.admin-rail-domain-btn,
@@ -421,7 +421,7 @@
           </button>
 
           <button class="admin-cmd-k-btn" id="open-cmd-k-btn" type="button" title="Quick Launcher (Cmd+K / Ctrl+K)">
-            <span class="admin-cmd-k-badge">⌘K</span> Quick Launcher
+            <span class="admin-cmd-k-badge">⌘K</span> <span class="admin-cmd-k-label">Quick Launcher</span>
           </button>
 
           <div class="admin-topbar-right">
@@ -854,6 +854,9 @@
                 <button class="admin-btn admin-btn-primary" id="debug-modal-launch-btn" type="submit">Launch Debug Shell</button>
               </div>
             </form>
+          </div>
+        </div>
+
         <div class="admin-modal-overlay" id="admin-cmd-k-modal">
           <div class="admin-cmd-k-box">
             <div class="admin-cmd-k-header">
