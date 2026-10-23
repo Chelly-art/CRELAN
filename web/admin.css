@@ -95,10 +95,16 @@ body.admin-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 0;
-  gap: 12px;
+  padding: 12px 0 8px;
+  gap: 10px;
   flex-shrink: 0;
   z-index: 10;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.admin-rail::-webkit-scrollbar {
+  display: none;
 }
 
 .admin-rail-brand {
@@ -264,12 +270,14 @@ body.admin-body {
 /* 2. Secondary Sidebar Tree */
 .admin-sidebar {
   width: 236px;
+  min-width: 236px;
   background-color: var(--admin-sidebar-bg);
   border-right: 1px solid var(--admin-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   user-select: none;
 }
 
@@ -331,6 +339,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 140px;
 }
 
 .admin-cluster-tag {
@@ -342,6 +351,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
+  flex-shrink: 0;
 }
 
 .admin-nav-tree {
@@ -368,13 +378,21 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 16px 7px 22px;
+  padding: 7px 14px 7px 18px;
   color: #566273;
   text-decoration: none;
   font-size: 12px;
   font-weight: 500;
   transition: all 0.12s ease;
   border-left: 3px solid transparent;
+  gap: 8px;
+}
+
+.admin-tree-item > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .admin-tree-item:hover {
@@ -397,6 +415,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   color: #475467;
   padding: 1px 6px;
   border-radius: 10px;
+  flex-shrink: 0;
 }
 
 .admin-tree-item.active .admin-item-badge {
@@ -415,6 +434,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 /* 3. Main Work Area */
 .admin-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -427,22 +447,25 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
    ========================================================================== */
 
 .admin-topbar {
-  height: 54px;
+  min-height: 54px;
+  height: auto;
   background-color: #ffffff;
   border-bottom: 1px solid var(--admin-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 8px 18px;
   flex-shrink: 0;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .admin-topbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+  flex-shrink: 1;
 }
 
 .admin-context-chip {
@@ -454,6 +477,13 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 11px;
+  max-width: 220px;
+}
+
+.admin-context-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-context-chip .admin-dot {
@@ -510,7 +540,10 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   position: relative;
   display: flex;
   align-items: center;
-  width: 260px;
+  width: auto;
+  min-width: 140px;
+  max-width: 260px;
+  flex: 1 1 180px;
 }
 
 .admin-search-input {
@@ -549,7 +582,10 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 .admin-topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 .admin-refresh-btn {
@@ -750,12 +786,31 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   background-color: var(--admin-surface);
   border: 1px solid var(--admin-border);
   border-radius: 9px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--admin-shadow-sm);
+}
+
+.admin-table-container::-webkit-scrollbar {
+  height: 6px;
+}
+.admin-table-container::-webkit-scrollbar-track {
+  background: #f1f3f6;
+  border-radius: 3px;
+}
+.admin-table-container::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.admin-table-container::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .admin-table {
   width: 100%;
+  min-width: 680px;
   border-collapse: collapse;
   text-align: left;
   font-size: 12px;
@@ -934,7 +989,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 
 .admin-overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
   margin-bottom: 24px;
 }
@@ -1779,7 +1834,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 /* Incident War Room Split Layout */
 .admin-warroom-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 16px;
   margin-top: 16px;
 }
@@ -2228,7 +2283,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 
 .sre-signal-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
 }
 
@@ -2534,7 +2589,7 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 
 .fleet-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 8px;
   background: #f8fafc;
   border-radius: 8px;
@@ -2564,12 +2619,10 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
 /* ClickUp-Style List View Table */
 .clickup-fleet-table {
   width: 100%;
+  min-width: 820px;
   border-collapse: separate;
   border-spacing: 0;
   background: #ffffff;
-  border: 1px solid var(--admin-border);
-  border-radius: 10px;
-  overflow: hidden;
 }
 
 .clickup-fleet-table th {
@@ -2662,3 +2715,56 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   background: #3b82f6;
   transition: background 0.15s ease;
 }
+
+/* ==========================================================================
+   Responsive Adaptability & Media Queries
+   ========================================================================== */
+
+@media (max-width: 1280px) {
+  .admin-topbar {
+    padding: 6px 14px;
+    gap: 8px;
+  }
+  .admin-content {
+    padding: 16px 20px;
+  }
+  .admin-cmd-k-btn {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .admin-sidebar {
+    width: 200px;
+    min-width: 200px;
+  }
+  .admin-tree-item {
+    padding: 6px 10px 6px 14px;
+    font-size: 11.5px;
+  }
+  .admin-content {
+    padding: 14px 16px;
+  }
+  .admin-perspective-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-sidebar {
+    display: none;
+  }
+  .admin-topbar-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .admin-search-box {
+    max-width: 100%;
+    width: 100%;
+  }
+  .admin-topbar-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+

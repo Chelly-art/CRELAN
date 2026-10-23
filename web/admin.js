@@ -6369,77 +6369,79 @@ async function renderClusterFleet(container) {
       </div>
     ` : `
       <!-- ClickUp-Style List View -->
-      <table class="clickup-fleet-table">
-        <thead>
-          <tr>
-            <th>Cluster / Context</th>
-            <th style="width: 60px; text-align: center;">Color</th>
-            <th>Environment</th>
-            <th>Status</th>
-            <th>Provider</th>
-            <th style="text-align: right;">Nodes</th>
-            <th style="text-align: right;">Pods</th>
-            <th>K8s Version</th>
-            <th style="text-align: right; width: 140px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${fleet.map(c => {
-            const isActive = Boolean(c.is_current || c.is_active);
-            const color = c.color || "#3b82f6";
-            const monogram = getClusterMonogram(c.name, c.alias);
-            const env = (c.environment || "production").toLowerCase();
-            return `
-              <tr class="${isActive ? 'row-active' : ''}">
-                <td>
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <div class="fleet-cluster-badge" style="width: 28px; height: 28px; font-size: 11px; background-color: ${escapeHTML(color)};">
-                      ${escapeHTML(monogram)}
+      <div class="admin-table-container">
+        <table class="clickup-fleet-table">
+          <thead>
+            <tr>
+              <th>Cluster / Context</th>
+              <th style="width: 60px; text-align: center;">Color</th>
+              <th>Environment</th>
+              <th>Status</th>
+              <th>Provider</th>
+              <th style="text-align: right;">Nodes</th>
+              <th style="text-align: right;">Pods</th>
+              <th>K8s Version</th>
+              <th style="text-align: right; width: 140px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${fleet.map(c => {
+              const isActive = Boolean(c.is_current || c.is_active);
+              const color = c.color || "#3b82f6";
+              const monogram = getClusterMonogram(c.name, c.alias);
+              const env = (c.environment || "production").toLowerCase();
+              return `
+                <tr class="${isActive ? 'row-active' : ''}">
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div class="fleet-cluster-badge" style="width: 28px; height: 28px; font-size: 11px; background-color: ${escapeHTML(color)};">
+                        ${escapeHTML(monogram)}
+                      </div>
+                      <div>
+                        <strong style="display: block; font-size: 13px;">${escapeHTML(c.alias || c.name)}</strong>
+                        ${c.alias ? `<span style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">${escapeHTML(c.name)}</span>` : ""}
+                      </div>
                     </div>
-                    <div>
-                      <strong style="display: block; font-size: 13px;">${escapeHTML(c.alias || c.name)}</strong>
-                      ${c.alias ? `<span style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">${escapeHTML(c.name)}</span>` : ""}
+                  </td>
+                  <td style="text-align: center;">
+                    <span class="clickup-color-dot" style="background-color: ${escapeHTML(color)};" title="Click to customize cluster color" onclick="openClusterColorModal('${escapeHTML(c.name)}')"></span>
+                  </td>
+                  <td>
+                    <span class="fleet-card-env-badge env-${escapeHTML(env)}">
+                      ${escapeHTML(c.environment || "Production")}
+                    </span>
+                  </td>
+                  <td>
+                    <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
+                      <span class="status-dot" style="background-color: ${isActive ? 'var(--admin-green)' : '#94a3b8'};"></span>
+                      ${isActive ? 'Active' : 'Connected'}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
+                  </td>
+                  <td style="text-align: right; font-weight: 600;">${c.nodes_count ?? c.node_count ?? 0}</td>
+                  <td style="text-align: right; font-weight: 600;">${c.total_pods ?? 0}</td>
+                  <td>
+                    <span style="font-family: monospace; font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(c.server_version || c.version || "v1.28+")}</span>
+                  </td>
+                  <td style="text-align: right;">
+                    <div style="display: inline-flex; gap: 6px;">
+                      ${isActive ? `
+                        <span class="admin-badge admin-badge-ready" style="font-size: 11px;">Active</span>
+                      ` : `
+                        <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch</button>
+                        <button class="admin-btn admin-btn-sm" title="Disconnect Cluster" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">✕</button>
+                      `}
+                      <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">🎨</button>
                     </div>
-                  </div>
-                </td>
-                <td style="text-align: center;">
-                  <span class="clickup-color-dot" style="background-color: ${escapeHTML(color)};" title="Click to customize cluster color" onclick="openClusterColorModal('${escapeHTML(c.name)}')"></span>
-                </td>
-                <td>
-                  <span class="fleet-card-env-badge env-${escapeHTML(env)}">
-                    ${escapeHTML(c.environment || "Production")}
-                  </span>
-                </td>
-                <td>
-                  <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
-                    <span class="status-dot" style="background-color: ${isActive ? 'var(--admin-green)' : '#94a3b8'};"></span>
-                    ${isActive ? 'Active' : 'Connected'}
-                  </span>
-                </td>
-                <td>
-                  <span class="fleet-provider-badge">${escapeHTML(c.provider || "Kubernetes")}</span>
-                </td>
-                <td style="text-align: right; font-weight: 600;">${c.nodes_count ?? c.node_count ?? 0}</td>
-                <td style="text-align: right; font-weight: 600;">${c.total_pods ?? 0}</td>
-                <td>
-                  <span style="font-family: monospace; font-size: 12px; color: var(--admin-text-muted);">${escapeHTML(c.server_version || c.version || "v1.28+")}</span>
-                </td>
-                <td style="text-align: right;">
-                  <div style="display: inline-flex; gap: 6px;">
-                    ${isActive ? `
-                      <span class="admin-badge admin-badge-ready" style="font-size: 11px;">Active</span>
-                    ` : `
-                      <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch</button>
-                      <button class="admin-btn admin-btn-sm" title="Disconnect Cluster" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">✕</button>
-                    `}
-                    <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">🎨</button>
-                  </div>
-                </td>
-              </tr>
-            `;
-          }).join("")}
-        </tbody>
-      </table>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
     `}
   `;
 }
