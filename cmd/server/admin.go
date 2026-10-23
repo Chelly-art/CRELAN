@@ -2151,7 +2151,7 @@ func (s *adminService) testWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	testPayload := map[string]any{
-		"title":        "🚨 [TEST ALERT] Crelan Incident Webhook Dispatcher",
+		"title":        "[TEST ALERT] Crelan Incident Webhook Dispatcher",
 		"severity":     "WARNING",
 		"workload":     "production/orders-api",
 		"summary":      "This is a verified test alert dispatched from Crelan Day-2 Operational Intelligence to validate the webhook integration.",

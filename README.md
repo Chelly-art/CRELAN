@@ -48,7 +48,7 @@ Crelan supports both source-based builds and pre-built container image rollouts:
 
 1. **Source builds (GitHub):**
    - **Build mechanisms:** Select `auto` (auto-detects Dockerfile, falls back to Buildpack), `dockerfile` (rootless BuildKit job), or `buildpack` (Cloud Native Buildpacks via kpack).
-   - **✨ Built-in Dockerfile Generator:** Built directly into the dashboard. Generates optimized, multi-stage production Dockerfiles for Node.js, Python, Go, Rust, Java/Spring Boot, and Static Web/SPA with non-root security best practices.
+   - ** Built-in Dockerfile Generator:** Built directly into the dashboard. Generates optimized, multi-stage production Dockerfiles for Node.js, Python, Go, Rust, Java/Spring Boot, and Static Web/SPA with non-root security best practices.
    - **Private repositories:** Supported via connected GitHub App (`/settings/github/install`) with webhook triggers on `git push`, or by providing a Personal Access Token (`ghp_...`).
 2. **Container image deployment:**
    - Deploy pre-built images from Docker Hub, GitHub Container Registry (`ghcr.io`), GitLab Registry, AWS ECR, or custom registries.

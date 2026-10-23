@@ -20,8 +20,8 @@
           <a class="nav-link" href="#databases"><span class="nav-icon">◉</span> Databases</a>
           <a class="nav-link" href="#services"><span class="nav-icon">◇</span> Services & storage</a>
           <a class="nav-link" href="#storage"><span class="nav-icon">▤</span> Retained volumes</a>
-          <a class="nav-link" href="#tokens"><span class="nav-icon">🔑</span> API tokens</a>
-          <a class="nav-link" href="#team"><span class="nav-icon">♙</span> Team</a>
+          <a class="nav-link" href="#tokens"> API tokens</a>
+          <a class="nav-link" href="#team"> Team</a>
           <a class="nav-link" href="#usage"><span class="nav-icon">◷</span> Usage & audit</a>
         </nav>
         <div class="sidebar-bottom">
@@ -30,7 +30,7 @@
             <span class="user-details">
               <strong id="account-name">Loading account…</strong>
               <small id="account-email"></small>
-              <a href="/admin" id="admin-console-shortcut" hidden style="display: none; font-size: 11px; color: #c45100; font-weight: 600; text-decoration: none; margin-top: 4px;">⚡ Admin console</a>
+              <a href="/admin" id="admin-console-shortcut" hidden style="display: none; font-size: 11px; color: #c45100; font-weight: 600; text-decoration: none; margin-top: 4px;">Admin console</a>
             </span>
             <button class="signout-button" id="signout-button" type="button">Sign out</button>
           </div>
@@ -48,8 +48,8 @@
             <div class="welcome">
               <div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="applications-heading">Applications</h1><p>Manage your applications and inspect only the resources that belong to each app.</p></div>
               <div class="welcome-actions" style="display: flex; align-items: center; gap: 8px;">
-                <span class="token-row-state active" id="github-connected-badge" hidden style="font-size: 11px;">✓ GitHub: <strong id="github-account-name"></strong></span>
-                <a class="inline-action" id="github-connect-btn" href="/settings/github/install" style="font-size: 11px; text-decoration: none;">🔗 Connect GitHub</a>
+                <span class="token-row-state active" id="github-connected-badge" hidden style="font-size: 11px;">GitHub: <strong id="github-account-name"></strong></span>
+                <a class="inline-action" id="github-connect-btn" href="/settings/github/install" style="font-size: 11px; text-decoration: none;">Connect GitHub</a>
                 <a class="primary-button" href="#deploy" style="text-decoration: none;"><span>＋</span> Deploy an app</a>
               </div>
             </div>
@@ -70,7 +70,7 @@
               <section class="panel token-builder" id="deploy-form-panel">
                 <div class="panel-heading"><div><h2>Deployment configuration</h2><p>Provide your source code repository or container image coordinates.</p></div></div>
                 <div id="no-cluster-alert" class="object-storage-note" style="margin: 0 0 16px 0; border-color: #f1d4b8; background: #fff8f1; color: #74400d;" hidden>
-                  <strong>⚠️ No Kubernetes cluster connected:</strong> Your Crelan server currently has no active cluster. Reconnect your cluster in the <a href="/admin" style="color: #c45100; font-weight: 600; text-decoration: underline;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in your host environment variables for permanent connection.
+                  <strong>No Kubernetes cluster connected:</strong> Your Crelan server currently has no active cluster. Reconnect your cluster in the <a href="/admin" style="color: #c45100; font-weight: 600; text-decoration: underline;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in your host environment variables for permanent connection.
                 </div>
                 <form id="deployment-form">
                   <div class="deployment-two-col">
@@ -91,7 +91,7 @@
                     <label class="form-label" for="app-repository">GitHub repository URL</label>
                     <input class="text-input deployment-input" id="app-repository" name="repository_url" type="url" placeholder="https://github.com/owner/repository">
                     <div id="github-auto-deploy-hint" style="margin-top: 6px; font-size: 11px;">
-                      <span id="github-app-status-text" style="color: #667085;">💡 Connect GitHub to automatically trigger zero-downtime deployments on git push.</span>
+                      <span id="github-app-status-text" style="color: #667085;">Connect GitHub to automatically trigger zero-downtime deployments on git push.</span>
                       <a id="github-app-connect-link" href="/settings/github/install" target="_blank" style="color: #c45100; font-weight: 600; margin-left: 6px; text-decoration: none;">Connect GitHub App →</a>
                     </div>
                     <div class="deployment-two-col">
@@ -118,7 +118,7 @@
                         <input class="text-input deployment-input" id="app-git-token" type="password" placeholder="Personal access token (ghp_...)">
                       </div>
                       <div style="padding-top: 18px;">
-                        <button class="inline-action" id="open-dockerfile-generator" onclick="openDockerfileModal()" type="button" style="width: 100%; text-align: center;">✨ Generate Dockerfile</button>
+                        <button class="inline-action" id="open-dockerfile-generator" onclick="openDockerfileModal()" type="button" style="width: 100%; text-align: center;">Generate Dockerfile</button>
                       </div>
                     </div>
                   </div>
@@ -310,7 +310,7 @@
                 </form>
                 <div class="database-credentials" id="token-created-card" hidden style="margin-top: 18px; border: 2px solid #38a169; background: #f0fff4;">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <strong style="color: #22543d; font-size: 13px;">✓ API Token Generated Successfully</strong>
+                    <strong style="color: #22543d; font-size: 13px;">API Token Generated Successfully</strong>
                     <span style="font-size: 10px; color: #276749; font-weight: 600;">Save now (shown once)</span>
                   </div>
                   <p style="margin: 4px 0 8px; color: #2d3748;">This secret token will never be displayed again. Add it as <code>CRELAN_TOKEN</code> in your GitHub repository secrets or runner.</p>
@@ -443,10 +443,10 @@ jobs:
       <div class="panel" style="width: min(720px, 95vw); max-height: 85vh; display: flex; flex-direction: column; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-radius: 12px; background: #fff;">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e8ed; padding-bottom: 14px; margin-bottom: 16px;">
           <div>
-            <h2 style="margin: 0; font-size: 18px;">✨ Production Dockerfile Generator</h2>
+            <h2 style="margin: 0; font-size: 18px;">Production Dockerfile Generator</h2>
             <p style="margin: 4px 0 0; color: #667085; font-size: 12px;">Choose your language/framework to get an optimized, multi-stage, non-root Dockerfile.</p>
           </div>
-          <button class="inline-action" id="close-dockerfile-gen" onclick="closeDockerfileModal()" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">✕</button>
+          <button class="inline-action" id="close-dockerfile-gen" onclick="closeDockerfileModal()" type="button" style="font-size: 18px; line-height: 1; padding: 4px 8px;">&times;</button>
         </div>
         <div style="margin-bottom: 14px;">
           <label class="form-label" for="gen-preset">Language / Framework Preset</label>

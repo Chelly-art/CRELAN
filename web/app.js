@@ -100,7 +100,7 @@ async function loadClusterContexts() {
     defaultOption.value = "";
     defaultOption.textContent = active
       ? `Primary: ${active} (Default)`
-      : (hasCluster ? "Default cluster (platform managed)" : "⚠️ No cluster connected (connect in /admin)");
+      : (hasCluster ? "Default cluster (platform managed)" : "No cluster connected (connect in /admin)");
     select.append(defaultOption);
 
     contexts.forEach((ctx) => {
@@ -131,7 +131,7 @@ async function checkGitHubInstallation() {
       if (badge) badge.hidden = false;
       if (connectBtn) connectBtn.hidden = true;
       if (autoDeployHintText) {
-        autoDeployHintText.textContent = `✓ Auto-deploy active: GitHub connected (@${data.account}). Pushes to this branch will automatically trigger rolling deployments.`;
+        autoDeployHintText.textContent = `Auto-deploy active: GitHub connected (@${data.account}). Pushes to this branch will automatically trigger rolling deployments.`;
         autoDeployHintText.style.color = "#167044";
       }
       if (autoDeployHintLink) autoDeployHintLink.hidden = true;
@@ -139,7 +139,7 @@ async function checkGitHubInstallation() {
       if (badge) badge.hidden = true;
       if (connectBtn) connectBtn.hidden = false;
       if (autoDeployHintText) {
-        autoDeployHintText.textContent = "💡 Connect GitHub to automatically trigger zero-downtime deployments on git push.";
+        autoDeployHintText.textContent = "Connect GitHub to automatically trigger zero-downtime deployments on git push.";
         autoDeployHintText.style.color = "#667085";
       }
       if (autoDeployHintLink) autoDeployHintLink.hidden = false;
@@ -330,7 +330,7 @@ $("#deployment-form").addEventListener("submit", async (event) => {
     await loadDeployments();
   } catch (cause) {
     if (String(cause.message || "").includes("not connected or unavailable")) {
-      error.innerHTML = `⚠️ ${cause.message}. Reconnect your cluster in the <a href="/admin" style="color: #c45100; text-decoration: underline; font-weight: 600;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in your environment variables.`;
+      error.innerHTML = `${cause.message}. Reconnect your cluster in the <a href="/admin" style="color: #c45100; text-decoration: underline; font-weight: 600;">Admin Console</a>, or configure <code>CRELAN_KUBECONFIG_DATA_B64</code> in your environment variables.`;
     } else {
       error.textContent = cause.message;
     }
@@ -1720,7 +1720,7 @@ $("#copy-token-secret")?.addEventListener("click", async () => {
   const btn = $("#copy-token-secret");
   try {
     await navigator.clipboard.writeText(val);
-    btn.textContent = "✓ Copied to clipboard!";
+    btn.textContent = "Copied to clipboard!";
   } catch {
     const textarea = document.createElement("textarea");
     textarea.value = val;
@@ -1728,7 +1728,7 @@ $("#copy-token-secret")?.addEventListener("click", async () => {
     textarea.select();
     document.execCommand("copy");
     document.body.removeChild(textarea);
-    btn.textContent = "✓ Copied!";
+    btn.textContent = "Copied!";
   }
   setTimeout(() => { if (btn) btn.textContent = "Copy token to clipboard"; }, 2500);
 });

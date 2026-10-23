@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f7fa">
     <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
-    <link rel="stylesheet" href="/assets/admin.css?v=3.4.0">
-    <script src="/assets/admin.js?v=3.4.0" defer></script>
+    <link rel="stylesheet" href="/assets/admin.css?v=3.5.0">
+    <script src="/assets/admin.js?v=3.5.0" defer></script>
     <style>
       /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
       button.admin-rail-domain-btn,
@@ -101,19 +101,19 @@
         <!-- 4 Primary Operational Domain Switchers -->
         <div class="admin-rail-domains">
           <button class="admin-rail-domain-btn active" id="rail-domain-k8s" data-domain="k8s" type="button" title="Cluster Core (Workloads, Pods, Network, Storage)">
-            <span class="admin-rail-domain-icon">☸️</span>
+            <span class="admin-rail-domain-icon">K8S</span>
             <span class="admin-rail-domain-label">Core</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-sre" data-domain="sre" type="button" title="SRE & Reliability (SLOs, RED Signals, Chaos, War Room)">
-            <span class="admin-rail-domain-icon">📈</span>
+            <span class="admin-rail-domain-icon">SRE</span>
             <span class="admin-rail-domain-label">SRE</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-security" data-domain="security" type="button" title="Security & Compliance (CVEs, CIS, RBAC, Isolation)">
-            <span class="admin-rail-domain-icon">🛡️</span>
+            <span class="admin-rail-domain-icon">SEC</span>
             <span class="admin-rail-domain-label">Security</span>
           </button>
           <button class="admin-rail-domain-btn" id="rail-domain-ops" data-domain="ops" type="button" title="Platform Ops & Fleet (Multi-Cluster, Helm, CRDs, Drift)">
-            <span class="admin-rail-domain-icon">⚙️</span>
+            <span class="admin-rail-domain-icon">OPS</span>
             <span class="admin-rail-domain-label">Fleet</span>
           </button>
         </div>
@@ -135,7 +135,7 @@
             <span class="admin-cluster-tag" id="sidebar-cluster-tag">Disconnected</span>
           </div>
           <div class="admin-sidebar-domain-badge" id="sidebar-domain-badge">
-            <span id="sidebar-domain-icon">☸️</span>
+            <span id="sidebar-domain-icon">K8S</span>
             <div style="display: flex; flex-direction: column; overflow: hidden;">
               <strong id="sidebar-domain-title">Cluster Core</strong>
               <span class="admin-sidebar-domain-desc" id="sidebar-domain-desc">Workloads & Infrastructure</span>
@@ -449,7 +449,7 @@
             </button>
 
             <a class="admin-refresh-btn" id="topbar-docs-btn" href="#docs" title="Console Documentation & Component Breakdown" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-              <span>📖</span> Docs
+              Docs
             </a>
 
             <!-- User Badge -->
@@ -711,9 +711,9 @@
             <div class="admin-modal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
               <span id="postmortem-modal-id" style="font-size: 11px; color: var(--admin-text-muted); font-family: monospace;">-</span>
               <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-md" type="button" title="Download GitHub-Flavored Markdown report">📥 .MD</button>
-                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-json" type="button" title="Download raw structured telemetry JSON">📥 .JSON</button>
-                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-html" type="button" title="Download standalone styled executive HTML / Print to PDF">📥 .HTML (PDF)</button>
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-md" type="button" title="Download GitHub-Flavored Markdown report">Download .MD</button>
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-json" type="button" title="Download raw structured telemetry JSON">Download .JSON</button>
+                <button class="admin-btn admin-btn-sm" id="btn-download-postmortem-html" type="button" title="Download standalone styled executive HTML / Print to PDF">Download .HTML (PDF)</button>
                 <button class="admin-btn admin-btn-sm admin-btn-primary" id="postmortem-modal-copy-btn" type="button">1-Click Copy</button>
                 <button class="admin-btn admin-btn-sm" id="postmortem-modal-dismiss" type="button">Close</button>
               </div>
@@ -854,7 +854,7 @@
                     <input class="admin-form-input" id="debug-custom-image-input" type="text" placeholder="e.g. my-registry.io/tools/debug:latest" style="width: 100%;">
                   </div>
                   <div style="font-size: 12px; color: var(--admin-text-muted); line-height: 1.4; background: var(--admin-bg-secondary); padding: 8px 12px; border-radius: var(--admin-radius-sm);">
-                    ⚡ A terminal session will open automatically upon container attachment.
+                    A terminal session will open automatically upon container attachment.
                   </div>
                 </div>
               </div>
@@ -869,7 +869,7 @@
         <div class="admin-modal-overlay" id="admin-cmd-k-modal">
           <div class="admin-cmd-k-box">
             <div class="admin-cmd-k-header">
-              <span class="admin-cmd-k-icon">⚡</span>
+              <span class="admin-cmd-k-icon">&gt;</span>
               <input class="admin-cmd-k-input" id="cmd-k-input" type="text" placeholder="Jump to pod, deployment, node, CVE, Helm, or action..." autocomplete="off" spellcheck="false">
               <button class="admin-cmd-k-esc" id="cmd-k-close-btn" type="button">ESC</button>
             </div>

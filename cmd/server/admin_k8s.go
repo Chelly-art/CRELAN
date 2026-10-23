@@ -4801,13 +4801,13 @@ func dispatchIncidentWebhook(ctx context.Context, webhook platformIncidentWebhoo
 
 	if webhook.Provider == "slack" {
 		slackPayload := map[string]any{
-			"text": fmt.Sprintf("🚨 *Crelan Incident Alert:* %s (%s)", title, severity),
+			"text": fmt.Sprintf("*Crelan Incident Alert:* %s (%s)", title, severity),
 			"blocks": []any{
 				map[string]any{
 					"type": "header",
 					"text": map[string]string{
 						"type": "plain_text",
-						"text": "🚨 Crelan Incident Alert",
+						"text": "Crelan Incident Alert",
 					},
 				},
 				map[string]any{
@@ -4832,7 +4832,7 @@ func dispatchIncidentWebhook(ctx context.Context, webhook platformIncidentWebhoo
 		bodyBytes, _ = json.Marshal(slackPayload)
 	} else if webhook.Provider == "discord" {
 		discordPayload := map[string]any{
-			"content": "🚨 **Crelan Platform Incident Alert**",
+			"content": "**Crelan Platform Incident Alert**",
 			"embeds": []any{
 				map[string]any{
 					"title":       title,

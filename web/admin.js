@@ -91,28 +91,28 @@ const DOMAIN_METADATA = {
   k8s: {
     id: "k8s",
     title: "Cluster Core",
-    icon: "☸️",
+    icon: "K8S",
     desc: "Workloads & Infrastructure",
     defaultView: "overview",
   },
   sre: {
     id: "sre",
     title: "SRE & Reliability",
-    icon: "📈",
+    icon: "SRE",
     desc: "SLOs, RED Signals & Chaos",
     defaultView: "sre-slos",
   },
   security: {
     id: "security",
     title: "Security & Compliance",
-    icon: "🛡️",
+    icon: "SEC",
     desc: "CVEs, CIS Hardening & RBAC",
     defaultView: "security",
   },
   ops: {
     id: "ops",
     title: "Platform Ops & Fleet",
-    icon: "⚙️",
+    icon: "OPS",
     desc: "Multi-Cluster, Helm & GitOps",
     defaultView: "cluster-fleet",
   },
@@ -392,7 +392,6 @@ async function renderCurrentView() {
       </div>
       <div class="admin-table-container">
         <div class="admin-empty-state" style="padding: 60px 20px;">
-          <div style="font-size: 36px; margin-bottom: 12px;">🔌</div>
           <h2 style="font-size: 18px; margin-bottom: 8px;">No Kubernetes Cluster Connected</h2>
           <p style="color: var(--admin-text-muted); max-width: 480px; margin: 0 auto 18px;">
             Connect your Kubernetes cluster using a kubeconfig to inspect and manage nodes, pods, workloads, and cluster resources.
@@ -2491,7 +2490,7 @@ async function renderAccessControl(container) {
         if (!checkRes.ok) throw new Error(evalData.error || "Evaluation failed");
         resultBox.innerHTML = `
           <div style="padding: 10px 14px; border-radius: 6px; font-size: 12px; background: ${evalData.allowed ? "var(--admin-green-bg)" : "var(--admin-red-bg)"}; border: 1px solid ${evalData.allowed ? "var(--admin-green-border)" : "var(--admin-red-border)"}; color: ${evalData.allowed ? "var(--admin-green)" : "var(--admin-red)"};">
-            <strong>${evalData.allowed ? "✓ ACCESS PERMITTED" : "✗ ACCESS DENIED"}</strong>: ${escapeHTML(evalData.reason)}
+            <strong>${evalData.allowed ? "ACCESS PERMITTED" : "ACCESS DENIED"}</strong>: ${escapeHTML(evalData.reason)}
           </div>
         `;
       } catch (err) {
@@ -3582,7 +3581,7 @@ async function renderWarRoom(container) {
           <div class="admin-warroom-console">
             <div class="admin-warroom-console-header">
               <span>Container Logs Tail (Incident Telemetry)</span>
-              <button class="admin-btn admin-btn-sm" style="padding: 2px 8px; font-size: 10px;" type="button" onclick="navigator.clipboard.writeText($('#warroom-logs-code').textContent); this.textContent='✓ Copied'; setTimeout(() => this.textContent='Copy Logs', 1800);">Copy Logs</button>
+              <button class="admin-btn admin-btn-sm" style="padding: 2px 8px; font-size: 10px;" type="button" onclick="navigator.clipboard.writeText($('#warroom-logs-code').textContent); this.textContent='Copied'; setTimeout(() => this.textContent='Copy Logs', 1800);">Copy Logs</button>
             </div>
             <div class="admin-warroom-console-body" id="warroom-logs-code">${escapeHTML(snapshot.recent_logs || "No logs available for container.")}</div>
           </div>
@@ -3594,7 +3593,7 @@ async function renderWarRoom(container) {
     $("#btn-share-warroom").onclick = () => {
       const fullUrl = `${window.location.origin}/admin#war-room?ns=${encodeURIComponent(snapshot.namespace)}&pod=${encodeURIComponent(snapshot.pod_name)}`;
       navigator.clipboard.writeText(fullUrl).then(() => {
-        $("#btn-share-warroom").textContent = "✓ Link Copied";
+        $("#btn-share-warroom").textContent = "Link Copied";
         setTimeout(() => { $("#btn-share-warroom").textContent = "Copy War Room Link"; }, 2000);
       });
     };
@@ -4217,8 +4216,8 @@ function copyPostMortemMarkdown() {
   navigator.clipboard.writeText(text).then(() => {
     const btn1 = $("#btn-copy-postmortem-markdown");
     const btn2 = $("#postmortem-modal-copy-btn");
-    if (btn1) btn1.textContent = "✓ Copied to Clipboard!";
-    if (btn2) btn2.textContent = "✓ Copied to Clipboard!";
+    if (btn1) btn1.textContent = "Copied to Clipboard!";
+    if (btn2) btn2.textContent = "Copied to Clipboard!";
     setTimeout(() => {
       if (btn1) btn1.textContent = "Copy Markdown to Clipboard";
       if (btn2) btn2.textContent = "1-Click Copy Markdown";
@@ -4392,7 +4391,7 @@ async function selectRollbackRevision(namespace, deploymentName, revision) {
     if (diff.identical) {
       diffPane.innerHTML = `
         <div class="admin-empty-state" style="color: var(--admin-green);">
-          <h3>✓ Revision ${revision} is identical to active revision (${diff.current_revision})</h3>
+          <h3>Revision ${revision} is identical to active revision (${diff.current_revision})</h3>
           <p>No changes would be applied by rolling back to this revision.</p>
         </div>
       `;
@@ -4447,7 +4446,7 @@ async function executeRollback(namespace, deploymentName, targetRevision) {
       body: JSON.stringify({ targetRevision }),
     });
 
-    $("#rollback-modal-status").innerHTML = `<strong style="color: var(--admin-green);">✓ Successfully rolled back to revision ${targetRevision}!</strong>`;
+    $("#rollback-modal-status").innerHTML = `<strong style="color: var(--admin-green);">Successfully rolled back to revision ${targetRevision}!</strong>`;
     setTimeout(() => {
       $("#admin-rollback-modal").classList.remove("open");
       btn.textContent = "1-Click Rollback";
@@ -4588,7 +4587,7 @@ async function openNodeDrainModal(nodeName) {
           <div>
             <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--admin-text-muted);">Cluster Headroom Absorption</div>
             <strong style="font-size: 15px; color: ${sim.cluster_headroom.can_absorb_workloads ? "var(--admin-green)" : "var(--admin-red)"};">
-              ${sim.cluster_headroom.can_absorb_workloads ? "✓ Surviving Nodes Can Absorb Workloads" : "⚠️ Insufficient Headroom: Pods Will Pending"}
+              ${sim.cluster_headroom.can_absorb_workloads ? "Surviving Nodes Can Absorb Workloads" : "Insufficient Headroom: Pods Will Pending"}
             </strong>
           </div>
           <span class="admin-badge ${sim.unschedulable ? "admin-badge-warning" : "admin-badge-ready"}">
@@ -4668,7 +4667,7 @@ async function toggleCordonNode(nodeName, unschedulable) {
 
   try {
     await request(endpoint, { method: "POST" });
-    $("#drain-modal-status").innerHTML = `<strong style="color: var(--admin-green);">✓ Node ${escapeHTML(nodeName)} ${unschedulable ? "cordoned" : "uncordoned"} successfully!</strong>`;
+    $("#drain-modal-status").innerHTML = `<strong style="color: var(--admin-green);">Node ${escapeHTML(nodeName)} ${unschedulable ? "cordoned" : "uncordoned"} successfully!</strong>`;
     setTimeout(() => {
       openNodeDrainModal(nodeName);
       if (state.activeView === "nodes") renderNodes($("#admin-content-area"));
@@ -4784,9 +4783,9 @@ async function testWebhook(id) {
   try {
     const res = await request(`/api/v1/admin/webhooks/${id}/test`, { method: "POST" });
     if (res.success) {
-      alert(`✓ Test alert delivered successfully! (HTTP ${res.status_code})`);
+      alert(`Test alert delivered successfully! (HTTP ${res.status_code})`);
     } else {
-      alert(`⚠️ Test alert failed: ${res.message}`);
+      alert(`Test alert failed: ${res.message}`);
     }
   } catch (err) {
     alert("Test dispatch failed: " + err.message);
@@ -4820,7 +4819,7 @@ async function renderDanglingConfigs(container) {
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h3 style="margin: 0 0 4px; font-size: 15px; color: ${report.broken_reference_count === 0 ? "#166534" : "#991b1b"};">
-            ${report.broken_reference_count === 0 ? "✓ Zero Dangling Configuration References Detected" : `⚠️ ${report.broken_reference_count} Broken Reference(s) Causing CreateContainerConfigError`}
+            ${report.broken_reference_count === 0 ? "Zero Dangling Configuration References Detected" : `${report.broken_reference_count} Broken Reference(s) Causing CreateContainerConfigError`}
           </h3>
           <p style="margin: 0; font-size: 13px; color: ${report.broken_reference_count === 0 ? "#15803d" : "#b91c1c"};">
             ${report.broken_reference_count === 0 ? `Scanned ${report.total_scanned_workloads} workloads across all namespaces. All referenced ConfigMaps, Secrets, keys, and volumes exist.` : `Found missing objects or keys referenced in env/envFrom/volumes. Workloads will fail on restart.`}
@@ -5165,7 +5164,7 @@ async function renderAutoscaling(container) {
 
               ${h.reason ? `
                 <div style="background: var(--admin-bg-secondary); padding: 8px 10px; border-radius: 4px; font-size: 11px; color: ${h.status === "at_capacity" ? "var(--admin-red)" : "var(--admin-amber)"}; line-height: 1.4;">
-                  ⚠️ ${escapeHTML(h.reason)}
+                  ${escapeHTML(h.reason)}
                 </div>
               ` : ""}
 
@@ -5222,7 +5221,7 @@ async function renderGitOpsDrift(container) {
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h3 style="margin: 0 0 4px; font-size: 15px; color: ${report.drift_count === 0 ? "var(--admin-green)" : "var(--admin-red)"};">
-            ${report.drift_count === 0 ? "✓ All Workloads In Sync with Declared GitOps State" : `⚠️ ${report.drift_count} Out-of-Band Mutation(s) Detected`}
+            ${report.drift_count === 0 ? "All Workloads In Sync with Declared GitOps State" : `${report.drift_count} Out-of-Band Mutation(s) Detected`}
           </h3>
           <p style="margin: 0; font-size: 13px; color: ${report.drift_count === 0 ? "var(--admin-green)" : "var(--admin-red)"};">
             ${report.drift_count === 0 ? `Scanned ${report.total_scanned} managed workloads against 'kubectl.kubernetes.io/last-applied-configuration'. Zero configuration drift.` : `Live cluster state differs from the declarative GitOps specification. Use 1-Click Reconcile to restore intended state.`}
@@ -5590,7 +5589,7 @@ function renderCVETableRows(images) {
       <tr>
         <td class="admin-table-name">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 15px;">${isClean ? "🛡️" : "⚠️"}</span>
+            <span class="admin-badge ${isClean ? 'admin-badge-ready' : 'admin-badge-warning'}" style="font-size: 10px; font-weight: 700;">${isClean ? "CLEAN" : "WARN"}</span>
             <div>
               <strong style="font-family: monospace; font-size: 13px;">${escapeHTML(img.image)}</strong>
             </div>
@@ -5610,7 +5609,7 @@ function renderCVETableRows(images) {
           ${highestScore > 0 ? `<span class="admin-badge ${highestScore >= 9.0 ? "admin-badge-danger" : highestScore >= 7.0 ? "admin-badge-warning" : "admin-badge-info"}">${highestScore.toFixed(1)}</span>` : `<span style="color: var(--admin-text-muted); font-size: 12px;">None</span>`}
         </td>
         <td style="text-align: right;">
-          ${!isClean ? `<button class="admin-btn admin-btn-sm admin-btn-primary" onclick="openCVEModalByIndex(${idx})">Inspect CVEs (${img.total_cves})</button>` : `<span style="color: var(--admin-green); font-size: 12px; font-weight: 500;">✓ Clean Image</span>`}
+          ${!isClean ? `<button class="admin-btn admin-btn-sm admin-btn-primary" onclick="openCVEModalByIndex(${idx})">Inspect CVEs (${img.total_cves})</button>` : `<span style="color: var(--admin-green); font-size: 12px; font-weight: 500;">Clean Image</span>`}
         </td>
       </tr>
     `;
@@ -5762,7 +5761,7 @@ function renderHelmTableRows(releases) {
       <tr>
         <td class="admin-table-name">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 15px;">⎈</span>
+            <span class="admin-badge" style="font-size: 10px; font-weight: 700;">HELM</span>
             <strong>${escapeHTML(r.name)}</strong>
           </div>
         </td>
@@ -5964,7 +5963,7 @@ function renderCRDTableRows(crds) {
     <tr>
       <td class="admin-table-name">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 15px;">🧩</span>
+          <span class="admin-badge" style="font-size: 10px; font-weight: 700;">CRD</span>
           <div>
             <strong>${escapeHTML(c.kind)}</strong>
             <div style="font-size: 11px; font-family: monospace; color: var(--admin-text-muted);">${escapeHTML(c.plural)}</div>
@@ -6158,19 +6157,19 @@ async function renderCanI(container) {
         
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('', 'create', 'deployments', 'apps', 'default')">
-            👑 Can Current User create Deployments?
+            Can Current User create Deployments?
           </button>
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:default:default', 'get', 'secrets', '', 'default')">
-            🔒 Can default SA read Secrets in default?
+            Can default SA read Secrets in default?
           </button>
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:anonymous', 'list', 'pods', '', 'default')">
-            🕵️ Can Anonymous user list Pods?
+            Can Anonymous user list Pods?
           </button>
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('system:serviceaccount:crelan:builder', 'create', 'pods', '', 'crelan')">
-            🏗️ Can Platform Builder create Pods?
+            Can Platform Builder create Pods?
           </button>
           <button class="admin-btn admin-btn-sm" style="text-align: left; padding: 8px 10px;" onclick="applyCanIPreset('developer', 'delete', 'namespaces', '', '')">
-            🛑 Can Developer delete Namespaces?
+            Can Developer delete Namespaces?
           </button>
         </div>
       </div>
@@ -6210,7 +6209,7 @@ async function handleCanISubmit(e) {
       <div style="border-radius: var(--admin-radius-sm); border: 2px solid ${isAllowed ? "var(--admin-green)" : "var(--admin-red)"}; background: ${isAllowed ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)"}; padding: 18px; margin-top: 12px;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 24px;">${isAllowed ? "✅" : "🚫"}</span>
+            
             <strong style="font-size: 18px; color: ${isAllowed ? "var(--admin-green)" : "var(--admin-red)"}; letter-spacing: 0.5px;">${isAllowed ? "ALLOWED" : "DENIED"}</strong>
           </div>
           <span class="admin-badge" style="font-size: 11px;">${escapeHTML(resp.evaluation_mode || "RBAC Engine")}</span>
@@ -6303,7 +6302,7 @@ async function renderClusterFleet(container) {
             <span>⊞</span> Grid View
           </button>
           <button class="clickup-view-btn ${viewMode === 'list' ? 'active' : ''}" type="button" onclick="setFleetViewMode('list')">
-            <span>☰</span> List View
+            List View
           </button>
         </div>
         <a class="admin-btn admin-btn-primary" href="#cluster-connect">+ Connect Cluster</a>
@@ -6397,18 +6396,18 @@ async function renderClusterFleet(container) {
                 <div style="display: flex; gap: 8px; margin-top: 4px;">
                   ${isActive ? `
                     <button class="admin-btn admin-btn-sm" style="flex: 1; background: #ecfdf5; color: #059669; border-color: #a7f3d0; cursor: default;" disabled>
-                      ✓ Active Cluster
+                      Active Cluster
                     </button>
                   ` : `
                     <button class="admin-btn admin-btn-primary admin-btn-sm" style="flex: 1;" onclick="switchClusterContext('${escapeHTML(c.name)}')">
                       Switch Context
                     </button>
                     <button class="admin-btn admin-btn-sm" type="button" title="Disconnect cluster from fleet" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">
-                      ✕
+                      &times;
                     </button>
                   `}
                   <button class="admin-btn admin-btn-sm" type="button" title="Customize Cluster Color & Name" onclick="openClusterColorModal('${escapeHTML(c.name)}')">
-                    🎨 Color
+                    Color
                   </button>
                 </div>
               </div>
@@ -6480,9 +6479,9 @@ async function renderClusterFleet(container) {
                         <span class="admin-badge admin-badge-ready" style="font-size: 11px;">Active</span>
                       ` : `
                         <button class="admin-btn admin-btn-sm admin-btn-primary" onclick="switchClusterContext('${escapeHTML(c.name)}')">Switch</button>
-                        <button class="admin-btn admin-btn-sm" title="Disconnect Cluster" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">✕</button>
+                        <button class="admin-btn admin-btn-sm" title="Disconnect Cluster" onclick="disconnectClusterContext('${escapeHTML(c.name)}')">&times;</button>
                       `}
-                      <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">🎨</button>
+                      <button class="admin-btn admin-btn-sm" title="Customize Cluster" onclick="openClusterColorModal('${escapeHTML(c.name)}')">Color</button>
                     </div>
                   </td>
                 </tr>
@@ -6579,7 +6578,6 @@ function renderClickUpColorPalette() {
         style="background-color: ${color};"
         title="${color}"
         onclick="selectClusterCustomColor('${color}')">
-        ${isSelected ? '✓' : ''}
       </div>
     `;
   }).join("");
@@ -7653,44 +7651,44 @@ async function renderSREScorecards(container) {
 // Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
-  { title: "Console Docs & Component Guide", category: "Documentation", hash: "docs", icon: "📖", desc: "Interactive architecture breakdown and component guide across all 4 operational domains + Lens vs Crelan matrix" },
-  { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", icon: "⏱️", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
-  { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", icon: "📈", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
-  { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", icon: "🩺", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
-  { title: "Multi-AZ & PDB Resilience Auditor", category: "SRE & Reliability", hash: "sre-resilience", icon: "🛡️", desc: "Audit cross-AZ zone spread topology, single points of failure, and PodDisruptionBudget gaps" },
-  { title: "Progressive Delivery & Canary Guard", category: "SRE & Reliability", hash: "sre-canary", icon: "🐤", desc: "Visualize canary vs baseline traffic splits, error differentials, and 1-click rollback" },
-  { title: "Guarded Chaos Engineering Prober", category: "SRE & Reliability", hash: "sre-chaos", icon: "💥", desc: "Run controlled pod disruption & latency game days with strict 2-replica safety gates" },
-  { title: "Service Reliability & Incident Scorecards", category: "SRE & Reliability", hash: "sre-scorecards", icon: "🎖️", desc: "A-F reliability grading, MTTD, MTTR, MTBF, and uptime stability indices" },
-  { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", icon: "🛡️", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
-  { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", icon: "⎈", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
-  { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", icon: "🧩", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
-  { title: "Interactive RBAC Tester (can-i)", category: "Enterprise Suite", hash: "can-i", icon: "🔑", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
-  { title: "Multi-Cluster Fleet Dashboard", category: "Enterprise Suite", hash: "cluster-fleet", icon: "🌐", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
-  { title: "Cluster Overview", category: "Cluster", hash: "overview", icon: "📊", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
-  { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", icon: "🖥️", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
-  { title: "Pods & Containers", category: "Workloads", hash: "pods", icon: "📦", desc: "Explore running pods, container logs, exec terminal, and restarts" },
-  { title: "Deployments", category: "Workloads", hash: "deployments", icon: "🚀", desc: "Manage deployments, rollout restarts, and replica scaling" },
-  { title: "StatefulSets", category: "Workloads", hash: "statefulsets", icon: "💾", desc: "Stateful workloads, volume claim templates, and status" },
-  { title: "DaemonSets", category: "Workloads", hash: "daemonsets", icon: "⚙️", desc: "Per-node daemon workloads and scheduled pods" },
-  { title: "Jobs & CronJobs", category: "Workloads", hash: "jobs", icon: "⏱️", desc: "Batch jobs and scheduled cron schedules" },
-  { title: "Services & Endpoints", category: "Networking", hash: "services", icon: "🔌", desc: "ClusterIP, NodePort, and LoadBalancer routing" },
-  { title: "Ingress Controllers", category: "Networking", hash: "ingresses", icon: "🌍", desc: "HTTP/HTTPS routing rules, hosts, and TLS certificates" },
-  { title: "Network Policies", category: "Networking", hash: "networkpolicies", icon: "🧱", desc: "Ingress/egress isolation rules and pod selectors" },
-  { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", icon: "🔐", desc: "Cluster configuration maps and encoded secrets" },
-  { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", icon: "💽", desc: "Storage claims, sizes, and bound PersistentVolumes" },
-  { title: "Persistent Volumes (PVs)", category: "Config & Storage", hash: "pvs", icon: "💾", desc: "Cluster storage volumes, capacity, and reclaim policies" },
-  { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", icon: "🏷️", desc: "Dynamic provisioners and volume expansion rules" },
-  { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", icon: "📁", desc: "Namespace isolation, quotas, and customer tenant bindings" },
-  { title: "Cluster Warning Events", category: "Cluster", hash: "events", icon: "⚠️", desc: "Real-time cluster warning event stream and reasons" },
-  { title: "AI Diagnostic Copilot", category: "Intelligence", hash: "copilot", icon: "🤖", desc: "Cluster troubleshooting and natural language remediation engine" },
-  { title: "Incident War Room", category: "Intelligence", hash: "war-room", icon: "🚨", desc: "Live incident triage, root-cause diagnosis, and post-mortem runbooks" },
-  { title: "Right-Sizing & Cost Optimization", category: "Intelligence", hash: "rightsizing", icon: "💡", desc: "Over-provisioned CPU/Memory detection and cost savings" },
-  { title: "Disaster Recovery Radar", category: "Intelligence", hash: "backup-radar", icon: "🔄", desc: "Unprotected PVC discovery, RPO tracking, and backup verification" },
-  { title: "GitOps Drift Detector", category: "Intelligence", hash: "gitops-drift", icon: "🐙", desc: "Detect out-of-sync cluster resources and manual kubectl overrides" },
-  { title: "Network Topology Visualizer", category: "Intelligence", hash: "topology", icon: "🕸️", desc: "Interactive cross-namespace service traffic and ingress graph" },
-  { title: "Capsule Tenant Isolation Matrix", category: "Security", hash: "isolation-matrix", icon: "🛡️", desc: "Multi-tenant namespace boundaries and cross-tenant leak checks" },
-  { title: "TLS Certificate Expiry Radar", category: "Security", hash: "certificates", icon: "📜", desc: "Expiring TLS certificates and cert-manager issuers" },
-  { title: "Connect Kubernetes Cluster", category: "Cluster", hash: "cluster-connect", icon: "🔗", desc: "Upload kubeconfig to connect a new Kubernetes cluster" },
+  { title: "Console Docs & Component Guide", category: "Documentation", hash: "docs", icon: "DOC", desc: "Interactive architecture breakdown and component guide across all 4 operational domains + Lens vs Crelan matrix" },
+  { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", icon: "SRE", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
+  { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", icon: "SRE", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
+  { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", icon: "SRE", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
+  { title: "Multi-AZ & PDB Resilience Auditor", category: "SRE & Reliability", hash: "sre-resilience", icon: "SRE", desc: "Audit cross-AZ zone spread topology, single points of failure, and PodDisruptionBudget gaps" },
+  { title: "Progressive Delivery & Canary Guard", category: "SRE & Reliability", hash: "sre-canary", icon: "SRE", desc: "Visualize canary vs baseline traffic splits, error differentials, and 1-click rollback" },
+  { title: "Guarded Chaos Engineering Prober", category: "SRE & Reliability", hash: "sre-chaos", icon: "SRE", desc: "Run controlled pod disruption & latency game days with strict 2-replica safety gates" },
+  { title: "Service Reliability & Incident Scorecards", category: "SRE & Reliability", hash: "sre-scorecards", icon: "SRE", desc: "A-F reliability grading, MTTD, MTTR, MTBF, and uptime stability indices" },
+  { title: "Container Image CVE Radar", category: "Enterprise Suite", hash: "image-vulnerabilities", icon: "SEC", desc: "Scan container images for CVE vulnerabilities and view package remediation" },
+  { title: "Helm Releases Manager", category: "Enterprise Suite", hash: "helm-releases", icon: "OPS", desc: "Discover Helm releases, inspect values.yaml, rollback, and uninstall" },
+  { title: "Custom Resource Definitions (CRDs)", category: "Enterprise Suite", hash: "crds", icon: "OPS", desc: "Browse installed CRDs, schemas, and live custom operator resources" },
+  { title: "Interactive RBAC Tester (can-i)", category: "Enterprise Suite", hash: "can-i", icon: "SEC", desc: "Test RBAC authorization verdicts across users, groups, and service accounts" },
+  { title: "Multi-Cluster Fleet Dashboard", category: "Enterprise Suite", hash: "cluster-fleet", icon: "OPS", desc: "Monitor cluster fleet status and switch Kubernetes contexts" },
+  { title: "Cluster Overview", category: "Cluster", hash: "overview", icon: "K8S", desc: "CPU/Memory resource gauges, node/pod statistics, and cluster health" },
+  { title: "Nodes & Node Health", category: "Cluster", hash: "nodes", icon: "K8S", desc: "Inspect Kubernetes nodes, taints, capacity, and conditions" },
+  { title: "Pods & Containers", category: "Workloads", hash: "pods", icon: "K8S", desc: "Explore running pods, container logs, exec terminal, and restarts" },
+  { title: "Deployments", category: "Workloads", hash: "deployments", icon: "K8S", desc: "Manage deployments, rollout restarts, and replica scaling" },
+  { title: "StatefulSets", category: "Workloads", hash: "statefulsets", icon: "K8S", desc: "Stateful workloads, volume claim templates, and status" },
+  { title: "DaemonSets", category: "Workloads", hash: "daemonsets", icon: "K8S", desc: "Per-node daemon workloads and scheduled pods" },
+  { title: "Jobs & CronJobs", category: "Workloads", hash: "jobs", icon: "K8S", desc: "Batch jobs and scheduled cron schedules" },
+  { title: "Services & Endpoints", category: "Networking", hash: "services", icon: "K8S", desc: "ClusterIP, NodePort, and LoadBalancer routing" },
+  { title: "Ingress Controllers", category: "Networking", hash: "ingresses", icon: "K8S", desc: "HTTP/HTTPS routing rules, hosts, and TLS certificates" },
+  { title: "Network Policies", category: "Networking", hash: "networkpolicies", icon: "SEC", desc: "Ingress/egress isolation rules and pod selectors" },
+  { title: "ConfigMaps & Secrets", category: "Config & Storage", hash: "configmaps", icon: "K8S", desc: "Cluster configuration maps and encoded secrets" },
+  { title: "PersistentVolumeClaims (PVCs)", category: "Config & Storage", hash: "pvcs", icon: "K8S", desc: "Storage claims, sizes, and bound PersistentVolumes" },
+  { title: "Persistent Volumes (PVs)", category: "Config & Storage", hash: "pvs", icon: "K8S", desc: "Cluster storage volumes, capacity, and reclaim policies" },
+  { title: "StorageClasses", category: "Config & Storage", hash: "storageclasses", icon: "K8S", desc: "Dynamic provisioners and volume expansion rules" },
+  { title: "Namespaces & Tenant Projects", category: "Cluster", hash: "namespaces", icon: "K8S", desc: "Namespace isolation, quotas, and customer tenant bindings" },
+  { title: "Cluster Warning Events", category: "Cluster", hash: "events", icon: "K8S", desc: "Real-time cluster warning event stream and reasons" },
+  { title: "AI Diagnostic Copilot", category: "Intelligence", hash: "copilot", icon: "AI", desc: "Cluster troubleshooting and natural language remediation engine" },
+  { title: "Incident War Room", category: "Intelligence", hash: "war-room", icon: "SRE", desc: "Live incident triage, root-cause diagnosis, and post-mortem runbooks" },
+  { title: "Right-Sizing & Cost Optimization", category: "Intelligence", hash: "rightsizing", icon: "OPS", desc: "Over-provisioned CPU/Memory detection and cost savings" },
+  { title: "Disaster Recovery Radar", category: "Intelligence", hash: "backup-radar", icon: "OPS", desc: "Unprotected PVC discovery, RPO tracking, and backup verification" },
+  { title: "GitOps Drift Detector", category: "Intelligence", hash: "gitops-drift", icon: "OPS", desc: "Detect out-of-sync cluster resources and manual kubectl overrides" },
+  { title: "Network Topology Visualizer", category: "Intelligence", hash: "topology", icon: "OPS", desc: "Interactive cross-namespace service traffic and ingress graph" },
+  { title: "Capsule Tenant Isolation Matrix", category: "Security", hash: "isolation-matrix", icon: "SEC", desc: "Multi-tenant namespace boundaries and cross-tenant leak checks" },
+  { title: "TLS Certificate Expiry Radar", category: "Security", hash: "certificates", icon: "SEC", desc: "Expiring TLS certificates and cert-manager issuers" },
+  { title: "Connect Kubernetes Cluster", category: "Cluster", hash: "cluster-connect", icon: "OPS", desc: "Upload kubeconfig to connect a new Kubernetes cluster" },
 ];
 
 let selectedCommandPaletteIndex = 0;
@@ -7743,7 +7741,7 @@ function renderCommandPaletteResults() {
 
   container.innerHTML = currentPaletteResults.map((item, idx) => `
     <div class="admin-cmd-k-item ${idx === selectedCommandPaletteIndex ? "selected" : ""}" data-index="${idx}" onclick="executePaletteItem(${idx})">
-      <span class="admin-cmd-k-item-icon">${item.icon}</span>
+      <span class="admin-cmd-k-item-icon" style="font-size: 10px; font-weight: 700; font-family: var(--admin-mono); color: var(--admin-text-muted); background: var(--admin-surface-hover); padding: 2px 5px; border-radius: 4px;">${escapeHTML(item.icon)}</span>
       <div class="admin-cmd-k-item-details">
         <div class="admin-cmd-k-item-title">${escapeHTML(item.title)}</div>
         <div class="admin-cmd-k-item-desc">${escapeHTML(item.desc)}</div>
@@ -7809,7 +7807,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "📊",
     title: "Cluster Overview & Telemetry",
     route: "overview",
     badge: "Core",
@@ -7824,7 +7821,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🖥️",
     title: "Nodes & Node Health Inspector",
     route: "nodes",
     badge: "Infra",
@@ -7839,7 +7835,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "📦",
     title: "Pods & Container Diagnostics",
     route: "pods",
     badge: "Core",
@@ -7854,7 +7849,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🚀",
     title: "Deployments & Workload Rollouts",
     route: "deployments",
     badge: "Core",
@@ -7869,7 +7863,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "💾",
     title: "StatefulSets",
     route: "statefulsets",
     badge: "Storage",
@@ -7884,7 +7877,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "⚙️",
     title: "DaemonSets",
     route: "daemonsets",
     badge: "Infra",
@@ -7899,7 +7891,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "⏱️",
     title: "Jobs & CronJobs",
     route: "jobs",
     badge: "Batch",
@@ -7914,7 +7905,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🔌",
     title: "Services & Networking Endpoints",
     route: "services",
     badge: "Network",
@@ -7929,7 +7919,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🌍",
     title: "Ingress Controllers & HTTP Routes",
     route: "ingresses",
     badge: "Network",
@@ -7944,7 +7933,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🧱",
     title: "Network Policies & Isolation Rules",
     route: "networkpolicies",
     badge: "Security",
@@ -7959,7 +7947,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🔐",
     title: "ConfigMaps & Secrets",
     route: "configmaps",
     badge: "Config",
@@ -7974,7 +7961,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "💽",
     title: "PersistentVolumeClaims (PVCs)",
     route: "pvcs",
     badge: "Storage",
@@ -7989,7 +7975,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "💾",
     title: "Persistent Volumes (PVs)",
     route: "pvs",
     badge: "Storage",
@@ -8004,7 +7989,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🏷️",
     title: "StorageClasses",
     route: "storageclasses",
     badge: "Storage",
@@ -8019,7 +8003,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "📁",
     title: "Namespaces & Tenant Projects",
     route: "namespaces",
     badge: "Multi-Tenant",
@@ -8034,7 +8017,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "⚠️",
     title: "Cluster Events & Warning Stream",
     route: "events",
     badge: "Telemetry",
@@ -8049,7 +8031,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "k8s",
     domainLabel: "Cluster Core",
-    icon: "🧹",
     title: "Dangling Config Scanner",
     route: "dangling-configs",
     badge: "Hygiene",
@@ -8066,7 +8047,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "⏱️",
     title: "SLO & Error Budget Burn Radar",
     route: "sre-slos",
     badge: "Crelan Exclusive",
@@ -8081,7 +8061,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "📈",
     title: "The 4 Golden Signals & RED Engine",
     route: "sre-golden-signals",
     badge: "Crelan Exclusive",
@@ -8096,7 +8075,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "🩺",
     title: "Health Probe Doctor & Anti-Patterns",
     route: "sre-probes",
     badge: "Crelan Exclusive",
@@ -8111,7 +8089,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "🛡️",
     title: "Multi-AZ & PDB Resilience Auditor",
     route: "sre-resilience",
     badge: "Crelan Exclusive",
@@ -8126,7 +8103,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "🐤",
     title: "Progressive Delivery & Canary Guard",
     route: "sre-canary",
     badge: "Crelan Exclusive",
@@ -8141,7 +8117,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "💥",
     title: "Guarded Chaos Engineering Prober",
     route: "sre-chaos",
     badge: "Crelan Exclusive",
@@ -8156,7 +8131,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "🎖️",
     title: "Service Reliability & Incident Scorecards",
     route: "sre-scorecards",
     badge: "Crelan Exclusive",
@@ -8171,7 +8145,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "🚨",
     title: "Incident War Room & Post-Mortem Generator",
     route: "war-room",
     badge: "Crelan Exclusive",
@@ -8186,7 +8159,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "⚡",
     title: "Event Storm Radar & Anomaly Detector",
     route: "event-storm",
     badge: "Intelligence",
@@ -8201,7 +8173,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "sre",
     domainLabel: "SRE & Reliability",
-    icon: "📊",
     title: "Autoscaling & HPA Controller",
     route: "autoscaling",
     badge: "SRE",
@@ -8218,7 +8189,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "🛡️",
     title: "CIS Benchmark & Cluster Hardening Audit",
     route: "security",
     badge: "Security",
@@ -8233,7 +8203,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "🔍",
     title: "Container Image CVE Vulnerability Radar",
     route: "image-vulnerabilities",
     badge: "Enterprise",
@@ -8248,7 +8217,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "🗝️",
     title: "RBAC Blast Radius & Privilege Auditor",
     route: "rbac",
     badge: "Security",
@@ -8263,7 +8231,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "🔑",
     title: "Interactive RBAC Tester (can-i)",
     route: "can-i",
     badge: "Enterprise",
@@ -8278,7 +8245,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "🏢",
     title: "Capsule Multi-Tenant Isolation Matrix",
     route: "isolation-matrix",
     badge: "Enterprise",
@@ -8293,7 +8259,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "👥",
     title: "Cluster & Resource Access Control",
     route: "access-control",
     badge: "Enterprise",
@@ -8308,7 +8273,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "📜",
     title: "TLS Certificate Expiration Radar",
     route: "certificates",
     badge: "Security",
@@ -8323,7 +8287,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "security",
     domainLabel: "Security & Compliance",
-    icon: "📋",
     title: "Platform Audit Trail & Change Ledger",
     route: "audit",
     badge: "Security",
@@ -8340,7 +8303,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🌐",
     title: "Multi-Cluster Switcher & Fleet Dashboard",
     route: "cluster-fleet",
     badge: "Fleet",
@@ -8355,7 +8317,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "⎈",
     title: "Helm Releases Manager",
     route: "helm-releases",
     badge: "Enterprise",
@@ -8370,7 +8331,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🧩",
     title: "CRD & Operator Browser",
     route: "crds",
     badge: "Enterprise",
@@ -8385,7 +8345,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🤖",
     title: "AI K8s Diagnostic Copilot",
     route: "copilot",
     badge: "AI Native",
@@ -8400,7 +8359,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "💡",
     title: "Cost & Right-Sizing Advisor",
     route: "rightsizing",
     badge: "FinOps",
@@ -8415,7 +8373,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🔥",
     title: "Resource Efficiency & Heatmap",
     route: "efficiency",
     badge: "FinOps",
@@ -8430,7 +8387,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🗄️",
     title: "Database Topology & Connection Visualizer",
     route: "databases",
     badge: "Data",
@@ -8445,7 +8401,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🗑️",
     title: "Storage Leak Detector",
     route: "storage-leaks",
     badge: "Hygiene",
@@ -8460,7 +8415,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🕸️",
     title: "Traffic & Ingress Network Topology",
     route: "topology",
     badge: "Network",
@@ -8475,7 +8429,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🚀",
     title: "Cluster Upgrade Radar & Deprecations",
     route: "upgrade-radar",
     badge: "Ops",
@@ -8490,7 +8443,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🐙",
     title: "GitOps Drift Radar",
     route: "gitops-drift",
     badge: "GitOps",
@@ -8505,7 +8457,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🔄",
     title: "Disaster Recovery & Backup Radar",
     route: "backup-radar",
     badge: "Resilience",
@@ -8520,7 +8471,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🔗",
     title: "Cluster Connect & Onboarding",
     route: "cluster-connect",
     badge: "Admin",
@@ -8535,7 +8485,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🩺",
     title: "Cluster Readiness Doctor",
     route: "readiness",
     badge: "Ops",
@@ -8550,7 +8499,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "💾",
     title: "Control-Plane Backup",
     route: "backup",
     badge: "Ops",
@@ -8565,7 +8513,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "🔔",
     title: "Incident Alert Webhooks",
     route: "webhooks",
     badge: "Ops",
@@ -8580,7 +8527,6 @@ const ADMIN_COMPONENTS = [
   {
     domain: "ops",
     domainLabel: "Platform Ops & Fleet",
-    icon: "⌘",
     title: "Quick Launcher Command Palette",
     route: "#cmd-k",
     badge: "Productivity",
@@ -8721,7 +8667,7 @@ async function renderDocs(container) {
       </div>
       <div class="admin-view-actions">
         <button class="admin-btn admin-btn-sm" type="button" id="docs-open-matrix-btn">
-          <span>⚖️</span> Lens vs Crelan Matrix
+          Lens vs Crelan Matrix
         </button>
         <button class="admin-btn admin-btn-sm admin-btn-primary" type="button" onclick="openCommandPalette()">
           <span class="admin-cmd-k-badge" style="font-size:10px; padding:1px 4px;">⌘K</span> Quick Launcher
@@ -8758,25 +8704,25 @@ async function renderDocs(container) {
         All Components <span style="font-size:10px; opacity:0.8; margin-left:3px;">(52)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'k8s' ? 'active' : ''}" data-tab="k8s" type="button">
-        ☸️ Cluster Core <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+        Cluster Core <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'sre' ? 'active' : ''}" data-tab="sre" type="button">
-        🩺 SRE &amp; Reliability <span style="font-size:10px; opacity:0.8; margin-left:3px;">(10)</span>
+        SRE &amp; Reliability <span style="font-size:10px; opacity:0.8; margin-left:3px;">(10)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'security' ? 'active' : ''}" data-tab="security" type="button">
-        🛡️ Security &amp; Compliance <span style="font-size:10px; opacity:0.8; margin-left:3px;">(8)</span>
+        Security &amp; Compliance <span style="font-size:10px; opacity:0.8; margin-left:3px;">(8)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'ops' ? 'active' : ''}" data-tab="ops" type="button">
-        ⚙️ Platform Ops &amp; Fleet <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+        Platform Ops &amp; Fleet <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
       </button>
       <button class="admin-docs-tab-btn ${docsActiveTab === 'lens-matrix' ? 'active' : ''}" data-tab="lens-matrix" type="button" style="border-left:2px solid var(--admin-accent);">
-        ⚖️ Lens vs Crelan Matrix <span style="font-size:10px; background:var(--admin-accent); color:#fff; padding:1px 5px; border-radius:10px; margin-left:3px;">16</span>
+        Lens vs Crelan Matrix <span style="font-size:10px; background:var(--admin-accent); color:#fff; padding:1px 5px; border-radius:10px; margin-left:3px;">16</span>
       </button>
     </div>
 
     <!-- Search Bar -->
     <div class="admin-docs-search-bar">
-      <span style="font-size:14px; color:var(--admin-text-muted);">🔍</span>
+      
       <input class="admin-docs-search-input" id="docs-search-input" type="search" placeholder="Search components by name, domain, capability, or keyword... (e.g. SLO, Chaos, Post-Mortem, CVE, PVC, Drift)" value="${escapeHTML(docsSearchQuery)}" autocomplete="off">
       <span id="docs-count-badge" style="font-size:11px; color:var(--admin-text-muted); font-weight:600; font-family:var(--admin-mono);"></span>
     </div>
@@ -8884,7 +8830,7 @@ function updateDocsContent() {
                 <td style="color:#64748b; font-size:12px; line-height:1.5;">${escapeHTML(row.lens)}</td>
                 <td style="background:#f0fdf4; color:#166534; font-size:12.5px; font-weight:600; line-height:1.5;">
                   <div style="display:flex; align-items:flex-start; gap:6px;">
-                    <span style="color:#16a34a; font-size:14px; line-height:1;">✓</span>
+                    <span style="color:#16a34a; font-weight:700;">[+]</span>
                     <span>${escapeHTML(row.crelan)}</span>
                   </div>
                 </td>
@@ -8922,7 +8868,7 @@ function updateDocsContent() {
     container.innerHTML = `
       <div class="admin-table-container">
         <div class="admin-empty-state" style="padding: 60px 20px;">
-          <div style="font-size:32px; margin-bottom:12px;">🔎</div>
+          <div style="font-size:13px; font-weight:700; color:var(--admin-text-muted); margin-bottom:8px;">NO MATCHES</div>
           <h2 style="font-size:16px; margin-bottom:6px;">No components match "${escapeHTML(query)}"</h2>
           <p style="color:var(--admin-text-muted); font-size:13px; margin:0 0 16px;">Try searching for a different keyword or switch to the "All Components" tab.</p>
           <button class="admin-btn admin-btn-sm" type="button" onclick="document.getElementById('docs-search-input').value=''; docsSearchQuery=''; updateDocsContent();">Clear search filter</button>
@@ -8956,7 +8902,6 @@ function updateDocsContent() {
           <div class="admin-docs-card">
             <div class="admin-docs-card-header">
               <div class="admin-docs-card-title">
-                <div class="admin-docs-card-icon">${comp.icon}</div>
                 <div>
                   <h3 style="font-size:14.5px; margin:0 0 2px;">${escapeHTML(comp.title)}</h3>
                   <span style="font-size:11px; color:var(--admin-text-muted); font-weight:600;">${escapeHTML(comp.domainLabel)}</span>
