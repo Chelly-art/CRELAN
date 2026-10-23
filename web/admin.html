@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f5f7fa">
     <title>Crelan — Cluster Console</title>
     <link rel="stylesheet" href="/assets/styles.css?v=3.0.0">
-    <link rel="stylesheet" href="/assets/admin.css?v=3.3.0">
-    <script src="/assets/admin.js?v=3.3.0" defer></script>
+    <link rel="stylesheet" href="/assets/admin.css?v=3.4.0">
+    <script src="/assets/admin.js?v=3.4.0" defer></script>
     <style>
       /* Bulletproof Fail-safe Critical Resets (prevents native button outlines and ensures clean styling) */
       button.admin-rail-domain-btn,
@@ -123,6 +123,7 @@
             <span class="status-dot" id="rail-status-dot"></span>
           </div>
           <a class="admin-rail-icon-btn" href="/dashboard" title="Switch to Customer Workspaces">App</a>
+          <a class="admin-rail-icon-btn" id="rail-docs-btn" href="#docs" title="Console Component Documentation & Architecture Guide">Docs</a>
           <button class="admin-rail-icon-btn" id="rail-refresh-btn" type="button" title="Refresh Cluster State">Sync</button>
         </div>
       </aside>
@@ -389,6 +390,10 @@
               <span>Incident Webhooks</span>
               <span class="admin-item-badge" id="badge-webhooks" style="color: var(--admin-accent); font-weight: 700;">Alerts</span>
             </a>
+            <a class="admin-tree-item" href="#docs" data-view="docs">
+              <span>Console Docs & Guide</span>
+              <span class="admin-item-badge" id="badge-docs" style="background: #3b82f6; color: #fff; font-weight: 700;">Docs</span>
+            </a>
           </div>
         </div>
       </nav>
@@ -442,6 +447,10 @@
             <button class="admin-refresh-btn" id="admin-refresh-btn" type="button" title="Refresh current view">
               <span id="admin-refresh-icon">Sync</span> Refresh
             </button>
+
+            <a class="admin-refresh-btn" id="topbar-docs-btn" href="#docs" title="Console Documentation & Component Breakdown" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span>📖</span> Docs
+            </a>
 
             <!-- User Badge -->
             <div class="admin-user-badge">

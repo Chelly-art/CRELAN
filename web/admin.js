@@ -179,6 +179,7 @@ const VIEW_TO_DOMAIN = {
   readiness: "ops",
   backup: "ops",
   webhooks: "ops",
+  docs: "ops",
 };
 
 function getRoute() {
@@ -369,6 +370,7 @@ async function loadWorkspaceMappings() {
 // -------------------------------------------------------------
 
 const OFFLINE_ALLOWED_VIEWS = new Set([
+  "docs",
   "cluster-connect",
   "cluster-fleet",
   "audit-trail",
@@ -561,6 +563,9 @@ async function renderCurrentView() {
         break;
       case "sre-scorecards":
         await renderSREScorecards(container);
+        break;
+      case "docs":
+        await renderDocs(container);
         break;
       default:
         await renderOverview(container);
@@ -7648,6 +7653,7 @@ async function renderSREScorecards(container) {
 // Quick Launcher Command Palette (Cmd+K / Ctrl+K)
 // -------------------------------------------------------------
 const COMMAND_PALETTE_ITEMS = [
+  { title: "Console Docs & Component Guide", category: "Documentation", hash: "docs", icon: "📖", desc: "Interactive architecture breakdown and component guide across all 4 operational domains + Lens vs Crelan matrix" },
   { title: "SLO & Error Budget Burn Radar", category: "SRE & Reliability", hash: "sre-slos", icon: "⏱️", desc: "Track SLO targets, error budget burn rates, freeze alerts, and historical burn velocity" },
   { title: "The 4 Golden Signals & RED Engine", category: "SRE & Reliability", hash: "sre-golden-signals", icon: "📈", desc: "Monitor Rate, Errors, Duration (P50/P90/P99), and Saturation across cluster services" },
   { title: "Health Probe Doctor & Anti-Patterns", category: "SRE & Reliability", hash: "sre-probes", icon: "🩺", desc: "Detect missing liveness/readiness probes, cascading timeouts, and startup failures" },
@@ -7792,6 +7798,1190 @@ function scrollPaletteSelectionIntoView() {
   if (selectedEl) {
     selectedEl.scrollIntoView({ block: "nearest" });
   }
+}
+
+// -------------------------------------------------------------
+// Admin Documentation & Component Architecture Guide
+// -------------------------------------------------------------
+
+const ADMIN_COMPONENTS = [
+  // ==================== DOMAIN 1: CLUSTER CORE ====================
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "📊",
+    title: "Cluster Overview & Telemetry",
+    route: "overview",
+    badge: "Core",
+    desc: "Real-time cluster telemetry dashboard providing CPU, Memory, and Pod capacity utilization gauges alongside workload counts, warning event counters, and node health status.",
+    features: [
+      "Real-time CPU and Memory allocation vs cluster capacity gauges",
+      "Live counter cards for Nodes, Pods, Deployments, and Warnings",
+      "Dynamic node condition breakdown (Ready, MemoryPressure, DiskPressure)",
+      "Auto-refresh interval support (5s, 10s, 30s) or manual sync"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🖥️",
+    title: "Nodes & Node Health Inspector",
+    route: "nodes",
+    badge: "Infra",
+    desc: "Deep-dive node management inspecting node ready states, kubelet versions, internal/external IPs, OS images, kernel versions, and node conditions.",
+    features: [
+      "Node condition audits: Ready, PIDPressure, DiskPressure, NetworkUnavailable",
+      "Taints & tolerations visualizer to understand scheduling boundaries",
+      "Allocatable vs capacity resource headroom breakdown",
+      "Node cordoning & scheduling status"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "📦",
+    title: "Pods & Container Diagnostics",
+    route: "pods",
+    badge: "Core",
+    desc: "Workload container orchestrator view with live status filters (Running, Pending, Failed, CrashLoopBackOff), pod restart tracking, terminal exec, and log streaming.",
+    features: [
+      "Live status indicator: Running, CrashLoopBackOff, Error, OOMKilled",
+      "Integrated Container Log Streamer with tail count and auto-follow",
+      "Web-based Ephemeral Debug Shell & terminal exec without local kubectl",
+      "Pod restart count tracking and IP / Node placement inspection"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🚀",
+    title: "Deployments & Workload Rollouts",
+    route: "deployments",
+    badge: "Core",
+    desc: "Deployment lifecycle controller enabling instant replica scaling, zero-downtime rolling restart triggers, container image inspections, and YAML editing.",
+    features: [
+      "1-Click Zero-Downtime Rollout Restart (`kubectl rollout restart`)",
+      "Direct replica scaling up/down with instant reconciliation",
+      "Rolling update strategy inspection (maxSurge, maxUnavailable)",
+      "Live YAML editor and manifest inspector"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "💾",
+    title: "StatefulSets",
+    route: "statefulsets",
+    badge: "Storage",
+    desc: "Manages stateful applications requiring persistent identifiers, ordered deployment and scaling, and stable network identities.",
+    features: [
+      "VolumeClaimTemplate inspection and storage class association",
+      "Ordered pod ordinal scaling tracking (0, 1, 2...)",
+      "Service name and headless DNS binding inspector",
+      "Full live YAML view and replica management"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "⚙️",
+    title: "DaemonSets",
+    route: "daemonsets",
+    badge: "Infra",
+    desc: "Tracks node-level daemon workloads such as logging agents, CNI networking plugins, and monitoring probers scheduled across all eligible nodes.",
+    features: [
+      "Desired vs Current vs Ready node schedule counts",
+      "Node selector and toleration configuration inspection",
+      "Update strategy tracking (RollingUpdate vs OnDelete)",
+      "Direct pod list jump from DaemonSet card"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "⏱️",
+    title: "Jobs & CronJobs",
+    route: "jobs",
+    badge: "Batch",
+    desc: "Batch execution prober monitoring one-off batch Jobs and recurring CronJobs with schedule syntax, completion status, and last run timestamps.",
+    features: [
+      "Cron schedule expression parser and next run prediction",
+      "Job completion, active count, and failed execution breakdown",
+      "Backoff limit and active deadline inspection",
+      "Manual 1-click Job trigger from CronJob template"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🔌",
+    title: "Services & Networking Endpoints",
+    route: "services",
+    badge: "Network",
+    desc: "Service routing layer displaying ClusterIP, NodePort, LoadBalancer, and ExternalName services, port mappings, and backing endpoint slices.",
+    features: [
+      "Port mapping inspector (Port -> TargetPort / Protocol)",
+      "Selector-to-pod matching validation and healthy endpoint counts",
+      "External IP and LoadBalancer ingress status tracking",
+      "Headless service detection and DNS verification"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🌍",
+    title: "Ingress Controllers & HTTP Routes",
+    route: "ingresses",
+    badge: "Network",
+    desc: "L7 HTTP/HTTPS reverse proxy inspector monitoring Ingress rules, TLS secret bindings, host routing, and ingress controller class assignments.",
+    features: [
+      "Host and path routing table with target service linkages",
+      "TLS secret binding and certificate issuer validation",
+      "IngressClass provider inspection (nginx, traefik, alb)",
+      "SSL termination and HTTPS redirect rule auditor"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🧱",
+    title: "Network Policies & Isolation Rules",
+    route: "networkpolicies",
+    badge: "Security",
+    desc: "Zero-trust firewall policies defining Ingress and Egress traffic filtering rules between pods, namespaces, and external CIDR blocks.",
+    features: [
+      "PodSelector visualizer to identify protected workloads",
+      "Ingress and Egress rule breakdown with allowed ports and CIDRs",
+      "Namespace isolation gap detection (detecting unprotected pods)",
+      "Live YAML inspection and network rule verification"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🔐",
+    title: "ConfigMaps & Secrets",
+    route: "configmaps",
+    badge: "Config",
+    desc: "Environment configuration and credential vault managing application configs, TLS keys, tokens, and environment variables.",
+    features: [
+      "ConfigMap data key-value browser with multi-line text preview",
+      "Kubernetes Secret decoder with secure show/hide toggle",
+      "Secret type detection (Opaque, kubernetes.io/tls, service-account)",
+      "Workload dependency audit showing pods mounting each secret"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "💽",
+    title: "PersistentVolumeClaims (PVCs)",
+    route: "pvcs",
+    badge: "Storage",
+    desc: "Storage claim manager auditing requested volume sizes, access modes (RWO/RWX), binding status, and attached StorageClasses.",
+    features: [
+      "Binding status audit (Bound, Pending, Lost) with error reasons",
+      "Access mode inspection: ReadWriteOnce, ReadWriteMany, ReadOnlyMany",
+      "StorageClass assignment and volume capacity verification",
+      "Direct link to bound PersistentVolume (PV)"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "💾",
+    title: "Persistent Volumes (PVs)",
+    route: "pvs",
+    badge: "Storage",
+    desc: "Cluster storage provisioner managing underlying physical storage volumes, reclaim policies (Retain, Delete), and CSI driver bindings.",
+    features: [
+      "Reclaim policy audit to prevent unexpected data loss upon claim deletion",
+      "CSI driver provisioner identification (EBS, GPD, local, NFS)",
+      "Volume mode (Filesystem vs Block) and capacity breakdown",
+      "Direct linkage to bound namespace PVC"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🏷️",
+    title: "StorageClasses",
+    route: "storageclasses",
+    badge: "Storage",
+    desc: "Defines dynamic storage provisioner rules, allowVolumeExpansion flags, reclaim policies, and volume binding modes (Immediate vs WaitForFirstConsumer).",
+    features: [
+      "Provisioner plugin discovery (e.g., ebs.csi.aws.com, pd.csi.storage.gke.io)",
+      "Volume expansion capability auditor",
+      "Volume binding mode inspection to troubleshoot multi-AZ scheduling",
+      "Default StorageClass indicator"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "📁",
+    title: "Namespaces & Tenant Projects",
+    route: "namespaces",
+    badge: "Multi-Tenant",
+    desc: "Logical cluster partitions providing workload isolation, ResourceQuota enforcement, and customer project tenancy mapping.",
+    features: [
+      "Namespace lifecycle tracking (Active vs Terminating)",
+      "ResourceQuota and LimitRange capacity limits vs current consumption",
+      "Customer tenant workspace association",
+      "Quick namespace switcher for console-wide filtering"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "⚠️",
+    title: "Cluster Events & Warning Stream",
+    route: "events",
+    badge: "Telemetry",
+    desc: "Streaming cluster event bus capturing Warnings, Errors, BackOffs, and Normal scheduling events emitted by Kubernetes controllers.",
+    features: [
+      "Warning vs Normal event severity filtering",
+      "Reason aggregator: FailedScheduling, BackOff, Unhealthy, FailedMount",
+      "Target resource cross-link to investigate pod or node directly",
+      "Event timestamping and occurrence count tracking"
+    ]
+  },
+  {
+    domain: "k8s",
+    domainLabel: "Cluster Core",
+    icon: "🧹",
+    title: "Dangling Config Scanner",
+    route: "dangling-configs",
+    badge: "Hygiene",
+    desc: "Garbage collection and hygiene advisor scanning for orphaned ConfigMaps and Secrets not referenced by any active Deployment, Pod, or CronJob.",
+    features: [
+      "Cross-references all pods and workload env/volume mounts",
+      "Identifies stale configuration files consuming etcd memory",
+      "Highlights high-risk orphaned secrets containing sensitive credentials",
+      "1-Click cleanup recommendation"
+    ]
+  },
+
+  // ==================== DOMAIN 2: SRE & RELIABILITY ====================
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "⏱️",
+    title: "SLO & Error Budget Burn Radar",
+    route: "sre-slos",
+    badge: "Crelan Exclusive",
+    desc: "Google SRE-standard Service Level Objective radar tracking 99.9% / 99.5% availability targets, multi-window error budget burn rates (1h, 6h, 24h, 30d), and automated deployment freeze gates.",
+    features: [
+      "Multi-window burn rate alert thresholds (14.4x 1h, 6x 6h) based on Google SRE Workbook",
+      "Automated Deployment Freeze Gate alerting when budget is exhausted (<0%)",
+      "Historical burn velocity trend tracking and remaining budget projections",
+      "Direct integration with Incident War Room for rapid escalation"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "📈",
+    title: "The 4 Golden Signals & RED Engine",
+    route: "sre-golden-signals",
+    badge: "Crelan Exclusive",
+    desc: "Real-time service telemetry engine monitoring Rate (req/sec), Errors (5xx rate), Duration (P50, P90, P99 latency percentiles), and Saturation across all cluster microservices.",
+    features: [
+      "P50, P90, and P99 tail latency percentiles with spike anomaly indicators",
+      "5xx HTTP error rate tracking with service degradation triggers",
+      "Throughput (RPS) velocity metrics per service and namespace",
+      "Memory & CPU saturation thresholds alerting before OOMKilled events occur"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "🩺",
+    title: "Health Probe Doctor & Anti-Patterns",
+    route: "sre-probes",
+    badge: "Crelan Exclusive",
+    desc: "Automated reliability auditor scanning every container for missing Liveness, Readiness, or Startup probes, misaligned timeouts, and cascading failure anti-patterns.",
+    features: [
+      "Missing Probe Scanner detecting containers vulnerable to silent deadlocks",
+      "Cascading Timeout Detector: Flags probe timeouts exceeding downstream SLA limits",
+      "Flapping & Probe Crash Counter tracking intermittent health check failures",
+      "1-Click recommended YAML probe configuration snippet generator"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "🛡️",
+    title: "Multi-AZ & PDB Resilience Auditor",
+    route: "sre-resilience",
+    badge: "Crelan Exclusive",
+    desc: "High-availability auditor inspecting cross-availability-zone topology spreads (topologySpreadConstraints), Single Points of Failure (SPOF), and missing PodDisruptionBudgets (PDB).",
+    features: [
+      "Availability Zone (AZ) skew analysis identifying workloads co-located on a single AZ",
+      "Single Point of Failure (SPOF) detector: Identifies single-replica production workloads",
+      "PodDisruptionBudget (PDB) coverage audit ensuring safe node drain and cluster upgrades",
+      "Cluster disruption risk score with actionable resilience hardening advice"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "🐤",
+    title: "Progressive Delivery & Canary Guard",
+    route: "sre-canary",
+    badge: "Crelan Exclusive",
+    desc: "Canary rollout controller providing real-time traffic splitting visualizers (e.g. 10% canary / 90% baseline), error differential comparison, and a 1-click panic rollback button.",
+    features: [
+      "Live Canary vs Baseline traffic split visualizer (Argo / Flagger / Native)",
+      "Error differential radar: Flags when canary 5xx error rate exceeds baseline by >1%",
+      "Latency regression monitor comparing P99 between current and candidate version",
+      "1-Click Immediate Abort & Rollback button restoring 100% stable baseline traffic"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "💥",
+    title: "Guarded Chaos Engineering Prober",
+    route: "sre-chaos",
+    badge: "Crelan Exclusive",
+    desc: "Safety-gated chaos engineering platform allowing engineers to inject pod disruptions, network latency, and memory spikes with an uncompromised 2-replica safety guardrail.",
+    features: [
+      "Strict Production Safety Gate: Refuses to run chaos on any workload with fewer than 2 healthy replicas",
+      "Pod termination chaos probers to test automatic failover and recovery",
+      "Controlled network latency injection to simulate cross-region / database lag",
+      "Automated health verification and instant chaos abort failsafe"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "🎖️",
+    title: "Service Reliability & Incident Scorecards",
+    route: "sre-scorecards",
+    badge: "Crelan Exclusive",
+    desc: "Objective reliability report card grading every service from A+ to F based on probe coverage, multi-AZ deployment, PDB protection, restart counts, and MTTD/MTTR metrics.",
+    features: [
+      "Letter grade score (A, B, C, D, F) computed across 8 reliability dimensions",
+      "Mean Time to Detect (MTTD) and Mean Time to Resolve (MTTR) tracking",
+      "Mean Time Between Failures (MTBF) and 30-day uptime stability index",
+      "Actionable checklist to promote any failing service to Grade A readiness"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "🚨",
+    title: "Incident War Room & Post-Mortem Generator",
+    route: "war-room",
+    badge: "Crelan Exclusive",
+    desc: "Live incident response triage room synthesizing real-time error logs, affected microservices, and AI root cause diagnosis with an automated 1-click Markdown Post-Mortem Generator.",
+    features: [
+      "Real-time Incident War Room correlating alerts, logs, and pod events",
+      "Automated Post-Mortem Generator: Builds complete Markdown post-mortem with timeline, root cause, impact, and action items in 1 click",
+      "Blast radius calculator identifying affected upstream and downstream dependencies",
+      "Incident status coordinator (Investigating, Identified, Monitoring, Resolved)"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "⚡",
+    title: "Event Storm Radar & Anomaly Detector",
+    route: "event-storm",
+    badge: "Intelligence",
+    desc: "High-frequency event velocity analyzer detecting warning spikes, cascading CrashLoopBackOffs, and kubelet thrashing before it leads to node failure.",
+    features: [
+      "Real-time events-per-second velocity gauge with anomaly spike detection",
+      "Top offending namespaces, pods, and controllers causing event storms",
+      "Pattern matching for FailedMount, Evicted, and FailedScheduling storms",
+      "Throttling suggestions to prevent etcd saturation during storms"
+    ]
+  },
+  {
+    domain: "sre",
+    domainLabel: "SRE & Reliability",
+    icon: "📊",
+    title: "Autoscaling & HPA Controller",
+    route: "autoscaling",
+    badge: "SRE",
+    desc: "Horizontal Pod Autoscaler (HPA) and Vertical Pod Autoscaler (VPA) inspector monitoring target metrics, min/max replica boundaries, and scaling event history.",
+    features: [
+      "Current vs Target CPU/Memory utilization percentages",
+      "Min and Max replica boundaries and current scale replica counts",
+      "Scaling condition auditor (AbleToScale, ScalingActive, ScalingLimited)",
+      "Thrashing / flapping detection warning of oscillating scale events"
+    ]
+  },
+
+  // ==================== DOMAIN 3: SECURITY & COMPLIANCE ====================
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "🛡️",
+    title: "CIS Benchmark & Cluster Hardening Audit",
+    route: "security",
+    badge: "Security",
+    desc: "Automated CIS Kubernetes Benchmark and NSA/CISA security auditor evaluating control-plane flags, privileged containers, root execution, and host networking.",
+    features: [
+      "Privileged container and `hostPID` / `hostNetwork` exploit scanner",
+      "Root user execution detector (`runAsNonRoot: true` verification)",
+      "Read-only root filesystem compliance auditor",
+      "Security posture score with step-by-step remediation commands"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "🔍",
+    title: "Container Image CVE Vulnerability Radar",
+    route: "image-vulnerabilities",
+    badge: "Enterprise",
+    desc: "Continuous image vulnerability scanner auditing all running images against known CVE databases with CVSS scoring, affected packages, and fixed version guidance.",
+    features: [
+      "Real-time mapping of running image digests to CVE advisories",
+      "CVSS severity categorization (Critical, High, Medium, Low)",
+      "Vulnerable OS and application package identification (e.g. openssl, glibc)",
+      "Patch guidance showing exact upgraded container image tag"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "🗝️",
+    title: "RBAC Blast Radius & Privilege Auditor",
+    route: "rbac",
+    badge: "Security",
+    desc: "Deep RBAC visualizer auditing ClusterRoles, Roles, RoleBindings, and ServiceAccounts to identify wildcard permissions (`*`), cluster-admin sprawl, and escalation risks.",
+    features: [
+      "Over-privileged ServiceAccount detector (e.g. `cluster-admin` bindings)",
+      "Wildcard permission finder (`verbs: [*]`, `resources: [*]`)",
+      "ServiceAccount token automounting risk auditor",
+      "Interactive visual permission matrix across all namespaces"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "🔑",
+    title: "Interactive RBAC Tester (can-i)",
+    route: "can-i",
+    badge: "Enterprise",
+    desc: "Interactive permission evaluator allowing administrators to query whether a specific user, group, or service account is authorized to perform any Kubernetes API verb on any resource.",
+    features: [
+      "Evaluates API permissions for Users, Groups, and ServiceAccounts",
+      "Supports all verbs: get, list, watch, create, update, patch, delete, deletecollection",
+      "Namespace-scoped and cluster-wide permission simulation",
+      "Live explanation of matching RoleBindings granting or denying the action"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "🏢",
+    title: "Capsule Multi-Tenant Isolation Matrix",
+    route: "isolation-matrix",
+    badge: "Enterprise",
+    desc: "Enterprise multi-tenancy matrix built for Capsule and native Kubernetes, tracking tenant boundaries, project quotas, network isolation, and cross-tenant leakage.",
+    features: [
+      "Tenant boundary auditor preventing cross-tenant pod communication",
+      "Tenant project resource quota enforcement (CPU, Memory, Ingress domains)",
+      "Tenant owner and team role mapping",
+      "Cross-tenant network policy verification"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "👥",
+    title: "Cluster & Resource Access Control",
+    route: "access-control",
+    badge: "Enterprise",
+    desc: "User access management system regulating administrator permissions, platform role assignments (Admin, Operator, Viewer), and API access tokens.",
+    features: [
+      "Role-Based Access Control (RBAC) governance for console users",
+      "API token lifecycle manager with scope enforcement and instant revocation",
+      "Audit logs of console privilege assignments and user changes",
+      "Session management and active administrator tracking"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "📜",
+    title: "TLS Certificate Expiration Radar",
+    route: "certificates",
+    badge: "Security",
+    desc: "Proactive TLS certificate auditor monitoring all Ingress and Secret TLS certificates, cert-manager Issuers, and ClusterIssuers before expiration causes outages.",
+    features: [
+      "Proactive expiration countdown (<30d warning, <7d critical)",
+      "cert-manager Certificate and Issuer health and renewal status",
+      "Common Name (CN), Subject Alternative Names (SANs), and CA issuer details",
+      "Automated renewal trigger recommendations"
+    ]
+  },
+  {
+    domain: "security",
+    domainLabel: "Security & Compliance",
+    icon: "📋",
+    title: "Platform Audit Trail & Change Ledger",
+    route: "audit",
+    badge: "Security",
+    desc: "Immutable change ledger recording all administrative actions, deployments, rollbacks, config updates, and terminal executions across the cluster.",
+    features: [
+      "Comprehensive actor tracking (User, ServiceAccount, IP address, Timestamp)",
+      "Resource modification diffs for deployments, configs, and access rules",
+      "Exportable audit logs for SOC2, ISO27001, and HIPAA compliance",
+      "Filter by actor, action type, target namespace, or date range"
+    ]
+  },
+
+  // ==================== DOMAIN 4: PLATFORM OPS & FLEET ====================
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🌐",
+    title: "Multi-Cluster Switcher & Fleet Dashboard",
+    route: "cluster-fleet",
+    badge: "Fleet",
+    desc: "ClickUp-style multi-cluster fleet management allowing platform teams to switch between multiple production, staging, and edge Kubernetes clusters instantly.",
+    features: [
+      "1-Click context switching across all connected Kubernetes clusters",
+      "ClickUp-style customizable cluster color palettes and avatars",
+      "Fleet-wide health telemetry: Node counts, pod totals, and K8s versions",
+      "Add new cluster via raw kubeconfig or environment variable synchronization"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "⎈",
+    title: "Helm Releases Manager",
+    route: "helm-releases",
+    badge: "Enterprise",
+    desc: "Complete Helm v3 release lifecycle manager discovering installed charts, inspecting computed values.yaml, executing 1-click rollbacks, and uninstalling releases.",
+    features: [
+      "Cross-namespace Helm release discovery with status and chart versions",
+      "Values Inspector with syntax highlighting and 1-click clipboard copy",
+      "1-Click Rollback to any previous revision with zero downtime",
+      "Safe uninstall with automatic resource cleanup"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🧩",
+    title: "CRD & Operator Browser",
+    route: "crds",
+    badge: "Enterprise",
+    desc: "Explorer for all installed Custom Resource Definitions (CRDs) and operator instances under apiextensions.k8s.io/v1.",
+    features: [
+      "Browse CRD groups, versions, scopes (Namespaced vs Cluster), and schemas",
+      "Live operator custom resource viewer (Cert-Manager, Capsule, Istio, etc.)",
+      "YAML and JSON manifest inspector for custom resources",
+      "Operator condition status and schema definition validation"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🤖",
+    title: "AI K8s Diagnostic Copilot",
+    route: "copilot",
+    badge: "AI Native",
+    desc: "Integrated Google Gemini-powered diagnostic assistant providing intelligent root-cause analysis, natural-language cluster querying, and instant remediation commands.",
+    features: [
+      "Natural-language cluster queries ('Why is auth-service crash looping?')",
+      "Context-aware analysis combining live pod logs, events, and manifests",
+      "Generates copy-paste kubectl and YAML remediation patches",
+      "Zero telemetry leakage with strict security boundaries"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "💡",
+    title: "Cost & Right-Sizing Advisor",
+    route: "rightsizing",
+    badge: "FinOps",
+    desc: "FinOps cost intelligence engine identifying over-provisioned CPU and memory requests, calculating monthly dollar waste, and recommending optimized container limits.",
+    features: [
+      "Over-provisioning detector comparing actual usage against requested CPU/Memory",
+      "Estimated monthly dollar waste calculation per workload and namespace",
+      "Actionable right-sizing recommendations (spec.containers[*].resources)",
+      "Under-provisioned workload warnings to prevent OOMKilled crashes"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🔥",
+    title: "Resource Efficiency & Heatmap",
+    route: "efficiency",
+    badge: "FinOps",
+    desc: "Visual heatmaps of cluster node capacity and workload utilization, highlighting resource bottlenecks, stranded capacity, and allocation imbalances.",
+    features: [
+      "Interactive node CPU and memory allocation heatmap",
+      "Identifies stranded memory or CPU on under-utilized worker nodes",
+      "Namespace resource distribution breakdown",
+      "Bin-packing efficiency score across the cluster fleet"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🗄️",
+    title: "Database Topology & Connection Visualizer",
+    route: "databases",
+    badge: "Data",
+    desc: "Discovers and maps managed and in-cluster database instances (PostgreSQL, MySQL, Redis, MongoDB), active connection pools, PVC bindings, and backup status.",
+    features: [
+      "Database workload mapping across statefulsets and managed instances",
+      "Storage binding verification and PersistentVolume claim health",
+      "High-availability replica topology and leader/follower status",
+      "Backup protection verification and storage retention check"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🗑️",
+    title: "Storage Leak Detector",
+    route: "storage-leaks",
+    badge: "Hygiene",
+    desc: "FinOps storage hygiene engine scanning for unmounted PersistentVolumes, orphan cloud disks, and released PVCs silently incurring infrastructure costs.",
+    features: [
+      "Identifies unmounted and unattached PVs incurring cloud disk costs",
+      "Calculates estimated monthly cost savings from purging storage leaks",
+      "Safeguard check ensuring no volume in use is marked for purge",
+      "1-Click safe storage purge trigger"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🕸️",
+    title: "Traffic & Ingress Network Topology",
+    route: "topology",
+    badge: "Network",
+    desc: "Interactive visual topological graph mapping external HTTP traffic from Ingresses through Services down to backing Pods across all namespaces.",
+    features: [
+      "Interactive topological dependency graph",
+      "Visualizes Ingress -> Service -> Pod routing pathways",
+      "Identifies orphaned services without matching pod selectors",
+      "Highlights degraded or failing endpoints directly on the topology graph"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🚀",
+    title: "Cluster Upgrade Radar & Deprecations",
+    route: "upgrade-radar",
+    badge: "Ops",
+    desc: "Pre-upgrade compatibility radar scanning cluster resources for deprecated or removed Kubernetes API versions prior to upgrading control plane or worker nodes.",
+    features: [
+      "Identifies deprecated API versions (e.g. autoscaling/v2beta1, networking.k8s.io/v1beta1)",
+      "Target Kubernetes version compatibility scorecard (1.28, 1.29, 1.30, 1.31)",
+      "Actionable replacement API group and manifest migration instructions",
+      "Prevents control-plane upgrade failures caused by unsupported APIs"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🐙",
+    title: "GitOps Drift Radar",
+    route: "gitops-drift",
+    badge: "GitOps",
+    desc: "Detects unauthorized out-of-band changes, manual kubectl edit modifications, and configuration drift between cluster state and GitOps repository source of truth.",
+    features: [
+      "Real-time drift detection comparing live state against Git commit manifests",
+      "Side-by-side YAML diff viewer highlighting exact drifted fields",
+      "1-Click Reconcile trigger to restore cluster state from Git",
+      "Drift alert webhooks notifying Slack/PagerDuty of manual overrides"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🔄",
+    title: "Disaster Recovery & Backup Radar",
+    route: "backup-radar",
+    badge: "Resilience",
+    desc: "Disaster recovery prober identifying unprotected PersistentVolumeClaims, calculating Recovery Point Objectives (RPO), and verifying backup schedules.",
+    features: [
+      "Unprotected PVC discovery: Flags volumes lacking snapshot or backup coverage",
+      "RPO compliance auditor measuring time elapsed since last verified backup",
+      "Velero / CSI volume snapshot backup status verification",
+      "Disaster recovery readiness index with RTO/RPO SLA tracking"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🔗",
+    title: "Cluster Connect & Onboarding",
+    route: "cluster-connect",
+    badge: "Admin",
+    desc: "Seamless onboarding wizard to connect any Kubernetes cluster via kubeconfig YAML, base64 environment variable, or in-cluster service account.",
+    features: [
+      "Direct kubeconfig paste or file upload with instant connection test",
+      "Persistent cloud hosting instructions using CRELAN_KUBECONFIG_DATA_B64",
+      "Context auto-discovery and cluster API reachability verification",
+      "Multi-cluster context switcher integration"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🩺",
+    title: "Cluster Readiness Doctor",
+    route: "readiness",
+    badge: "Ops",
+    desc: "Pre-flight health check engine validating API server responsiveness, CoreDNS resolution, CNI network readiness, storage provisioner status, and ingress controllers.",
+    features: [
+      "Control-plane API server latency and healthz check",
+      "CoreDNS internal name resolution test across pods",
+      "Default StorageClass dynamic provisioning readiness test",
+      "CNI pod-to-pod network connectivity validator"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "💾",
+    title: "Control-Plane Backup",
+    route: "backup",
+    badge: "Ops",
+    desc: "Snapshot engine generating full control plane state archives including CRDs, namespaces, role bindings, and workload specifications for point-in-time disaster recovery.",
+    features: [
+      "Point-in-time cluster manifest state export",
+      "Automated archive generation with checksum verification",
+      "Easy migration and staging environment bootstrapping",
+      "Secure encrypted storage integration"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "🔔",
+    title: "Incident Alert Webhooks",
+    route: "webhooks",
+    badge: "Ops",
+    desc: "Configures webhook dispatchers to send real-time alerts for CrashLoopBackOffs, SLO burn rate breaches, CVE criticals, and GitOps drift to Slack, Discord, and PagerDuty.",
+    features: [
+      "Custom webhook endpoint manager with secret HMAC signing",
+      "Granular event subscriptions (SLO freeze, Warning storms, Chaos abort, Drift)",
+      "Test payload dispatcher with live delivery log inspection",
+      "Native integrations with Slack, Discord, PagerDuty, and custom HTTP endpoints"
+    ]
+  },
+  {
+    domain: "ops",
+    domainLabel: "Platform Ops & Fleet",
+    icon: "⌘",
+    title: "Quick Launcher Command Palette",
+    route: "#cmd-k",
+    badge: "Productivity",
+    desc: "Keyboard-driven command palette (⌘K / Ctrl+K) offering instant navigation to any cluster resource, diagnostic engine, or administrative action in under 2 keystrokes.",
+    features: [
+      "Global shortcut (⌘K on macOS, Ctrl+K on Windows/Linux)",
+      "Instant fuzzy search across all 52 tools and cluster resources",
+      "Zero-latency jump to pods, nodes, CVE scanner, War Room, or Helm releases",
+      "Accessible from anywhere in the console"
+    ]
+  }
+];
+
+const LENS_VS_CRELAN_MATRIX = [
+  {
+    category: "Architecture & Deployment",
+    feature: "Deployment Model",
+    lens: "Heavy Electron desktop app installed locally per operator; requires desktop software licenses.",
+    crelan: "100% Web-Native, zero local client install, team-accessible via RBAC.",
+    impact: "No desktop footprint, instant onboarding for whole team, accessible from browser or tablet."
+  },
+  {
+    category: "SRE & Reliability",
+    feature: "Live Post-Mortem Generator",
+    lens: "None (manual document authoring).",
+    crelan: "Built-in 1-Click Markdown Post-Mortem Generator with timeline & root cause.",
+    impact: "Saves hours during P1 incidents; generates audit-ready post-mortems in seconds."
+  },
+  {
+    category: "SRE & Reliability",
+    feature: "SLO & Error Budget Burn Radar",
+    lens: "None (requires separate external Grafana / Datadog setup).",
+    crelan: "Built-in Google SRE multi-window burn rates (1h, 6h, 24h, 30d) + freeze alerts.",
+    impact: "Automated deployment freeze gates when error budgets are exhausted."
+  },
+  {
+    category: "SRE & Reliability",
+    feature: "Guarded Chaos Engineering",
+    lens: "None (requires external Chaos Mesh / Litmus installation).",
+    crelan: "Built-in Chaos Prober with strict 2-replica production safety gates.",
+    impact: "Safe production game days without risking single-replica workload downtime."
+  },
+  {
+    category: "SRE & Reliability",
+    feature: "Health Probe Doctor & Anti-Patterns",
+    lens: "Raw YAML display only.",
+    crelan: "Automated probe scanner detecting missing liveness/readiness probes & timeout bugs.",
+    impact: "Prevents silent pod deadlocks and cascading timeouts."
+  },
+  {
+    category: "SRE & Reliability",
+    feature: "Progressive Delivery & Canary Guard",
+    lens: "Basic pod lists.",
+    crelan: "Live canary traffic visualizer, error differential monitor & 1-click abort rollback.",
+    impact: "Safe progressive rollouts with instant rollback capability."
+  },
+  {
+    category: "Security & Compliance",
+    feature: "Container Image CVE Vulnerability Radar",
+    lens: "Requires paid Lens Security Extension subscription.",
+    crelan: "Built-in zero-config image CVE vulnerability scanner with CVSS scoring.",
+    impact: "Instant visibility into vulnerable images and remediation tags without paid addons."
+  },
+  {
+    category: "Security & Compliance",
+    feature: "Interactive RBAC Tester (can-i)",
+    lens: "Limited / manual command line only.",
+    crelan: "Visual permission evaluator across Users, Groups, and ServiceAccounts.",
+    impact: "Instantly verify who has access to sensitive resources without CLI access."
+  },
+  {
+    category: "Security & Compliance",
+    feature: "Capsule Multi-Tenant Isolation Matrix",
+    lens: "Flat namespace listing only.",
+    crelan: "Tenant project boundary auditor, quota enforcement, and cross-tenant leak checks.",
+    impact: "True multi-tenancy governance for enterprise platforms."
+  },
+  {
+    category: "Security & Compliance",
+    feature: "Platform Audit Trail & Change Ledger",
+    lens: "None (session actions not recorded).",
+    crelan: "Immutable change ledger with user attribution, timestamps, and diff tracking.",
+    impact: "SOC2, ISO27001, and HIPAA compliance readiness."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "Multi-Cluster Switching Experience",
+    lens: "Catalog grid requiring desktop focus.",
+    crelan: "ClickUp-style persistent rail with customizable cluster avatars & color palettes.",
+    impact: "Immediate visual cluster context recognition; avoids accidental production edits."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "Helm Release Lifecycle & Values Diff",
+    lens: "Basic Helm view (limited values editing).",
+    crelan: "Full Helm v3 manager with values inspector, 1-click revision rollback & uninstall.",
+    impact: "Zero-CLI Helm management directly in the console."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "GitOps Drift Radar",
+    lens: "Requires ArgoCD desktop plugin.",
+    crelan: "Built-in real-time drift detection comparing live state vs Git with side-by-side diff.",
+    impact: "Catch unauthorized out-of-band kubectl changes immediately."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "Disaster Recovery & RPO Radar",
+    lens: "None.",
+    crelan: "Continuous unprotected PVC discovery, RPO tracking & backup verification.",
+    impact: "Eliminates surprise data loss from unbacked persistent volumes."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "AI Diagnostic Copilot",
+    lens: "Proprietary paid cloud add-on.",
+    crelan: "Built-in Google Gemini reasoning analyzing live cluster events, logs, and YAML.",
+    impact: "Plain-language troubleshooting and copy-paste remediation commands."
+  },
+  {
+    category: "Platform Ops & Fleet",
+    feature: "FinOps Cost & Storage Leak Detector",
+    lens: "Separate commercial cloud extension.",
+    crelan: "Built-in right-sizing recommendations + unmounted volume leak detector.",
+    impact: "Immediate reduction in wasted cloud compute and orphan disk costs."
+  }
+];
+
+let docsActiveTab = "all";
+let docsSearchQuery = "";
+
+async function renderDocs(container) {
+  container.innerHTML = `
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Console Documentation & Component Guide</h1>
+        <p>Interactive architecture handbook detailing every tool, diagnostic engine, and SRE prober built into Crelan.</p>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" type="button" id="docs-open-matrix-btn">
+          <span>⚖️</span> Lens vs Crelan Matrix
+        </button>
+        <button class="admin-btn admin-btn-sm admin-btn-primary" type="button" onclick="openCommandPalette()">
+          <span class="admin-cmd-k-badge" style="font-size:10px; padding:1px 4px;">⌘K</span> Quick Launcher
+        </button>
+      </div>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="admin-docs-hero">
+      <div class="admin-docs-hero-content">
+        <div style="display:inline-flex; align-items:center; gap:6px; background:#eff6ff; color:#2563eb; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; margin-bottom:8px; border:1px solid #bfdbfe;">
+          <span>ARCHITECTURE &amp; SRE MANUAL</span>
+        </div>
+        <h1>Unified Kubernetes Control Plane</h1>
+        <p>
+          Crelan integrates 52+ specialized Kubernetes administrative tools, Google-standard SRE radars, enterprise security probers, and multi-cluster fleet controls directly in your web browser. Zero heavy desktop clients, zero external plugins, zero license lock-in.
+        </p>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="admin-docs-pill" style="background:#e0f2fe; color:#0369a1; border-color:#bae6fd; font-weight:700;">52 Platform Components</span>
+          <span class="admin-docs-pill" style="background:#fef3c7; color:#92400e; border-color:#fde68a; font-weight:700;">4 Operational Domains</span>
+          <span class="admin-docs-pill" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0; font-weight:700;">100% Web-Native</span>
+        </div>
+        <div style="font-size:11px; color:var(--admin-text-muted);">
+          Compare against desktop alternatives: <a href="javascript:void(0)" id="docs-hero-matrix-link" style="color:var(--admin-accent); font-weight:600; text-decoration:underline;">View Lens Comparison Matrix →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Domain Tabs -->
+    <div class="admin-docs-tabs" id="docs-domain-tabs">
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'all' ? 'active' : ''}" data-tab="all" type="button">
+        All Components <span style="font-size:10px; opacity:0.8; margin-left:3px;">(52)</span>
+      </button>
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'k8s' ? 'active' : ''}" data-tab="k8s" type="button">
+        ☸️ Cluster Core <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+      </button>
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'sre' ? 'active' : ''}" data-tab="sre" type="button">
+        🩺 SRE &amp; Reliability <span style="font-size:10px; opacity:0.8; margin-left:3px;">(10)</span>
+      </button>
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'security' ? 'active' : ''}" data-tab="security" type="button">
+        🛡️ Security &amp; Compliance <span style="font-size:10px; opacity:0.8; margin-left:3px;">(8)</span>
+      </button>
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'ops' ? 'active' : ''}" data-tab="ops" type="button">
+        ⚙️ Platform Ops &amp; Fleet <span style="font-size:10px; opacity:0.8; margin-left:3px;">(17)</span>
+      </button>
+      <button class="admin-docs-tab-btn ${docsActiveTab === 'lens-matrix' ? 'active' : ''}" data-tab="lens-matrix" type="button" style="border-left:2px solid var(--admin-accent);">
+        ⚖️ Lens vs Crelan Matrix <span style="font-size:10px; background:var(--admin-accent); color:#fff; padding:1px 5px; border-radius:10px; margin-left:3px;">16</span>
+      </button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="admin-docs-search-bar">
+      <span style="font-size:14px; color:var(--admin-text-muted);">🔍</span>
+      <input class="admin-docs-search-input" id="docs-search-input" type="search" placeholder="Search components by name, domain, capability, or keyword... (e.g. SLO, Chaos, Post-Mortem, CVE, PVC, Drift)" value="${escapeHTML(docsSearchQuery)}" autocomplete="off">
+      <span id="docs-count-badge" style="font-size:11px; color:var(--admin-text-muted); font-weight:600; font-family:var(--admin-mono);"></span>
+    </div>
+
+    <!-- Dynamic Container -->
+    <div id="docs-content-container"></div>
+  `;
+
+  // Attach tab switching events
+  const tabs = $$("#docs-domain-tabs .admin-docs-tab-btn");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      docsActiveTab = tab.dataset.tab;
+      updateDocsContent();
+    });
+  });
+
+  // Attach search input event
+  const searchInput = $("#docs-search-input");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      docsSearchQuery = e.target.value.trim().toLowerCase();
+      updateDocsContent();
+    });
+  }
+
+  // Quick matrix shortcuts
+  const openMatrixBtn = $("#docs-open-matrix-btn");
+  if (openMatrixBtn) {
+    openMatrixBtn.addEventListener("click", () => {
+      const matrixTab = $("#docs-domain-tabs button[data-tab='lens-matrix']");
+      if (matrixTab) matrixTab.click();
+    });
+  }
+  const heroMatrixLink = $("#docs-hero-matrix-link");
+  if (heroMatrixLink) {
+    heroMatrixLink.addEventListener("click", () => {
+      const matrixTab = $("#docs-domain-tabs button[data-tab='lens-matrix']");
+      if (matrixTab) matrixTab.click();
+    });
+  }
+
+  updateDocsContent();
+}
+
+function updateDocsContent() {
+  const container = $("#docs-content-container");
+  const countBadge = $("#docs-count-badge");
+  if (!container) return;
+
+  if (docsActiveTab === "lens-matrix") {
+    // Render Lens vs Crelan Comparison Matrix
+    const query = docsSearchQuery;
+    const filteredRows = LENS_VS_CRELAN_MATRIX.filter((item) => {
+      if (!query) return true;
+      return (
+        item.category.toLowerCase().includes(query) ||
+        item.feature.toLowerCase().includes(query) ||
+        item.lens.toLowerCase().includes(query) ||
+        item.crelan.toLowerCase().includes(query) ||
+        item.impact.toLowerCase().includes(query)
+      );
+    });
+
+    if (countBadge) countBadge.textContent = `${filteredRows.length} comparisons`;
+
+    container.innerHTML = `
+      <div style="background:#ffffff; border:1px solid var(--admin-border); border-radius:10px; padding:20px; margin-bottom:20px; box-shadow:var(--admin-shadow-sm);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0 0 4px; font-size:18px; font-weight:700; color:var(--admin-text);">Why Engineering Teams Choose Crelan Over Lens</h2>
+            <p style="margin:0; font-size:13px; color:var(--admin-text-muted); max-width:820px;">
+              Lens is traditionally distributed as an Electron desktop client requiring individual workstation installs, local kubeconfig access, and separate paid subscriptions for security or cloud features. Crelan is a <strong>100% web-native, multi-tenant cluster management platform</strong> equipped with native SRE automation, automated post-mortem generation, guarded chaos drills, and continuous vulnerability scanning.
+            </p>
+          </div>
+          <span class="admin-docs-pill" style="background:#f0fdf4; color:#166534; border-color:#bbf7d0; font-weight:700; font-size:12px; padding:4px 10px;">
+            16 Structural Advantages
+          </span>
+        </div>
+      </div>
+
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width:160px;">Domain</th>
+              <th style="width:200px;">Capability</th>
+              <th style="width:280px; color:#64748b;">Lens (Desktop Electron)</th>
+              <th style="width:340px; color:#166534; background:#f0fdf4;">Crelan Platform Console</th>
+              <th>Platform &amp; SRE Advantage</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              filteredRows.length === 0
+                ? `<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--admin-text-muted);">No comparison features match your search.</td></tr>`
+                : filteredRows
+                    .map(
+                      (row) => `
+              <tr>
+                <td><span class="admin-docs-pill" style="font-size:10.5px;">${escapeHTML(row.category)}</span></td>
+                <td><strong style="color:var(--admin-text); font-size:13px;">${escapeHTML(row.feature)}</strong></td>
+                <td style="color:#64748b; font-size:12px; line-height:1.5;">${escapeHTML(row.lens)}</td>
+                <td style="background:#f0fdf4; color:#166534; font-size:12.5px; font-weight:600; line-height:1.5;">
+                  <div style="display:flex; align-items:flex-start; gap:6px;">
+                    <span style="color:#16a34a; font-size:14px; line-height:1;">✓</span>
+                    <span>${escapeHTML(row.crelan)}</span>
+                  </div>
+                </td>
+                <td style="font-size:12px; color:#334155; line-height:1.5;">${escapeHTML(row.impact)}</td>
+              </tr>
+            `
+                    )
+                    .join("")
+            }
+          </tbody>
+        </table>
+      </div>
+    `;
+    return;
+  }
+
+  // Filter components
+  const query = docsSearchQuery;
+  const filtered = ADMIN_COMPONENTS.filter((comp) => {
+    if (docsActiveTab !== "all" && comp.domain !== docsActiveTab) {
+      return false;
+    }
+    if (!query) return true;
+    const matchTitle = comp.title.toLowerCase().includes(query);
+    const matchDesc = comp.desc.toLowerCase().includes(query);
+    const matchDomain = comp.domainLabel.toLowerCase().includes(query);
+    const matchRoute = comp.route.toLowerCase().includes(query);
+    const matchFeatures = comp.features.some((f) => f.toLowerCase().includes(query));
+    return matchTitle || matchDesc || matchDomain || matchRoute || matchFeatures;
+  });
+
+  if (countBadge) countBadge.textContent = `${filtered.length} components`;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="admin-table-container">
+        <div class="admin-empty-state" style="padding: 60px 20px;">
+          <div style="font-size:32px; margin-bottom:12px;">🔎</div>
+          <h2 style="font-size:16px; margin-bottom:6px;">No components match "${escapeHTML(query)}"</h2>
+          <p style="color:var(--admin-text-muted); font-size:13px; margin:0 0 16px;">Try searching for a different keyword or switch to the "All Components" tab.</p>
+          <button class="admin-btn admin-btn-sm" type="button" onclick="document.getElementById('docs-search-input').value=''; docsSearchQuery=''; updateDocsContent();">Clear search filter</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="admin-docs-grid">
+      ${filtered
+        .map((comp) => {
+          let badgeStyle = "background:#f1f5f9; color:#475569; border-color:#cbd5e1;";
+          if (comp.badge === "Crelan Exclusive") {
+            badgeStyle = "background:#fef2f2; color:#b91c1c; border-color:#fecaca; font-weight:700;";
+          } else if (comp.badge === "Enterprise") {
+            badgeStyle = "background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; font-weight:700;";
+          } else if (comp.badge === "AI Native") {
+            badgeStyle = "background:#faf5ff; color:#7e22ce; border-color:#e9d5ff; font-weight:700;";
+          } else if (comp.badge === "FinOps") {
+            badgeStyle = "background:#f0fdf4; color:#15803d; border-color:#bbf7d0; font-weight:700;";
+          }
+
+          const actionBtn =
+            comp.route === "#cmd-k"
+              ? `<button class="admin-btn admin-btn-sm admin-btn-primary" type="button" onclick="openCommandPalette()">Launch Quick Launcher</button>`
+              : `<button class="admin-btn admin-btn-sm admin-btn-primary" type="button" onclick="setRoute('${comp.route}')">Launch View →</button>`;
+
+          return `
+          <div class="admin-docs-card">
+            <div class="admin-docs-card-header">
+              <div class="admin-docs-card-title">
+                <div class="admin-docs-card-icon">${comp.icon}</div>
+                <div>
+                  <h3 style="font-size:14.5px; margin:0 0 2px;">${escapeHTML(comp.title)}</h3>
+                  <span style="font-size:11px; color:var(--admin-text-muted); font-weight:600;">${escapeHTML(comp.domainLabel)}</span>
+                </div>
+              </div>
+              <span class="admin-docs-pill" style="${badgeStyle}">${escapeHTML(comp.badge)}</span>
+            </div>
+
+            <p class="admin-docs-text">${escapeHTML(comp.desc)}</p>
+
+            <div class="admin-docs-section-title">Key Capabilities</div>
+            <ul class="admin-docs-metrics-list">
+              ${comp.features.map((f) => `<li>${escapeHTML(f)}</li>`).join("")}
+            </ul>
+
+            <div class="admin-docs-card-footer">
+              <span class="admin-docs-pill" style="color:var(--admin-text-muted);">#${escapeHTML(comp.route)}</span>
+              ${actionBtn}
+            </div>
+          </div>
+        `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 async function initializeAdmin() {
