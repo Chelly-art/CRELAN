@@ -477,7 +477,8 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 11px;
-  max-width: 220px;
+  max-width: 320px;
+  cursor: default;
 }
 
 .admin-context-chip strong {
@@ -3050,3 +3051,101 @@ body:not([data-active-domain]) .admin-tree-group:not([data-domain="k8s"]) {
   }
 }
 
+
+
+/* ==========================================================================
+   Workloads Grid & Card View Styles (Pods, Deployments, Nodes)
+   ========================================================================== */
+
+.admin-workloads-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.admin-workload-card {
+  background: #ffffff;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.admin-workload-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--admin-border-strong);
+  transform: translateY(-1px);
+}
+
+.admin-workload-card.is-error {
+  border-color: #fca5a5;
+  background: #fffcfc;
+}
+
+.admin-workload-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.admin-workload-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--admin-text);
+  margin: 0 0 2px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.admin-workload-card-ns {
+  font-size: 11px;
+  color: var(--admin-text-muted);
+  font-family: var(--admin-mono);
+}
+
+.admin-workload-card-body {
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex: 1;
+}
+
+.admin-workload-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--admin-border-subtle);
+}
+
+.admin-workload-stat-label {
+  color: var(--admin-text-muted);
+  font-size: 11px;
+}
+
+.admin-workload-stat-value {
+  font-weight: 600;
+  color: var(--admin-text);
+  font-family: var(--admin-mono);
+  font-size: 11px;
+}
+
+.admin-workload-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--admin-border-subtle);
+  flex-wrap: wrap;
+}

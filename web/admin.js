@@ -5,6 +5,18 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
 
+
+function getWorkloadsViewMode() {
+  return state.workloadsViewMode || localStorage.getItem("crelan_workloads_view_mode") || "list";
+}
+
+function setWorkloadsViewMode(mode) {
+  state.workloadsViewMode = mode;
+  localStorage.setItem("crelan_workloads_view_mode", mode);
+  renderCurrentView();
+}
+window.setWorkloadsViewMode = setWorkloadsViewMode;
+
 // Application State
 const state = {
   activeView: "overview",
@@ -768,55 +780,127 @@ async function renderNodes(container) {
   const nodes = await request("/api/v1/admin/nodes");
   const filtered = filterRows(nodes, ["name", "status", "internal_ip", "version"]);
 
+  const viewMode = getWorkloadsViewMode();
+  const toggleHtml = `
+    <div class="clickup-view-toggle">
+      <button class="clickup-view-btn ${viewMode === 'grid' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('grid')">
+        <span>⊞</span> Grid View
+      </button>
+      <button class="clickup-view-btn ${viewMode === 'list' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('list')">
+        <span>☰</span> List View
+      </button>
+    </div>
+  `;
+
+  let contentHtml = "";
+  if (viewMode === "grid") {
+    contentHtml = `
+      <div class="admin-workloads-grid">
+        ${filtered.length === 0 ? `<div class="admin-empty-state" style="grid-column: 1 / -1;">No nodes match your filter.</div>` : ""}
+        ${filtered.map(n => `
+          <div class="admin-workload-card" onclick="openInspector('node', '', '${escapeHTML(n.name)}')">
+            <div class="admin-workload-card-header">
+              <div>
+                <div class="admin-workload-card-title">${escapeHTML(n.name)}</div>
+                <div class="admin-workload-card-ns">${escapeHTML(n.roles.join(', ') || 'worker')}</div>
+              </div>
+              <span class="admin-badge ${n.status === 'Ready' ? 'admin-badge-ready' : 'admin-badge-error'}">
+                <span class="admin-badge-dot"></span>${escapeHTML(n.status)}
+              </span>
+            </div>
+            <div class="admin-workload-card-body">
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Version</span>
+                <span class="admin-workload-stat-value">${escapeHTML(n.version)}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Internal IP</span>
+                <span class="admin-workload-stat-value">${escapeHTML(n.internal_ip)}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Pods Running</span>
+                <span class="admin-workload-stat-value">${n.pods_running} / ${n.pods_capacity}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">CPU Allocatable</span>
+                <span class="admin-workload-stat-value">${escapeHTML(n.cpu_allocatable)}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Mem Allocatable</span>
+                <span class="admin-workload-stat-value">${escapeHTML(n.mem_allocatable)}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Age</span>
+                <span class="admin-workload-stat-value">${escapeHTML(n.age)}</span>
+              </div>
+            </div>
+            <div class="admin-workload-card-footer" onclick="event.stopPropagation()">
+              <button class="admin-btn admin-btn-xs" onclick="openInspector('node', '', '${escapeHTML(n.name)}')">Inspect YAML</button>
+              <button class="admin-btn admin-btn-xs" onclick="openNodeDrainModal('${escapeHTML(n.name)}')">Drain Sim</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } else {
+    contentHtml = `
+      <div class="admin-table-container">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Roles</th>
+              <th>Version</th>
+              <th>OS / Arch</th>
+              <th>Internal IP</th>
+              <th>Pods</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th>Age</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.length === 0 ? `<tr><td colspan="11" class="admin-empty-state">No nodes match your filter.</td></tr>` : ""}
+            ${filtered.map((n) => `
+              <tr onclick="openInspector('node', '', '${escapeHTML(n.name)}')">
+                <td class="admin-table-name">${escapeHTML(n.name)}</td>
+                <td><span class="admin-badge ${n.status === "Ready" ? "admin-badge-ready" : "admin-badge-error"}"><span class="admin-badge-dot"></span>${escapeHTML(n.status)}</span></td>
+                <td>${escapeHTML(n.roles.join(", "))}</td>
+                <td class="admin-table-ns">${escapeHTML(n.version)}</td>
+                <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(n.os_image)}</td>
+                <td class="admin-table-ns">${escapeHTML(n.internal_ip)}</td>
+                <td>${n.pods_running} / ${n.pods_capacity}</td>
+                <td>${escapeHTML(n.cpu_allocatable)}</td>
+                <td>${escapeHTML(n.mem_allocatable)}</td>
+                <td class="admin-table-age">${escapeHTML(n.age)}</td>
+                <td>
+                  <div class="admin-row-actions" style="justify-content: flex-end;">
+                    <button class="admin-action-btn" onclick="event.stopPropagation(); openNodeDrainModal('${escapeHTML(n.name)}')" title="Node Drain & Maintenance Safety Simulator">Drain Sim</button>
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   container.innerHTML = `
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Nodes</h1>
         <span class="admin-view-count">${nodes.length}</span>
       </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        ${toggleHtml}
+      </div>
     </div>
-    <div class="admin-table-container">
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Roles</th>
-            <th>Version</th>
-            <th>OS / Arch</th>
-            <th>Internal IP</th>
-            <th>Pods</th>
-            <th>CPU</th>
-            <th>Memory</th>
-            <th>Age</th>
-            <th style="text-align: right;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filtered.length === 0 ? `<tr><td colspan="11" class="admin-empty-state">No nodes match your filter.</td></tr>` : ""}
-          ${filtered.map((n) => `
-            <tr onclick="openInspector('node', '', '${escapeHTML(n.name)}')">
-              <td class="admin-table-name">${escapeHTML(n.name)}</td>
-              <td><span class="admin-badge ${n.status === "Ready" ? "admin-badge-ready" : "admin-badge-error"}"><span class="admin-badge-dot"></span>${escapeHTML(n.status)}</span></td>
-              <td>${escapeHTML(n.roles.join(", "))}</td>
-              <td class="admin-table-ns">${escapeHTML(n.version)}</td>
-              <td style="font-size: 11px; color: var(--admin-text-muted);">${escapeHTML(n.os_image)}</td>
-              <td class="admin-table-ns">${escapeHTML(n.internal_ip)}</td>
-              <td>${n.pods_running} / ${n.pods_capacity}</td>
-              <td>${escapeHTML(n.cpu_allocatable)}</td>
-              <td>${escapeHTML(n.mem_allocatable)}</td>
-              <td class="admin-table-age">${escapeHTML(n.age)}</td>
-              <td>
-                <div class="admin-row-actions" style="justify-content: flex-end;">
-                  <button class="admin-action-btn" onclick="event.stopPropagation(); openNodeDrainModal('${escapeHTML(n.name)}')" title="Node Drain & Maintenance Safety Simulator">Drain Sim</button>
-                </div>
-              </td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
+    ${contentHtml}
   `;
+  return;
 }
 
 // -------------------------------------------------------------
@@ -850,13 +934,91 @@ async function renderPods(container) {
   }
   const filtered = filterRows(pods, ["name", "namespace", "phase", "node", "pod_ip", "workspace_name", "app_name"]);
 
+  const viewMode = getWorkloadsViewMode();
+  const toggleHtml = `
+    <div class="clickup-view-toggle">
+      <button class="clickup-view-btn ${viewMode === 'grid' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('grid')">
+        <span>⊞</span> Grid View
+      </button>
+      <button class="clickup-view-btn ${viewMode === 'list' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('list')">
+        <span>☰</span> List View
+      </button>
+    </div>
+  `;
+
+  if (viewMode === "grid") {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Pods</h1>
+          <span class="admin-view-count">${pods.length}</span>
+        </div>
+        <div class="admin-view-actions" style="display: flex; align-items: center; gap: 10px;">
+          ${toggleHtml}
+          <button class="admin-btn admin-btn-sm" onclick="renderPods($('#admin-content-area'))">Refresh</button>
+        </div>
+      </div>
+      <div class="admin-workloads-grid">
+        ${filtered.length === 0 ? `<div class="admin-empty-state" style="grid-column: 1 / -1;">No pods found in namespace.</div>` : ""}
+        ${filtered.map((p) => {
+          let badgeClass = "admin-badge-running";
+          if (p.phase === "Pending") badgeClass = "admin-badge-pending";
+          if (p.has_errors || p.phase === "CrashLoopBackOff" || p.phase === "Failed" || p.phase === "OOMKilled" || p.phase === "Error") badgeClass = "admin-badge-crashloop";
+          if (p.phase === "Succeeded" || p.phase === "Completed") badgeClass = "admin-badge-completed";
+
+          return `
+            <div class="admin-workload-card ${p.has_errors ? 'is-error' : ''}" onclick="openInspector('pod', '${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">
+              <div class="admin-workload-card-header">
+                <div>
+                  <div class="admin-workload-card-title">${escapeHTML(p.name)}</div>
+                  <div class="admin-workload-card-ns">${escapeHTML(p.namespace)}</div>
+                </div>
+                <span class="admin-badge ${badgeClass}"><span class="admin-badge-dot"></span>${escapeHTML(p.phase)}</span>
+              </div>
+              <div class="admin-workload-card-body">
+                <div class="admin-workload-stat-row">
+                  <span class="admin-workload-stat-label">Containers</span>
+                  <span class="admin-workload-stat-value">${escapeHTML(p.ready_containers)}</span>
+                </div>
+                <div class="admin-workload-stat-row">
+                  <span class="admin-workload-stat-label">Restarts</span>
+                  <span class="admin-workload-stat-value" style="color: ${p.restarts > 0 ? 'var(--admin-amber)' : 'inherit'}; font-weight: ${p.restarts > 0 ? '600' : 'normal'};">${p.restarts}</span>
+                </div>
+                <div class="admin-workload-stat-row">
+                  <span class="admin-workload-stat-label">Node</span>
+                  <span class="admin-workload-stat-value">${escapeHTML(p.node || '-')}</span>
+                </div>
+                <div class="admin-workload-stat-row">
+                  <span class="admin-workload-stat-label">Controlled By</span>
+                  <span class="admin-workload-stat-value">${escapeHTML(p.controlled_by || '-')}</span>
+                </div>
+                <div class="admin-workload-stat-row">
+                  <span class="admin-workload-stat-label">Age</span>
+                  <span class="admin-workload-stat-value">${escapeHTML(p.age)}</span>
+                </div>
+              </div>
+              <div class="admin-workload-card-footer" onclick="event.stopPropagation()">
+                <button class="admin-btn admin-btn-xs" onclick="openAIDiagnosis('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">Diagnose</button>
+                <button class="admin-btn admin-btn-xs" onclick="openPodLogs('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">Logs</button>
+                <button class="admin-btn admin-btn-xs" onclick="openPodTerminal('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">Exec</button>
+                <button class="admin-btn admin-btn-xs admin-btn-danger" onclick="confirmDeletePod('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+    return;
+  }
+
   container.innerHTML = `
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Pods</h1>
         <span class="admin-view-count">${pods.length}</span>
       </div>
-      <div class="admin-view-actions">
+      <div class="admin-view-actions" style="display: flex; align-items: center; gap: 10px;">
+        ${toggleHtml}
         <button class="admin-btn admin-btn-sm" onclick="renderPods($('#admin-content-area'))">Refresh</button>
       </div>
     </div>
@@ -930,11 +1092,81 @@ async function renderDeployments(container) {
   const deps = await request(`/api/v1/admin/deployments${ns}`);
   const filtered = filterRows(deps, ["name", "namespace", "workspace_name", "app_name"]);
 
+  const viewMode = getWorkloadsViewMode();
+  const toggleHtml = `
+    <div class="clickup-view-toggle">
+      <button class="clickup-view-btn ${viewMode === 'grid' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('grid')">
+        <span>⊞</span> Grid View
+      </button>
+      <button class="clickup-view-btn ${viewMode === 'list' ? 'active' : ''}" type="button" onclick="setWorkloadsViewMode('list')">
+        <span>☰</span> List View
+      </button>
+    </div>
+  `;
+
+  if (viewMode === "grid") {
+    container.innerHTML = `
+      <div class="admin-view-header">
+        <div class="admin-view-title">
+          <h1>Deployments</h1>
+          <span class="admin-view-count">${deps.length}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          ${toggleHtml}
+        </div>
+      </div>
+      <div class="admin-workloads-grid">
+        ${filtered.length === 0 ? `<div class="admin-empty-state" style="grid-column: 1 / -1;">No deployments found.</div>` : ""}
+        ${filtered.map((d) => `
+          <div class="admin-workload-card" onclick="openInspector('deployment', '${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">
+            <div class="admin-workload-card-header">
+              <div>
+                <div class="admin-workload-card-title">${escapeHTML(d.name)}</div>
+                <div class="admin-workload-card-ns">${escapeHTML(d.namespace)}</div>
+              </div>
+              <span class="admin-badge ${d.ready_replicas === d.replicas && d.replicas > 0 ? "admin-badge-ready" : "admin-badge-warning"}">
+                ${d.ready_replicas} / ${d.replicas} Ready
+              </span>
+            </div>
+            <div class="admin-workload-card-body">
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Available</span>
+                <span class="admin-workload-stat-value">${d.available_replicas}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Conditions</span>
+                <span class="admin-workload-stat-value">${escapeHTML(d.conditions.join(", ") || "Progressing")}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Images</span>
+                <span class="admin-workload-stat-value" style="word-break: break-all;">${escapeHTML(d.images.join(", ") || "-")}</span>
+              </div>
+              <div class="admin-workload-stat-row">
+                <span class="admin-workload-stat-label">Age</span>
+                <span class="admin-workload-stat-value">${escapeHTML(d.age)}</span>
+              </div>
+            </div>
+            <div class="admin-workload-card-footer" onclick="event.stopPropagation()">
+              <button class="admin-btn admin-btn-xs" onclick="openScaleModal('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}', ${d.replicas})">Scale</button>
+              <button class="admin-btn admin-btn-xs" onclick="triggerRolloutRestart('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">Restart</button>
+              <button class="admin-btn admin-btn-xs" onclick="openRollbackModal('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">Rollback</button>
+              <button class="admin-btn admin-btn-xs admin-btn-danger" onclick="confirmDeleteDeployment('${escapeHTML(d.namespace)}', '${escapeHTML(d.name)}')">Delete</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    return;
+  }
+
   container.innerHTML = `
     <div class="admin-view-header">
       <div class="admin-view-title">
         <h1>Deployments</h1>
         <span class="admin-view-count">${deps.length}</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        ${toggleHtml}
       </div>
     </div>
     <div class="admin-table-container">
@@ -1246,17 +1478,50 @@ async function renderSecrets(container) {
 
 async function renderPVCs(container) {
   const ns = state.selectedNamespace ? `?namespace=${encodeURIComponent(state.selectedNamespace)}` : "";
-  const raw = await request(`/api/v1/admin/pvcs${ns}`).catch(() => []);
-  const list = Array.isArray(raw) ? raw : [];
+  let list = [];
+  let errorMsg = "";
+  try {
+    const raw = await request(`/api/v1/admin/pvcs${ns}`);
+    list = Array.isArray(raw) ? raw : [];
+  } catch (err) {
+    errorMsg = err.message || "Failed to load PersistentVolumeClaims";
+  }
   const filtered = filterRows(list, ["name", "namespace", "volume_name", "storage_class"]);
 
+  const errorBanner = errorMsg ? `
+    <div style="padding: 12px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 8px; color: var(--admin-red); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+      <span><strong>Error loading volume claims:</strong> ${escapeHTML(errorMsg)}</span>
+      <button class="admin-btn admin-btn-sm" onclick="renderPVCs($('#admin-content-area'))">Retry</button>
+    </div>
+  ` : "";
+
   container.innerHTML = `
-    <div class="admin-view-header"><div class="admin-view-title"><h1>Persistent Volume Claims</h1><span class="admin-view-count">${list.length}</span></div></div>
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Persistent Volume Claims</h1>
+        <span class="admin-view-count">${list.length}</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderPVCs($('#admin-content-area'))">Refresh</button>
+      </div>
+    </div>
+    ${errorBanner}
     <div class="admin-table-container">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Namespace</th><th>Status</th><th>Capacity</th><th>StorageClass</th><th>Volume</th><th>Age</th><th style="text-align: right;">Action</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Namespace</th>
+            <th>Status</th>
+            <th>Capacity</th>
+            <th>StorageClass</th>
+            <th>Volume</th>
+            <th>Age</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
         <tbody>
-          ${filtered.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No volume claims found.</td></tr>` : ""}
+          ${filtered.length === 0 && !errorMsg ? `<tr><td colspan="8" class="admin-empty-state">No volume claims found.</td></tr>` : ""}
           ${filtered.map((p) => `
             <tr onclick="openInspector('pvc', '${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')">
               <td class="admin-table-name">${escapeHTML(p.name)}</td>
@@ -1267,6 +1532,7 @@ async function renderPVCs(container) {
               <td class="admin-table-ns">${escapeHTML(p.volume_name || "-")}</td>
               <td class="admin-table-age">${escapeHTML(p.age || "-")}</td>
               <td style="text-align: right;">
+                <button class="admin-action-btn" onclick="event.stopPropagation(); openInspector('pvc', '${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Inspect PVC YAML">Inspect</button>
                 <button class="admin-action-btn btn-delete" onclick="event.stopPropagation(); deletePVC('${escapeHTML(p.namespace)}', '${escapeHTML(p.name)}')" title="Delete PVC">Delete</button>
               </td>
             </tr>
@@ -1277,17 +1543,51 @@ async function renderPVCs(container) {
 }
 
 async function renderPVs(container) {
-  const raw = await request("/api/v1/admin/pvs").catch(() => []);
-  const list = Array.isArray(raw) ? raw : [];
+  let list = [];
+  let errorMsg = "";
+  try {
+    const raw = await request("/api/v1/admin/pvs");
+    list = Array.isArray(raw) ? raw : [];
+  } catch (err) {
+    errorMsg = err.message || "Failed to load PersistentVolumes";
+  }
   const filtered = filterRows(list, ["name", "storage_class", "status"]);
 
+  const errorBanner = errorMsg ? `
+    <div style="padding: 12px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 8px; color: var(--admin-red); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+      <span><strong>Error loading persistent volumes:</strong> ${escapeHTML(errorMsg)}</span>
+      <button class="admin-btn admin-btn-sm" onclick="renderPVs($('#admin-content-area'))">Retry</button>
+    </div>
+  ` : "";
+
   container.innerHTML = `
-    <div class="admin-view-header"><div class="admin-view-title"><h1>Persistent Volumes</h1><span class="admin-view-count">${list.length}</span></div></div>
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Persistent Volumes</h1>
+        <span class="admin-view-count">${list.length}</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderPVs($('#admin-content-area'))">Refresh</button>
+      </div>
+    </div>
+    ${errorBanner}
     <div class="admin-table-container">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Capacity</th><th>Access Modes</th><th>Reclaim</th><th>Status</th><th>Claim</th><th>StorageClass</th><th>Age</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Capacity</th>
+            <th>Access Modes</th>
+            <th>Reclaim</th>
+            <th>Status</th>
+            <th>Claim</th>
+            <th>StorageClass</th>
+            <th>Age</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
         <tbody>
-          ${filtered.length === 0 ? `<tr><td colspan="8" class="admin-empty-state">No persistent volumes found.</td></tr>` : ""}
+          ${filtered.length === 0 && !errorMsg ? `<tr><td colspan="9" class="admin-empty-state">No persistent volumes found.</td></tr>` : ""}
           ${filtered.map((pv) => `
             <tr onclick="openInspector('pv', '', '${escapeHTML(pv.name)}')">
               <td class="admin-table-name">${escapeHTML(pv.name)}</td>
@@ -1298,6 +1598,9 @@ async function renderPVs(container) {
               <td class="admin-table-ns">${escapeHTML(pv.claim || "-")}</td>
               <td>${escapeHTML(pv.storage_class || "-")}</td>
               <td class="admin-table-age">${escapeHTML(pv.age || "-")}</td>
+              <td style="text-align: right;">
+                <button class="admin-action-btn" onclick="event.stopPropagation(); openInspector('pv', '', '${escapeHTML(pv.name)}')" title="Inspect PV YAML">Inspect</button>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -1306,17 +1609,50 @@ async function renderPVs(container) {
 }
 
 async function renderStorageClasses(container) {
-  const raw = await request("/api/v1/admin/storageclasses").catch(() => []);
-  const list = Array.isArray(raw) ? raw : [];
+  let list = [];
+  let errorMsg = "";
+  try {
+    const raw = await request("/api/v1/admin/storageclasses");
+    list = Array.isArray(raw) ? raw : [];
+  } catch (err) {
+    errorMsg = err.message || "Failed to load StorageClasses";
+  }
   const filtered = filterRows(list, ["name", "provisioner"]);
 
+  const errorBanner = errorMsg ? `
+    <div style="padding: 12px 16px; background: var(--admin-red-bg); border: 1px solid var(--admin-red-border); border-radius: 8px; color: var(--admin-red); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+      <span><strong>Error loading storage classes:</strong> ${escapeHTML(errorMsg)}</span>
+      <button class="admin-btn admin-btn-sm" onclick="renderStorageClasses($('#admin-content-area'))">Retry</button>
+    </div>
+  ` : "";
+
   container.innerHTML = `
-    <div class="admin-view-header"><div class="admin-view-title"><h1>Storage Classes</h1><span class="admin-view-count">${list.length}</span></div></div>
+    <div class="admin-view-header">
+      <div class="admin-view-title">
+        <h1>Storage Classes</h1>
+        <span class="admin-view-count">${list.length}</span>
+      </div>
+      <div class="admin-view-actions">
+        <button class="admin-btn admin-btn-sm" onclick="renderStorageClasses($('#admin-content-area'))">Refresh</button>
+      </div>
+    </div>
+    ${errorBanner}
     <div class="admin-table-container">
       <table class="admin-table">
-        <thead><tr><th>Name</th><th>Provisioner</th><th>Reclaim Policy</th><th>Volume Binding</th><th>Expansion</th><th>Default</th><th>Age</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Provisioner</th>
+            <th>Reclaim Policy</th>
+            <th>Volume Binding</th>
+            <th>Expansion</th>
+            <th>Default</th>
+            <th>Age</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
         <tbody>
-          ${filtered.length === 0 ? `<tr><td colspan="7" class="admin-empty-state">No storage classes found.</td></tr>` : ""}
+          ${filtered.length === 0 && !errorMsg ? `<tr><td colspan="8" class="admin-empty-state">No storage classes found.</td></tr>` : ""}
           ${filtered.map((sc) => `
             <tr onclick="openInspector('storageclass', '', '${escapeHTML(sc.name)}')">
               <td class="admin-table-name">${escapeHTML(sc.name)}</td>
@@ -1326,12 +1662,16 @@ async function renderStorageClasses(container) {
               <td>${sc.allow_volume_expansion ? "Yes" : "No"}</td>
               <td>${sc.is_default ? `<span class="admin-badge admin-badge-ready">Default</span>` : "-"}</td>
               <td class="admin-table-age">${escapeHTML(sc.age || "-")}</td>
+              <td style="text-align: right;">
+                <button class="admin-action-btn" onclick="event.stopPropagation(); openInspector('storageclass', '', '${escapeHTML(sc.name)}')" title="Inspect StorageClass YAML">Inspect</button>
+              </td>
             </tr>
           `).join("")}
         </tbody>
       </table>
     </div>`;
 }
+
 
 // -------------------------------------------------------------
 // 8. Namespaces & Events
@@ -2056,7 +2396,7 @@ function renderClusterConnect(container) {
           <label class="form-label" for="cluster-kubeconfig">Kubeconfig YAML</label>
           <textarea class="text-input" id="cluster-kubeconfig" rows="10" placeholder="apiVersion: v1&#10;clusters:&#10;  - cluster:&#10;      server: https://127.0.0.1:6443&#10;..." required style="width: 100%; font-family: var(--admin-mono); font-size: 11px;"></textarea>
           
-          <label class="form-label" for="cluster-context" style="margin-top: 14px;">Context (optional, defaults to current-context)</label>
+          <label class="form-label" for="cluster-context" style="margin-top: 14px;">Cluster Name / Context (optional, e.g. production-us, staging-eu — give each cluster a unique name so both show up in the rail)</label>
           <input class="text-input" id="cluster-context" placeholder="e.g. minikube, kind-crelan, arn:aws:eks:..." style="width: 100%;">
           
           <div id="cluster-connect-state" style="margin: 14px 0;"></div>
@@ -2609,6 +2949,29 @@ async function openInspector(kind, namespace, name) {
     const btnScale = createBtn("Scale", "", () => openScaleModal(namespace, name, 1));
     const btnDel = createBtn("Delete", "admin-btn-danger", () => confirmDeleteDeployment(namespace, name));
     toolbar.append(btnRestart, btnScale, btnDel);
+  } else if (kind === "pvc" || kind === "persistentvolumeclaim") {
+    const btnYaml = createBtn("View YAML", "", () => {
+      $$(".admin-drawer-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "yaml"));
+      renderInspectorTab("yaml");
+    });
+    const btnDel = createBtn("Delete PVC", "admin-btn-danger", () => {
+      closeInspector();
+      deletePVC(namespace, name);
+    });
+    toolbar.append(btnYaml, btnDel);
+  } else if (kind === "pv" || kind === "persistentvolume") {
+    const btnYaml = createBtn("View YAML", "", () => {
+      $$(".admin-drawer-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "yaml"));
+      renderInspectorTab("yaml");
+    });
+    toolbar.append(btnYaml);
+  } else if (kind === "node") {
+    const btnDrain = createBtn("Drain Sim", "", () => openNodeDrainModal(name));
+    const btnYaml = createBtn("View YAML", "", () => {
+      $$(".admin-drawer-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "yaml"));
+      renderInspectorTab("yaml");
+    });
+    toolbar.append(btnDrain, btnYaml);
   }
 
   $$(".admin-drawer-tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "overview"));
@@ -7790,6 +8153,20 @@ function handleCommandPaletteKeydown(e) {
     closeCommandPalette();
   }
 }
+
+
+window.openCommandPalette = openCommandPalette;
+window.closeCommandPalette = closeCommandPalette;
+window.filterCommandPalette = filterCommandPalette;
+window.executePaletteItem = executePaletteItem;
+
+// Top-level global hotkey listener for Quick Launcher
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    openCommandPalette();
+  }
+});
 
 function scrollPaletteSelectionIntoView() {
   const selectedEl = document.querySelector(".admin-cmd-k-item.selected");

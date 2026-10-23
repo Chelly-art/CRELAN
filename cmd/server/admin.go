@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -293,17 +294,59 @@ func (s *adminService) connectCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contextName := strings.TrimSpace(input.Context)
-	if contextName == "" {
-		contextName = config.CurrentContext
-	}
-	if contextName == "" && len(config.Contexts) == 1 {
+	sourceContext := config.CurrentContext
+	if sourceContext == "" && len(config.Contexts) == 1 {
 		for name := range config.Contexts {
-			contextName = name
+			sourceContext = name
 		}
 	}
-	if contextName == "" || config.Contexts[contextName] == nil {
-		writeError(w, http.StatusBadRequest, "Enter a context name that exists in the pasted kubeconfig")
+	if sourceContext == "" {
+		for name := range config.Contexts {
+			sourceContext = name
+			break
+		}
+	}
+	if sourceContext == "" || config.Contexts[sourceContext] == nil {
+		writeError(w, http.StatusBadRequest, "No valid context found in the pasted kubeconfig")
 		return
+	}
+
+	if contextName != "" && config.Contexts[contextName] == nil {
+		// User specified a custom cluster context name: clone source context
+		config.Contexts[contextName] = config.Contexts[sourceContext].DeepCopy()
+		config.CurrentContext = contextName
+	} else if contextName == "" {
+		contextName = sourceContext
+		// If this context is already connected in the multi-cluster fleet, auto-disambiguate
+		if s.deployments != nil {
+			known := s.deployments.allKnownContexts()
+			if slices.Contains(known, contextName) {
+				var newServer string
+				if clRef := config.Contexts[sourceContext].Cluster; clRef != "" && config.Clusters[clRef] != nil {
+					newServer = config.Clusters[clRef].Server
+				}
+				cleanHost := ""
+				if u, err := url.Parse(newServer); err == nil && u.Host != "" {
+					cleanHost = strings.ReplaceAll(strings.ReplaceAll(u.Host, ":", "-"), ".", "-")
+				}
+				candidate := ""
+				if cleanHost != "" {
+					candidate = fmt.Sprintf("%s-%s", sourceContext, cleanHost)
+				} else {
+					candidate = fmt.Sprintf("%s-%d", sourceContext, len(known)+1)
+				}
+				if !slices.Contains(known, candidate) {
+					contextName = candidate
+					config.Contexts[contextName] = config.Contexts[sourceContext].DeepCopy()
+					config.CurrentContext = contextName
+				}
+			}
+		}
+	}
+
+	// Update stored kubeconfig YAML to reflect assigned contextName
+	if updatedYAML, err := clientcmd.Write(*config); err == nil {
+		input.Kubeconfig = string(updatedYAML)
 	}
 	for _, cluster := range config.Clusters {
 		if cluster.CertificateAuthority != "" && len(cluster.CertificateAuthorityData) == 0 {
